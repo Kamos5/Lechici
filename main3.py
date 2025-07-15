@@ -7,7 +7,38 @@ from pygame.math import Vector2
 # Initialize Pygame
 pygame.init()
 
-# Class definitions
+# Screen settings
+SCREEN_WIDTH = 1600
+SCREEN_HEIGHT = 1200
+screen = pygame.display.set_mode((SCREEN_WIDTH, SCREEN_HEIGHT))
+pygame.display.set_caption("Simple RTS Game with Player Selection")
+clock = pygame.time.Clock()
+
+# Colors
+WHITE = (255, 255, 255)  # Background
+BLUE = (0, 0, 255)  # Player 1 units and selection rectangle
+PURPLE = (128, 0, 128)  # Player 2 units and selection rectangle
+RED = (255, 0, 0)  # Cow special bar background
+GREEN = (0, 255, 0)  # Selected unit highlight and Cow special bar fill
+GRASS_GREEN = (0, 100, 0)  # Full grass
+GRASS_BROWN = (139, 69, 19)  # Depleted grass and Dirt
+GRAY = (128, 128, 128, 128)  # Barn, 50% transparent
+BLACK = (0, 0, 0)  # Button text
+LIGHT_GRAY = (200, 200, 200)  # Button background
+
+# Grass tile settings
+TILE_SIZE = 20
+GRASS_ROWS = SCREEN_HEIGHT // TILE_SIZE  # 60 rows
+GRASS_COLS = SCREEN_WIDTH // TILE_SIZE  # 80 cols
+
+# Button settings
+BUTTON_WIDTH = 150
+BUTTON_HEIGHT = 40
+BUTTON_MARGIN = 10
+BUTTON_PLAYER1_POS = (SCREEN_WIDTH - BUTTON_WIDTH - BUTTON_MARGIN, BUTTON_MARGIN)
+BUTTON_PLAYER2_POS = (SCREEN_WIDTH - BUTTON_WIDTH - BUTTON_MARGIN, BUTTON_MARGIN + BUTTON_HEIGHT + 10)
+
+# GrassTile class
 class GrassTile:
     def __init__(self, x, y):
         self.pos = Vector2(x, y)
@@ -30,6 +61,7 @@ class GrassTile:
     def regrow(self, amount):
         self.grass_level = min(1.0, self.grass_level + amount)
 
+# Dirt class
 class Dirt(GrassTile):
     def __init__(self, x, y):
         super().__init__(x, y)
@@ -39,13 +71,14 @@ class Dirt(GrassTile):
         pygame.draw.rect(screen, GRASS_BROWN, (self.pos.x, self.pos.y, TILE_SIZE, TILE_SIZE))
 
     def regrow(self, amount):
-        pass  # Dirt does not regrow
+        pass
 
     def harvest(self, amount):
-        return 0.0  # Dirt has no grass to harvest
+        return 0.0
 
+# Unit class
 class Unit:
-    def __init__(self, x, y, size, speed, color):
+    def __init__(self, x, y, size, speed, color, player_id):
         self.pos = Vector2(x, y)
         self.target = None
         self.speed = speed
@@ -53,6 +86,7 @@ class Unit:
         self.size = size
         self.min_distance = self.size
         self.color = color
+        self.player_id = player_id
         self.velocity = Vector2(0, 0)
         self.damping = 0.95
         self.hp = 100
@@ -79,25 +113,21 @@ class Unit:
     def resolve_collisions(self, units):
         for other in units:
             if other is not self:
-                # Handle Cow-Barn corner collisions
                 if isinstance(self, Cow) and isinstance(other, Barn):
                     barn_corners = [
-                        Vector2(other.pos.x - other.size / 2, other.pos.y - other.size / 2),  # Top-left
-                        Vector2(other.pos.x + other.size / 2, other.pos.y - other.size / 2),  # Top-right
-                        Vector2(other.pos.x - other.size / 2, other.pos.y + other.size / 2),  # Bottom-left
-                        Vector2(other.pos.x + other.size / 2, other.pos.y + other.size / 2)  # Bottom-right
+                        Vector2(other.pos.x - other.size / 2, other.pos.y - other.size / 2),
+                        Vector2(other.pos.x + other.size / 2, other.pos.y - other.size / 2),
+                        Vector2(other.pos.x - other.size / 2, other.pos.y + other.size / 2),
+                        Vector2(other.pos.x + other.size / 2, other.pos.y + other.size / 2)
                     ]
                     nearest_corner = min(barn_corners, key=lambda corner: self.pos.distance_to(corner))
                     distance = self.pos.distance_to(nearest_corner)
                     corner_radius = 10
                     if distance < corner_radius and distance > 0:
-                        # Only push cow away if targeting a different corner
                         if self.target is not None and self.target != nearest_corner:
                             overlap = corner_radius - distance
                             direction = (self.pos - nearest_corner).normalize()
                             self.pos += direction * overlap
-                            print(f"Cow at {self.pos} pushed away from barn corner at {nearest_corner}")
-                # Handle Barn-other collisions (Barn immovable), but skip for Cows
                 elif isinstance(self, Barn) and not isinstance(other, Barn) and not isinstance(other, Cow):
                     distance = self.pos.distance_to(other.pos)
                     combined_min_distance = (self.size + other.size) / 2
@@ -105,8 +135,6 @@ class Unit:
                         overlap = combined_min_distance - distance
                         direction = (other.pos - self.pos).normalize()
                         other.pos += direction * overlap
-                        print(f"Barn at {self.pos} pushed unit at {other.pos}")
-                # Handle other-Barn collisions, but skip for Cows (Barn immovable)
                 elif isinstance(other, Barn) and not isinstance(self, Barn) and not isinstance(self, Cow):
                     distance = self.pos.distance_to(other.pos)
                     combined_min_distance = (self.size + other.size) / 2
@@ -114,8 +142,6 @@ class Unit:
                         overlap = combined_min_distance - distance
                         direction = (self.pos - other.pos).normalize()
                         self.pos += direction * overlap
-                        print(f"Unit at {self.pos} pushed by barn at {other.pos}")
-                # Standard collision for non-Barn pairs (including Cow-Cow, Cow-other, other-other)
                 elif not isinstance(self, Barn) and not isinstance(other, Barn):
                     distance = self.pos.distance_to(other.pos)
                     combined_min_distance = (self.size + other.size) / 2
@@ -125,7 +151,6 @@ class Unit:
                         correction = direction * overlap * 0.5
                         self.pos += correction
                         other.pos -= correction
-                        print(f"Collision between units at {self.pos} and {other.pos}")
 
     def keep_in_bounds(self):
         self.pos.x = max(self.size / 2, min(SCREEN_WIDTH - self.size / 2, self.pos.x))
@@ -138,23 +163,24 @@ class Unit:
         return (abs(click_pos.x - self.pos.x) <= self.size / 2 and
                 abs(click_pos.y - self.pos.y) <= self.size / 2)
 
+# Soldier, Tank, Scout, Cow, Barn classes
 class Soldier(Unit):
-    def __init__(self, x, y):
-        super().__init__(x, y, size=16, speed=5, color=BLUE)
+    def __init__(self, x, y, player_id, player_color):
+        super().__init__(x, y, size=16, speed=5, color=player_color, player_id=player_id)
 
 class Tank(Unit):
-    def __init__(self, x, y):
-        super().__init__(x, y, size=16, speed=2, color=RED)
+    def __init__(self, x, y, player_id, player_color):
+        super().__init__(x, y, size=16, speed=2, color=player_color, player_id=player_id)
 
 class Scout(Unit):
-    def __init__(self, x, y):
-        super().__init__(x, y, size=16, speed=8, color=YELLOW)
+    def __init__(self, x, y, player_id, player_color):
+        super().__init__(x, y, size=16, speed=8, color=player_color, player_id=player_id)
 
 class Cow(Unit):
-    def __init__(self, x, y):
-        super().__init__(x, y, size=16, speed=4, color=WHITE)
+    def __init__(self, x, y, player_id, player_color):
+        super().__init__(x, y, size=16, speed=4, color=player_color, player_id=player_id)
         self.harvest_rate = 0.01
-        self.assigned_corner = None  # Track assigned corner (top-left or top-right)
+        self.assigned_corner = None
 
     def draw(self, screen):
         color = GREEN if self.selected else self.color
@@ -173,13 +199,11 @@ class Cow(Unit):
         if self.target:
             direction = self.target - self.pos
             distance_to_target = direction.length()
-            if distance_to_target > 2:  # Reduced threshold for precise corner alignment
+            if distance_to_target > 2:
                 self.velocity = direction.normalize() * self.speed
-                print(f"Moving cow at {self.pos} toward {self.target}, velocity: {self.velocity}")
             else:
                 self.pos = Vector2(self.target)
                 self.target = None
-                print(f"Cow centered at {self.pos}")
         self.velocity *= self.damping
         self.pos += self.velocity
 
@@ -187,29 +211,21 @@ class Cow(Unit):
         return (barn.pos.x - barn.size / 2 <= self.pos.x <= barn.pos.x + barn.size / 2 and
                 barn.pos.y - barn.size / 2 <= self.pos.y <= barn.pos.y + barn.size / 2)
 
-    def harvest_grass(self, grass_tiles, barns, cow_in_barn):
-        global milk
-        # Check if cow is in any barn
-        for barn in barns:
-            if self.is_in_barn(barn) and self.special > 0:
-                # Cow is in a barn and still has special, do not change target
-                return
+    def harvest_grass(self, grass_tiles, barns, cow_in_barn, player):
+        if self.is_in_barn_any(barns) and self.special > 0:
+            return
         if self.special >= 100:
-            if not self.target:  # Only set target if not already moving
-                # Find the closest barn with no cow inside
-                available_barns = [barn for barn in barns if barn not in cow_in_barn or cow_in_barn[barn] is None]
+            if not self.target:
+                available_barns = [barn for barn in barns if barn.player_id == self.player_id and (barn not in cow_in_barn or cow_in_barn[barn] is None)]
                 if available_barns:
                     closest_barn = min(available_barns, key=lambda barn: self.pos.distance_to(barn.pos))
-                    # Define barn corners
                     barn_corners = [
-                        Vector2(closest_barn.pos.x - closest_barn.size / 2, closest_barn.pos.y - closest_barn.size / 2),  # Top-left
-                        Vector2(closest_barn.pos.x + closest_barn.size / 2, closest_barn.pos.y - closest_barn.size / 2)   # Top-right
+                        Vector2(closest_barn.pos.x - closest_barn.size / 2, closest_barn.pos.y - closest_barn.size / 2),
+                        Vector2(closest_barn.pos.x + closest_barn.size / 2, closest_barn.pos.y - closest_barn.size / 2)
                     ]
-                    # Choose the closest top corner that isn't occupied
                     for corner in sorted(barn_corners, key=lambda c: self.pos.distance_to(c)):
-                        # Check if corner is free (no other cow is too close)
                         corner_free = True
-                        for unit in units:
+                        for unit in player.units:
                             if isinstance(unit, Cow) and unit is not self:
                                 if unit.pos.distance_to(corner) < 10:
                                     corner_free = False
@@ -218,40 +234,26 @@ class Cow(Unit):
                             self.target = corner
                             self.assigned_corner = corner
                             break
-                    if self.target:
-                        print(f"Cow at {self.pos} (special = {self.special}) moving to corner {self.target} of barn at {closest_barn.pos}")
-                    else:
-                        # If both corners are occupied, wait near the closest barn
+                    if not self.target:
+                        closest_barn = min(available_barns, key=lambda barn: self.pos.distance_to(barn.pos))
                         self.target = Vector2(closest_barn.pos.x + closest_barn.size / 2 + 10, closest_barn.pos.y)
-                        print(f"Cow at {self.pos} waiting near barn at {self.target}")
                 else:
-                    # No available barns, wait near the closest barn
                     closest_barn = min(barns, key=lambda barn: self.pos.distance_to(barn.pos))
                     self.target = Vector2(closest_barn.pos.x + closest_barn.size / 2 + 10, closest_barn.pos.y)
-                    print(f"Cow at {self.pos} (special = {self.special}) waiting near barn at {self.target}")
             return
-        # Check if cow is in any barn with special == 0
         for barn in barns:
             if self.special == 0 and self.is_in_barn(barn):
-                # Cow in barn has depleted special, set target to a grass tile
                 tile_x = int(self.pos.x // TILE_SIZE)
                 tile_y = int(self.pos.y // TILE_SIZE)
                 adjacent_tiles = [
-                    (tile_x, tile_y - 1),
-                    (tile_x, tile_y + 1),
-                    (tile_x - 1, tile_y),
-                    (tile_x + 1, tile_y),
-                    (tile_x - 1, tile_y - 1),
-                    (tile_x + 1, tile_y - 1),
-                    (tile_x - 1, tile_y + 1),
-                    (tile_x + 1, tile_y + 1)
+                    (tile_x, tile_y - 1), (tile_x, tile_y + 1), (tile_x - 1, tile_y), (tile_x + 1, tile_y),
+                    (tile_x - 1, tile_y - 1), (tile_x + 1, tile_y - 1), (tile_x - 1, tile_y + 1), (tile_x + 1, tile_y + 1)
                 ]
                 random.shuffle(adjacent_tiles)
                 for adj_x, adj_y in adjacent_tiles:
                     if 0 <= adj_x < GRASS_COLS and 0 <= adj_y < GRASS_ROWS:
                         if grass_tiles[adj_y][adj_x].grass_level > 0.5:
                             self.target = Vector2(adj_x * TILE_SIZE + TILE_SIZE / 2, adj_y * TILE_SIZE + TILE_SIZE / 2)
-                            print(f"Cow at {self.pos} (special = 0) leaving barn at {barn.pos} to tile ({adj_x}, {adj_y}) with grass_level {grass_tiles[adj_y][adj_x].grass_level}")
                             break
                 return
         if not self.target or self.velocity.length() < 0.5:
@@ -260,107 +262,107 @@ class Cow(Unit):
             if 0 <= tile_x < GRASS_COLS and 0 <= tile_y < GRASS_ROWS:
                 harvested = grass_tiles[tile_y][tile_x].harvest(self.harvest_rate)
                 self.special = min(100, self.special + harvested * 50)
-                print(f"Cow at {self.pos} harvested grass, special = {self.special}")
                 if grass_tiles[tile_y][tile_x].grass_level == 0:
                     adjacent_tiles = [
-                        (tile_x, tile_y - 1),
-                        (tile_x, tile_y + 1),
-                        (tile_x - 1, tile_y),
-                        (tile_x + 1, tile_y),
-                        (tile_x - 1, tile_y - 1),
-                        (tile_x + 1, tile_y - 1),
-                        (tile_x - 1, tile_y + 1),
-                        (tile_x + 1, tile_y + 1)
+                        (tile_x, tile_y - 1), (tile_x, tile_y + 1), (tile_x - 1, tile_y), (tile_x + 1, tile_y),
+                        (tile_x - 1, tile_y - 1), (tile_x + 1, tile_y - 1), (tile_x - 1, tile_y + 1), (tile_x + 1, tile_y + 1)
                     ]
                     random.shuffle(adjacent_tiles)
                     for adj_x, adj_y in adjacent_tiles:
                         if 0 <= adj_x < GRASS_COLS and 0 <= adj_y < GRASS_ROWS:
                             if grass_tiles[adj_y][adj_x].grass_level > 0.5:
                                 self.target = Vector2(adj_x * TILE_SIZE + TILE_SIZE / 2, adj_y * TILE_SIZE + TILE_SIZE / 2)
-                                print(f"Cow at {self.pos} moving to adjacent tile ({adj_x}, {adj_y}) with grass_level {grass_tiles[adj_y][adj_x].grass_level}")
                                 break
 
+    def is_in_barn_any(self, barns):
+        return any(self.is_in_barn(barn) for barn in barns)
+
 class Barn(Unit):
-    def __init__(self, x, y):
-        super().__init__(x, y, size=48, speed=0, color=GRAY)  # Use GRAY with alpha
+    def __init__(self, x, y, player_id):
+        super().__init__(x, y, size=48, speed=0, color=GRAY, player_id=player_id)
         self.harvest_rate = 1
 
     def draw(self, screen):
-        # Create a surface with per-pixel alpha
         barn_surface = pygame.Surface((self.size, self.size), pygame.SRCALPHA)
-        # Draw the barn rectangle on the surface with the GRAY color (includes alpha)
         pygame.draw.rect(barn_surface, self.color, (0, 0, self.size, self.size))
-        # Blit the surface to the main screen at the barn's position
         screen.blit(barn_surface, (self.pos.x - self.size / 2, self.pos.y - self.size / 2))
 
     def move(self, units):
-        pass  # Barn is immovable
+        pass
 
-# Screen settings
-SCREEN_WIDTH = 800
-SCREEN_HEIGHT = 600
-screen = pygame.display.set_mode((SCREEN_WIDTH, SCREEN_HEIGHT))
-pygame.display.set_caption("Simple RTS Game with Multiple Barns")
-clock = pygame.time.Clock()
+class Player:
+    def __init__(self, player_id, color, start_x, start_y):
+        self.player_id = player_id
+        self.color = color
+        self.milk = 0.0
+        self.units = []
+        self.cow_in_barn = {}
+        offset_x = start_x
+        offset_y = start_y
+        self.units.extend([
+            Soldier(offset_x + 100, offset_y + 100, player_id, self.color),
+            Soldier(offset_x + 150, offset_y + 150, player_id, self.color),
+            Tank(offset_x + 200, offset_y + 100, player_id, self.color),
+            Tank(offset_x + 250, offset_y + 150, player_id, self.color),
+            Scout(offset_x + 300, offset_y + 100, player_id, self.color),
+            Scout(offset_x + 350, offset_y + 150, player_id, self.color),
+            Cow(offset_x + 450, offset_y + 150, player_id, self.color),
+            Barn(offset_x + 510, offset_y + 90, player_id),
+            Barn(offset_x + 590, offset_y + 90, player_id),
+            Barn(offset_x + 670, offset_y + 390, player_id)
+        ])
 
-# Colors
-WHITE = (255, 255, 255)  # Selection rectangle
-BLUE = (0, 0, 255)  # Soldier and milk text
-RED = (255, 0, 0)  # Tank and Cow special bar background
-YELLOW = (255, 255, 0)  # Scout
-GREEN = (0, 255, 0)  # Selected unit highlight and Cow special bar fill
-GRASS_GREEN = (0, 100, 0)  # Full grass
-GRASS_BROWN = (139, 69, 19)  # Depleted grass and Dirt
-GRAY = (128, 128, 128, 128)  # Barn, 50% transparent (alpha = 128)
+    def select_all_units(self):
+        for unit in self.units:
+            unit.selected = True
 
-# Grass tile settings
-TILE_SIZE = 20
-GRASS_ROWS = SCREEN_HEIGHT // TILE_SIZE  # 30 rows
-GRASS_COLS = SCREEN_WIDTH // TILE_SIZE  # 40 cols
-
-# Global variables
-milk = 0.0  # Tracks total milk collected, max 1000
-cow_in_barn = {}  # Tracks which Cow is in each Barn (Barn instance -> Cow or None)
+    def deselect_all_units(self):
+        for unit in self.units:
+            unit.selected = False
 
 # Create grass field
 grass_tiles = [[GrassTile(col * TILE_SIZE, row * TILE_SIZE) for col in range(GRASS_COLS)] for row in range(GRASS_ROWS)]
 
-# Create units
-units = [
-    Soldier(100, 100),
-    Soldier(150, 150),
-    Tank(200, 100),
-    Tank(250, 150),
-    Scout(300, 100),
-    Scout(350, 150),
-    Cow(450, 150),
-    Barn(510, 90),  # Aligned to grid center at col 25, row 4
-    Barn(590, 90),  # Aligned to grid center at col 29, row 4
-    Barn(670, 390)   # Aligned to grid center at col 33, row 4
+# Create players
+players = [
+    Player(1, BLUE, 0, 0),  # Player 1 (BLUE) starts top-left
+    Player(2, PURPLE, 800, 600)  # Player 2 (PURPLE) starts bottom-right
 ]
 
-# Place Dirt tiles under all barns
-for barn in [unit for unit in units if isinstance(unit, Barn)]:
-    buildings_cols = range(
-        int((barn.pos.x - barn.size / 2) // TILE_SIZE),
-        int(math.ceil((barn.pos.x + barn.size / 2) / TILE_SIZE))
-    )
-    buildings_rows = range(
-        int((barn.pos.y - barn.size / 2) // TILE_SIZE),
-        int(math.ceil((barn.pos.y + barn.size / 2) / TILE_SIZE))
-    )
-    for row in buildings_rows:
-        for col in buildings_cols:
-            if 0 <= row < GRASS_ROWS and 0 <= col < GRASS_COLS:
-                grass_tiles[row][col] = Dirt(col * TILE_SIZE, row * TILE_SIZE)
+# Combine all units
+all_units = []
+for player in players:
+    all_units.extend(player.units)
 
-# Selection rectangle
+# Place Dirt tiles under barns
+for unit in all_units:
+    if isinstance(unit, Barn):
+        buildings_cols = range(
+            int((unit.pos.x - unit.size / 2) // TILE_SIZE),
+            int(math.ceil((unit.pos.x + unit.size / 2) / TILE_SIZE))
+        )
+        buildings_rows = range(
+            int((unit.pos.y - unit.size / 2) // TILE_SIZE),
+            int(math.ceil((unit.pos.y + unit.size / 2) / TILE_SIZE))
+        )
+        for row in buildings_rows:
+            for col in buildings_cols:
+                if 0 <= row < GRASS_ROWS and 0 <= col < GRASS_COLS:
+                    grass_tiles[row][col] = Dirt(col * TILE_SIZE, row * TILE_SIZE)
+
+# Selection rectangle and player selection mode
 selection_start = None
 selection_end = None
 selecting = False
+current_player = None  # None means no player selected; must click a player button first
+
+# Button rectangles
+button_player1 = pygame.Rect(BUTTON_PLAYER1_POS[0], BUTTON_PLAYER1_POS[1], BUTTON_WIDTH, BUTTON_HEIGHT)
+button_player2 = pygame.Rect(BUTTON_PLAYER2_POS[0], BUTTON_PLAYER2_POS[1], BUTTON_WIDTH, BUTTON_HEIGHT)
 
 # Game loop
 running = True
+font = pygame.font.SysFont(None, 24)
 while running:
     for event in pygame.event.get():
         if event.type == pygame.QUIT:
@@ -368,35 +370,52 @@ while running:
         elif event.type == pygame.MOUSEBUTTONDOWN:
             if event.button == 1:
                 click_pos = Vector2(event.pos)
-                unit_clicked = None
-                for unit in units:
-                    if unit.is_clicked(click_pos):
-                        unit_clicked = unit
-                        break
-                if unit_clicked:
-                    for unit in units:
-                        unit.selected = (unit == unit_clicked)
-                    print(f"Selected unit at {unit_clicked.pos}")
-                else:
-                    selection_start = click_pos
-                    selecting = True
-                    print(f"Selection started at: {selection_start}")
+                # Check for button clicks
+                if button_player1.collidepoint(event.pos):
+                    current_player = 1
+                    for player in players:
+                        player.deselect_all_units()
+                    #players[0].select_all_units()
+                    print("Selected Player 1; only Player 1 units can be selected")
+                elif button_player2.collidepoint(event.pos):
+                    current_player = 2
+                    for player in players:
+                        player.deselect_all_units()
+                    #players[1].select_all_units()
+                    print("Selected Player 2; only Player 2 units can be selected")
+                elif current_player is not None:
+                    # Only allow unit selection if a player is selected
+                    unit_clicked = None
+                    for unit in all_units:
+                        if unit.player_id == current_player and unit.is_clicked(click_pos):
+                            unit_clicked = unit
+                            break
+                    if unit_clicked:
+                        for player in players:
+                            player.deselect_all_units()
+                        unit_clicked.selected = True
+                        print(f"Selected unit at {unit_clicked.pos} (Player {unit_clicked.player_id})")
+                    else:
+                        selection_start = click_pos
+                        selecting = True
+                        print(f"Selection started at: {selection_start}")
             elif event.button == 3:
-                for unit in units:
+                for unit in all_units:
                     if unit.selected and not isinstance(unit, Barn):
                         unit.target = Vector2(event.pos)
                         print(f"Set target for unit at {unit.pos} to {unit.target}")
         elif event.type == pygame.MOUSEBUTTONUP:
-            if event.button == 1 and selecting:
+            if event.button == 1 and selecting and current_player is not None:
                 selection_end = Vector2(event.pos)
                 selecting = False
+                for player in players:
+                    if player.player_id == current_player:
+                        for unit in player.units:
+                            unit.selected = (min(selection_start.x, selection_end.x) <= unit.pos.x <= max(selection_start.x, selection_end.x) and
+                                             min(selection_start.y, selection_end.y) <= unit.pos.y <= max(selection_start.y, selection_end.y))
                 print(f"Selection ended at: {selection_end}")
-                for unit in units:
-                    unit.selected = (min(selection_start.x, selection_end.x) <= unit.pos.x <= max(selection_start.x, selection_end.x) and
-                                     min(selection_start.y, selection_end.y) <= unit.pos.y <= max(selection_start.y, selection_end.y))
         elif event.type == pygame.MOUSEMOTION and selecting:
             selection_end = Vector2(event.pos)
-            print(f"Selection updating: {selection_start}, {selection_end}")
 
     # Update grass regrowth
     regrowth_rate = 0.001
@@ -404,58 +423,60 @@ while running:
         for tile in row:
             tile.regrow(regrowth_rate)
 
-    # Find all barns
-    barns = [unit for unit in units if isinstance(unit, Barn)]
-
-    # Update units
-    for unit in units:
-        unit.move(units)
-        unit.resolve_collisions(units)
-        unit.keep_in_bounds()
-        if isinstance(unit, Cow):
-            unit.harvest_grass(grass_tiles, barns, cow_in_barn)
-
-    # Handle Cow in Barn
-    for barn in barns:
-        if barn in cow_in_barn and cow_in_barn[barn]:
-            cow = cow_in_barn[barn]
-            if cow.is_in_barn(barn):
-                cow.special = max(0, cow.special - barn.harvest_rate)
-                if milk < 1000 and cow.special > 0:
-                    milk = min(1000, milk + barn.harvest_rate)
-                print(f"Cow at {cow.pos} in Barn at {barn.pos}, special = {cow.special}, milk = {milk}")
-                if cow.special <= 0:
-                    cow_in_barn[barn] = None
-                    print(f"Barn at {barn.pos} is now free")
+    # Update units and handle cow-barn interactions per player
+    for player in players:
+        barns = [unit for unit in player.units if isinstance(unit, Barn)]
+        for unit in player.units:
+            unit.move(all_units)
+            unit.resolve_collisions(all_units)
+            unit.keep_in_bounds()
+            if isinstance(unit, Cow):
+                unit.harvest_grass(grass_tiles, barns, player.cow_in_barn, player)
+        for barn in barns:
+            if barn in player.cow_in_barn and player.cow_in_barn[barn]:
+                cow = player.cow_in_barn[barn]
+                if cow.is_in_barn(barn):
+                    cow.special = max(0, cow.special - barn.harvest_rate)
+                    if player.milk < 1000 and cow.special > 0:
+                        player.milk = min(1000, player.milk + barn.harvest_rate)
+                    if cow.special <= 0:
+                        player.cow_in_barn[barn] = None
+                else:
+                    player.cow_in_barn[barn] = None
             else:
-                cow_in_barn[barn] = None
-                print(f"Cow left Barn at {barn.pos}, Barn is now free")
-        else:
-            for unit in units:
-                if isinstance(unit, Cow) and unit.is_in_barn(barn):
-                    cow_in_barn[barn] = unit
-                    print(f"Cow at {unit.pos} entered Barn at {barn.pos}")
-                    break
+                for unit in player.units:
+                    if isinstance(unit, Cow) and unit.is_in_barn(barn):
+                        player.cow_in_barn[barn] = unit
+                        break
 
     # Draw
     screen.fill(WHITE)
     for row in grass_tiles:
         for tile in row:
             tile.draw(screen)
-    if selecting and selection_start and selection_end:
+    if selecting and selection_start and selection_end and current_player is not None:
         rect = pygame.Rect(
             min(selection_start.x, selection_end.x),
             min(selection_start.y, selection_end.y),
             abs(selection_end.x - selection_start.x),
             abs(selection_end.y - selection_start.y)
         )
-        pygame.draw.rect(screen, WHITE, rect, 3)
-        print(f"Drawing selection rect: {rect}")
-    for unit in units:
+        # Use the current player's color for the selection rectangle
+        selection_color = next(player.color for player in players if player.player_id == current_player)
+        pygame.draw.rect(screen, selection_color, rect, 3)
+    for unit in all_units:
         unit.draw(screen)
-    font = pygame.font.SysFont(None, 24)
-    milk_text = font.render(f"Milk: {milk:.2f}", True, BLUE)
-    screen.blit(milk_text, (10, 10))
+    # Draw buttons
+    pygame.draw.rect(screen, LIGHT_GRAY, button_player1)
+    pygame.draw.rect(screen, LIGHT_GRAY, button_player2)
+    player1_text = font.render("Select Player 1", True, BLACK)
+    player2_text = font.render("Select Player 2", True, BLACK)
+    screen.blit(player1_text, (BUTTON_PLAYER1_POS[0] + 10, BUTTON_PLAYER1_POS[1] + 10))
+    screen.blit(player2_text, (BUTTON_PLAYER2_POS[0] + 10, BUTTON_PLAYER2_POS[1] + 10))
+    # Draw milk for each player
+    for i, player in enumerate(players):
+        milk_text = font.render(f"Player {player.player_id} Milk: {player.milk:.2f}", True, player.color)
+        screen.blit(milk_text, (10, 10 + i * 30))
     pygame.display.flip()
     clock.tick(60)
 
