@@ -11,7 +11,7 @@ pygame.init()
 SCREEN_WIDTH = 1000
 SCREEN_HEIGHT = 1000
 screen = pygame.display.set_mode((SCREEN_WIDTH, SCREEN_HEIGHT))
-pygame.display.set_caption("Simple RTS Game with Border and Bottom UI")
+pygame.display.set_caption("Simple RTS Game with Cow Image")
 clock = pygame.time.Clock()
 
 # Colors
@@ -31,9 +31,9 @@ TOWN_CENTER_GRAY = (100, 100, 100, 128)
 BLACK = (0, 0, 0)
 LIGHT_GRAY = (150, 150, 150)
 HIGHLIGHT_GRAY = (200, 200, 200)
-BORDER_OUTER = (50, 50, 50)  # Dark gray for border
-BORDER_INNER = (200, 200, 200)  # Light gray for inner edge
-PANEL_COLOR = (100, 100, 100)  # Bottom panel background
+BORDER_OUTER = (50, 50, 50)
+BORDER_INNER = (200, 200, 200)
+PANEL_COLOR = (100, 100, 100)
 
 # Tile settings
 TILE_SIZE = 20
@@ -45,7 +45,7 @@ MAP_HEIGHT = GRASS_ROWS * TILE_SIZE  # 2000
 # UI settings
 BORDER_WIDTH = 10
 VIEW_WIDTH = SCREEN_WIDTH - 2 * BORDER_WIDTH  # 980
-VIEW_HEIGHT = SCREEN_HEIGHT - 2 * BORDER_WIDTH - 150  # 830 (150 for bottom panel)
+VIEW_HEIGHT = SCREEN_HEIGHT - 2 * BORDER_WIDTH - 150  # 830
 VIEW_X = BORDER_WIDTH  # 10
 VIEW_Y = BORDER_WIDTH  # 10
 PANEL_HEIGHT = 150
@@ -56,7 +56,7 @@ BUTTON_WIDTH = 150
 BUTTON_HEIGHT = 40
 BUTTON_MARGIN = 10
 BUTTON_PLAYER1_POS = (SCREEN_WIDTH // 2 - BUTTON_WIDTH - BUTTON_MARGIN - 50, PANEL_Y + 10)
-BUTTON_PLAYER2_POS = (SCREEN_WIDTH // 2 - 50, PANEL_Y + 10)
+BUTTON_PLAYER2_POS = (SCREEN_WIDTH // 2 - BUTTON_WIDTH - BUTTON_MARGIN - 50, PANEL_Y + 10 + BUTTON_HEIGHT + BUTTON_MARGIN)
 BUTTON_SPAWN_COW_POS = (SCREEN_WIDTH // 2 + BUTTON_WIDTH + BUTTON_MARGIN - 50, PANEL_Y + 10)
 
 # Camera settings
@@ -120,7 +120,7 @@ class Tree(SimpleTile):
 
 # Unit class
 class Unit:
-    def __init__(self, x, y, size, speed, color, player_id):
+    def __init__(self, x, y, size, speed, color, player_id, player_color):
         self.pos = Vector2(x, y)
         self.target = None
         self.speed = speed
@@ -129,15 +129,26 @@ class Unit:
         self.min_distance = self.size
         self.color = color
         self.player_id = player_id
+        self.player_color = player_color
         self.velocity = Vector2(0, 0)
         self.damping = 0.95
         self.hp = 100
         self.mana = 0
         self.special = 0
+        self.image = None  # Default to no image
 
     def draw(self, screen, camera_x, camera_y):
-        color = GREEN if self.selected else self.color
-        pygame.draw.rect(screen, color, (self.pos.x - self.size / 2 - camera_x, self.pos.y - self.size / 2 - camera_y, self.size, self.size))
+        if not self.image:
+            color = GREEN if self.selected else self.color
+            pygame.draw.rect(screen, color, (self.pos.x - self.size / 2 - camera_x, self.pos.y - self.size / 2 - camera_y, self.size, self.size))
+            circle_radius = self.size / 8
+            pygame.draw.circle(screen, self.player_color, (int(self.pos.x - camera_x), int(self.pos.y - camera_y)), circle_radius)
+        else:
+            scaled_image = pygame.transform.scale(self.image, (int(self.size), int(self.size)))
+            image_rect = scaled_image.get_rect(center=(int(self.pos.x - camera_x), int(self.pos.y - camera_y)))
+            screen.blit(scaled_image, image_rect)
+        if self.selected:
+            pygame.draw.rect(screen, self.player_color, (self.pos.x - self.size / 2 - camera_x, self.pos.y - self.size / 2 - camera_y, self.size, self.size), 1)
 
     def move(self, units):
         self.velocity = Vector2(0, 0)
@@ -210,60 +221,84 @@ class Unit:
 
 # Building class
 class Building(Unit):
-    def __init__(self, x, y, size, color, player_id):
-        super().__init__(x, y, size, speed=0, color=color, player_id=player_id)
+    def __init__(self, x, y, size, color, player_id, player_color):
+        super().__init__(x, y, size, speed=0, color=color, player_id=player_id, player_color=player_color)
 
     def move(self, units):
         pass
 
 # Barn class
 class Barn(Building):
-    def __init__(self, x, y, player_id):
-        super().__init__(x, y, size=48, color=DARK_GRAY, player_id=player_id)
-        self.harvest_rate = 60 / 60  # 1 per second at 60 FPS
+    def __init__(self, x, y, player_id, player_color):
+        super().__init__(x, y, size=48, color=DARK_GRAY, player_id=player_id, player_color=player_color)
+        self.harvest_rate = 60 / 60  # Fixed to 1 per second at 60 FPS
 
     def draw(self, screen, camera_x, camera_y):
         color = GREEN if self.selected else self.color
         barn_surface = pygame.Surface((self.size, self.size), pygame.SRCALPHA)
         pygame.draw.rect(barn_surface, color, (0, 0, self.size, self.size))
         screen.blit(barn_surface, (self.pos.x - self.size / 2 - camera_x, self.pos.y - self.size / 2 - camera_y))
+        circle_radius = self.size / 8
+        pygame.draw.circle(screen, self.player_color, (int(self.pos.x - camera_x), int(self.pos.y - camera_y)), circle_radius)
+        if self.selected:
+            pygame.draw.rect(screen, self.player_color, (self.pos.x - self.size / 2 - camera_x, self.pos.y - self.size / 2 - camera_y, self.size, self.size), 1)
+
 
 # TownCenter class
 class TownCenter(Building):
-    def __init__(self, x, y, player_id):
-        super().__init__(x, y, size=64, color=TOWN_CENTER_GRAY, player_id=player_id)
+    def __init__(self, x, y, player_id, player_color):
+        super().__init__(x, y, size=64, color=TOWN_CENTER_GRAY, player_id=player_id, player_color=player_color)
 
     def draw(self, screen, camera_x, camera_y):
         color = GREEN if self.selected else self.color
         town_center_surface = pygame.Surface((self.size, self.size), pygame.SRCALPHA)
         pygame.draw.rect(town_center_surface, color, (0, 0, self.size, self.size))
         screen.blit(town_center_surface, (self.pos.x - self.size / 2 - camera_x, self.pos.y - self.size / 2 - camera_y))
+        circle_radius = self.size / 8
+        pygame.draw.circle(screen, self.player_color, (int(self.pos.x - camera_x), int(self.pos.y - camera_y)), circle_radius)
+        if self.selected:
+            pygame.draw.rect(screen, self.player_color, (self.pos.x - self.size / 2 - camera_x, self.pos.y - self.size / 2 - camera_y, self.size, self.size), 1)
 
 # Axeman class
 class Axeman(Unit):
     def __init__(self, x, y, player_id, player_color):
-        super().__init__(x, y, size=16, speed=5, color=RED, player_id=player_id)
+        super().__init__(x, y, size=16, speed=5, color=RED, player_id=player_id, player_color=player_color)
 
 # Knight class
 class Knight(Unit):
     def __init__(self, x, y, player_id, player_color):
-        super().__init__(x, y, size=16, speed=2, color=BLUE, player_id=player_id)
+        super().__init__(x, y, size=16, speed=2, color=BLUE, player_id=player_id, player_color=player_color)
 
 # Archer class
 class Archer(Unit):
     def __init__(self, x, y, player_id, player_color):
-        super().__init__(x, y, size=16, speed=8, color=YELLOW, player_id=player_id)
+        super().__init__(x, y, size=16, speed=8, color=YELLOW, player_id=player_id, player_color=player_color)
 
 # Cow class
 class Cow(Unit):
     def __init__(self, x, y, player_id, player_color):
-        super().__init__(x, y, size=16, speed=4, color=BROWN, player_id=player_id)
+        super().__init__(x, y, size=16, speed=4, color=BROWN, player_id=player_id, player_color=player_color)
         self.harvest_rate = 0.01
         self.assigned_corner = None
+        try:
+            self.image = pygame.image.load("cow.png")
+            self.image = pygame.transform.scale(self.image, (int(self.size), int(self.size)))
+        except pygame.error as e:
+            print(f"Failed to load cow.png: {e}")
+            self.image = None
 
     def draw(self, screen, camera_x, camera_y):
-        color = GREEN if self.selected else self.color
-        pygame.draw.rect(screen, color, (self.pos.x - self.size / 2 - camera_x, self.pos.y - self.size / 2 - camera_y, self.size, self.size))
+        if not self.image:
+            color = GREEN if self.selected else self.color
+            pygame.draw.rect(screen, color, (self.pos.x - self.size / 2 - camera_x, self.pos.y - self.size / 2 - camera_y, self.size, self.size))
+            circle_radius = self.size / 8
+            pygame.draw.circle(screen, self.player_color, (int(self.pos.x - camera_x), int(self.pos.y - camera_y)), circle_radius)
+        else:
+            image_rect = self.image.get_rect(center=(int(self.pos.x - camera_x), int(self.pos.y - camera_y)))
+            screen.blit(self.image, image_rect)
+        if self.selected:
+            pygame.draw.rect(screen, self.player_color, (self.pos.x - self.size / 2 - camera_x, self.pos.y - self.size / 2 - camera_y, self.size, self.size), 1)
+        # Draw health bar
         bar_width = 16
         bar_height = 4
         bar_offset = 2
@@ -304,8 +339,10 @@ class Cow(Unit):
                 if available_barns:
                     closest_barn = min(available_barns, key=lambda barn: self.pos.distance_to(barn.pos))
                     barn_corners = [
-                        Vector2(closest_barn.pos.x - closest_barn.size / 2, closest_barn.pos.y - closest_barn.size / 2),
-                        Vector2(closest_barn.pos.x + closest_barn.size / 2, closest_barn.pos.y - closest_barn.size / 2)
+                        Vector2(closest_barn.pos.x - closest_barn.size / 2, closest_barn.pos.y - closest_barn.size / 2),  # Top-left
+                        Vector2(closest_barn.pos.x + closest_barn.size / 2, closest_barn.pos.y - closest_barn.size / 2),  # Top-right
+                        Vector2(closest_barn.pos.x - closest_barn.size / 2, closest_barn.pos.y + closest_barn.size / 2),  # Bottom-left
+                        Vector2(closest_barn.pos.x + closest_barn.size / 2, closest_barn.pos.y + closest_barn.size / 2)  # Bottom-right
                     ]
                     for corner in sorted(barn_corners, key=lambda c: self.pos.distance_to(c)):
                         corner_free = True
@@ -374,8 +411,8 @@ class Player:
             Knight(offset_x + 150, offset_y + 100, player_id, self.color),
             Archer(offset_x + 200, offset_y + 100, player_id, self.color),
             Cow(offset_x + 300, offset_y + 100, player_id, self.color),
-            Barn(offset_x + 310, offset_y + 150, player_id),
-            TownCenter(offset_x + 150, offset_y + 150, player_id)
+            Barn(offset_x + 310, offset_y + 150, player_id, self.color),
+            TownCenter(offset_x + 150, offset_y + 150, player_id, self.color)
         ])
 
     def select_all_units(self):
@@ -470,17 +507,6 @@ button_spawn_cow = pygame.Rect(BUTTON_SPAWN_COW_POS[0], BUTTON_SPAWN_COW_POS[1],
 running = True
 font = pygame.font.SysFont(None, 24)
 while running:
-    # # Update camera for edge scrolling
-    # mouse_pos = pygame.mouse.get_pos()
-    # if mouse_pos[0] < VIEW_X + SCROLL_MARGIN:
-    #     camera_x = max(0, camera_x - SCROLL_SPEED)
-    # elif mouse_pos[0] > VIEW_X + VIEW_WIDTH - SCROLL_MARGIN:
-    #     camera_x = min(MAP_WIDTH - VIEW_WIDTH, camera_x + SCROLL_SPEED)
-    # if mouse_pos[1] < VIEW_Y + SCROLL_MARGIN:
-    #     camera_y = max(0, camera_y - SCROLL_SPEED)
-    # elif mouse_pos[1] > VIEW_Y + VIEW_HEIGHT - SCROLL_MARGIN:
-    #     camera_y = min(MAP_HEIGHT - VIEW_HEIGHT, camera_y + SCROLL_SPEED)
-
     # Update camera for arrow key scrolling
     keys = pygame.key.get_pressed()
     if keys[pygame.K_LEFT]:
@@ -507,7 +533,6 @@ while running:
         elif event.type == pygame.MOUSEBUTTONDOWN:
             if event.button == 1:
                 mouse_pos = Vector2(event.pos)
-                # Only allow selection in game view
                 if VIEW_X <= mouse_pos.x <= VIEW_X + VIEW_WIDTH and VIEW_Y <= mouse_pos.y <= VIEW_Y + VIEW_HEIGHT:
                     click_pos = Vector2(mouse_pos.x - VIEW_X + camera_x, mouse_pos.y - VIEW_Y + camera_y)
                     unit_clicked = None
@@ -524,7 +549,6 @@ while running:
                         selection_start = click_pos
                         selecting = True
                         print(f"Selection started at: {selection_start}")
-                # Handle button clicks
                 elif button_player1.collidepoint(event.pos):
                     current_player = players[0]
                     for player in players:
@@ -611,10 +635,10 @@ while running:
                         break
 
     # Draw
-    screen.fill(BORDER_OUTER)  # Fill with border color
-    pygame.draw.rect(screen, BORDER_INNER, (VIEW_X + 5, VIEW_Y + 5, VIEW_WIDTH - 10, VIEW_HEIGHT - 10))  # Inner border
-    pygame.draw.rect(screen, WHITE, (VIEW_X, VIEW_Y, VIEW_WIDTH, VIEW_HEIGHT))  # Game view
-    pygame.draw.rect(screen, PANEL_COLOR, (VIEW_X, PANEL_Y, VIEW_WIDTH, PANEL_HEIGHT))  # Bottom panel
+    screen.fill(BORDER_OUTER)
+    pygame.draw.rect(screen, BORDER_INNER, (VIEW_X + 5, VIEW_Y + 5, VIEW_WIDTH - 10, VIEW_HEIGHT - 10))
+    pygame.draw.rect(screen, WHITE, (VIEW_X, VIEW_Y, VIEW_WIDTH, VIEW_HEIGHT))
+    pygame.draw.rect(screen, PANEL_COLOR, (VIEW_X, PANEL_Y, VIEW_WIDTH, PANEL_HEIGHT))
 
     # Draw only visible tiles
     start_col = int(camera_x // TILE_SIZE)

@@ -2,6 +2,7 @@ import pygame
 import sys
 import random
 import math
+
 from pygame.math import Vector2
 
 # Initialize Pygame
@@ -11,7 +12,7 @@ pygame.init()
 SCREEN_WIDTH = 1000
 SCREEN_HEIGHT = 1000
 screen = pygame.display.set_mode((SCREEN_WIDTH, SCREEN_HEIGHT))
-pygame.display.set_caption("Simple RTS Game with Border and Bottom UI")
+pygame.display.set_caption("Simple RTS Game with Rivers and Bridges")
 clock = pygame.time.Clock()
 
 # Colors
@@ -25,15 +26,16 @@ GREEN = (0, 255, 0)
 GRASS_GREEN = (0, 100, 0)
 GRASS_BROWN = (139, 69, 19)
 TREE_GREEN = (0, 50, 0)
+RIVER_BLUE = (100, 200, 255)  # Light blue for rivers
 DARK_GRAY = (50, 50, 50, 128)
 GRAY = (128, 128, 128, 128)
 TOWN_CENTER_GRAY = (100, 100, 100, 128)
 BLACK = (0, 0, 0)
 LIGHT_GRAY = (150, 150, 150)
 HIGHLIGHT_GRAY = (200, 200, 200)
-BORDER_OUTER = (50, 50, 50)  # Dark gray for border
-BORDER_INNER = (200, 200, 200)  # Light gray for inner edge
-PANEL_COLOR = (100, 100, 100)  # Bottom panel background
+BORDER_OUTER = (50, 50, 50)
+BORDER_INNER = (200, 200, 200)
+PANEL_COLOR = (100, 100, 100)
 
 # Tile settings
 TILE_SIZE = 20
@@ -45,7 +47,7 @@ MAP_HEIGHT = GRASS_ROWS * TILE_SIZE  # 2000
 # UI settings
 BORDER_WIDTH = 10
 VIEW_WIDTH = SCREEN_WIDTH - 2 * BORDER_WIDTH  # 980
-VIEW_HEIGHT = SCREEN_HEIGHT - 2 * BORDER_WIDTH - 150  # 830 (150 for bottom panel)
+VIEW_HEIGHT = SCREEN_HEIGHT - 2 * BORDER_WIDTH - 150  # 830
 VIEW_X = BORDER_WIDTH  # 10
 VIEW_Y = BORDER_WIDTH  # 10
 PANEL_HEIGHT = 150
@@ -78,6 +80,9 @@ class SimpleTile:
 
     def regrow(self, amount):
         pass
+
+    def is_passable(self):
+        return True
 
 # GrassTile class
 class GrassTile(SimpleTile):
@@ -118,9 +123,20 @@ class Tree(SimpleTile):
     def draw(self, screen, camera_x, camera_y):
         pygame.draw.rect(screen, TREE_GREEN, (self.pos.x - camera_x, self.pos.y - camera_y, TILE_SIZE, TILE_SIZE))
 
+# RiverTile class
+class RiverTile(SimpleTile):
+    def __init__(self, x, y):
+        super().__init__(x, y)
+
+    def draw(self, screen, camera_x, camera_y):
+        pygame.draw.rect(screen, RIVER_BLUE, (self.pos.x - camera_x, self.pos.y - camera_y, TILE_SIZE, TILE_SIZE))
+
+    def is_passable(self):
+        return False
+
 # Unit class
 class Unit:
-    def __init__(self, x, y, size, speed, color, player_id):
+    def __init__(self, x, y, size, speed, color, player_id, player_color, image=None):
         self.pos = Vector2(x, y)
         self.target = None
         self.speed = speed
@@ -128,7 +144,9 @@ class Unit:
         self.size = size
         self.min_distance = self.size
         self.color = color
+        self.image = image
         self.player_id = player_id
+        self.player_color = player_color
         self.velocity = Vector2(0, 0)
         self.damping = 0.95
         self.hp = 100
@@ -136,15 +154,32 @@ class Unit:
         self.special = 0
 
     def draw(self, screen, camera_x, camera_y):
-        color = GREEN if self.selected else self.color
-        pygame.draw.rect(screen, color, (self.pos.x - self.size / 2 - camera_x, self.pos.y - self.size / 2 - camera_y, self.size, self.size))
+        if not self.image:
+            color = GREEN if self.selected else self.color
+            pygame.draw.rect(screen, color, (self.pos.x - self.size / 2 - camera_x, self.pos.y - self.size / 2 - camera_y, self.size, self.size))
+            circle_radius = self.size / 8
+            pygame.draw.circle(screen, self.player_color, (int(self.pos.x - camera_x), int(self.pos.y - camera_y)), circle_radius)
+        else:
+            scaled_image = pygame.transform.scale(self.image, (int(self.size), int(self.size)))
+            image_rect = scaled_image.get_rect(center=(int(self.pos.x - camera_x), int(self.pos.y - camera_y)))
+            screen.blit(scaled_image, image_rect)
 
-    def move(self, units):
-        self.velocity = Vector2(0, 0)
+    def move(self, units, grass_tiles):
         if self.target:
+            # Check if path to target crosses a river
+            tile_x = int(self.pos.x // TILE_SIZE)
+            tile_y = int(self.pos.y // TILE_SIZE)
+            target_tile_x = int(self.target.x // TILE_SIZE)
+            target_tile_y = int(self.target.y // TILE_SIZE)
             direction = self.target - self.pos
             distance_to_target = direction.length()
             if distance_to_target > 2:
+                next_pos = self.pos + direction.normalize() * self.speed
+                next_tile_x = int(next_pos.x // TILE_SIZE)
+                next_tile_y = int(next_pos.y // TILE_SIZE)
+                if 0 <= next_tile_x < GRASS_COLS and 0 <= next_tile_y < GRASS_ROWS:
+                    if isinstance(grass_tiles[next_tile_y][next_tile_x], RiverTile) and not isinstance(grass_tiles[next_tile_y][next_tile_x], Dirt):
+                        return  # Stop movement if next tile is a river
                 self.velocity = direction.normalize() * self.speed
             else:
                 self.pos = Vector2(self.target)
@@ -152,7 +187,7 @@ class Unit:
         self.velocity *= self.damping
         self.pos += self.velocity
 
-    def resolve_collisions(self, units):
+    def resolve_collisions(self, units, grass_tiles):
         for other in units:
             if other is not self:
                 if isinstance(self, Cow) and isinstance(other, Barn):
@@ -195,6 +230,27 @@ class Unit:
                         other.pos -= correction
                 elif isinstance(self, Building):
                     pass
+        # Check collision with river tiles
+        if not isinstance(self, Building):
+            tile_x = int(self.pos.x // TILE_SIZE)
+            tile_y = int(self.pos.y // TILE_SIZE)
+            adjacent_tiles = [
+                (tile_x, tile_y), (tile_x - 1, tile_y), (tile_x + 1, tile_y),
+                (tile_x, tile_y - 1), (tile_x, tile_y + 1),
+                (tile_x - 1, tile_y - 1), (tile_x + 1, tile_y - 1),
+                (tile_x - 1, tile_y + 1), (tile_x + 1, tile_y + 1)
+            ]
+            for tx, ty in adjacent_tiles:
+                if 0 <= tx < GRASS_COLS and 0 <= ty < GRASS_ROWS:
+                    if isinstance(grass_tiles[ty][tx], RiverTile) and not isinstance(grass_tiles[ty][tx], Dirt):
+                        tile_rect = pygame.Rect(tx * TILE_SIZE, ty * TILE_SIZE, TILE_SIZE, TILE_SIZE)
+                        unit_rect = pygame.Rect(self.pos.x - self.size / 2, self.pos.y - self.size / 2, self.size, self.size)
+                        if tile_rect.colliderect(unit_rect):
+                            overlap = self.size / 2
+                            direction = (self.pos - Vector2(tx * TILE_SIZE + TILE_SIZE / 2, ty * TILE_SIZE + TILE_SIZE / 2))
+                            if direction.length() > 0:
+                                direction = direction.normalize()
+                                self.pos += direction * overlap
 
     def keep_in_bounds(self):
         self.pos.x = max(self.size / 2, min(MAP_WIDTH - self.size / 2, self.pos.x))
@@ -210,60 +266,66 @@ class Unit:
 
 # Building class
 class Building(Unit):
-    def __init__(self, x, y, size, color, player_id):
-        super().__init__(x, y, size, speed=0, color=color, player_id=player_id)
+    def __init__(self, x, y, size, color, player_id, player_color):
+        super().__init__(x, y, size, speed=0, color=color, player_id=player_id, player_color=player_color)
 
-    def move(self, units):
+    def move(self, units, grass_tiles):
         pass
 
 # Barn class
 class Barn(Building):
-    def __init__(self, x, y, player_id):
-        super().__init__(x, y, size=48, color=DARK_GRAY, player_id=player_id)
-        self.harvest_rate = 60 / 60  # 1 per second at 60 FPS
+    def __init__(self, x, y, player_id, player_color):
+        super().__init__(x, y, size=48, color=DARK_GRAY, player_id=player_id, player_color=player_color)
+        self.harvest_rate = 60 / 60
 
     def draw(self, screen, camera_x, camera_y):
         color = GREEN if self.selected else self.color
         barn_surface = pygame.Surface((self.size, self.size), pygame.SRCALPHA)
         pygame.draw.rect(barn_surface, color, (0, 0, self.size, self.size))
         screen.blit(barn_surface, (self.pos.x - self.size / 2 - camera_x, self.pos.y - self.size / 2 - camera_y))
+        circle_radius = self.size / 8
+        pygame.draw.circle(screen, self.player_color, (int(self.pos.x - camera_x), int(self.pos.y - camera_y)), circle_radius)
 
 # TownCenter class
 class TownCenter(Building):
-    def __init__(self, x, y, player_id):
-        super().__init__(x, y, size=64, color=TOWN_CENTER_GRAY, player_id=player_id)
+    def __init__(self, x, y, player_id, player_color):
+        super().__init__(x, y, size=64, color=TOWN_CENTER_GRAY, player_id=player_id, player_color=player_color)
 
     def draw(self, screen, camera_x, camera_y):
         color = GREEN if self.selected else self.color
         town_center_surface = pygame.Surface((self.size, self.size), pygame.SRCALPHA)
         pygame.draw.rect(town_center_surface, color, (0, 0, self.size, self.size))
         screen.blit(town_center_surface, (self.pos.x - self.size / 2 - camera_x, self.pos.y - self.size / 2 - camera_y))
+        circle_radius = self.size / 8
+        pygame.draw.circle(screen, self.player_color, (int(self.pos.x - camera_x), int(self.pos.y - camera_y)), circle_radius)
 
 # Axeman class
 class Axeman(Unit):
     def __init__(self, x, y, player_id, player_color):
-        super().__init__(x, y, size=16, speed=5, color=RED, player_id=player_id)
+        super().__init__(x, y, size=16, speed=5, color=RED, player_id=player_id, player_color=player_color)
 
 # Knight class
 class Knight(Unit):
     def __init__(self, x, y, player_id, player_color):
-        super().__init__(x, y, size=16, speed=2, color=BLUE, player_id=player_id)
+        super().__init__(x, y, size=16, speed=2, color=BLUE, player_id=player_id, player_color=player_color)
 
 # Archer class
 class Archer(Unit):
     def __init__(self, x, y, player_id, player_color):
-        super().__init__(x, y, size=16, speed=8, color=YELLOW, player_id=player_id)
+        super().__init__(x, y, size=16, speed=8, color=YELLOW, player_id=player_id, player_color=player_color)
 
 # Cow class
 class Cow(Unit):
     def __init__(self, x, y, player_id, player_color):
-        super().__init__(x, y, size=16, speed=4, color=BROWN, player_id=player_id)
+        super().__init__(x, y, size=16, speed=4, color=BROWN, player_id=player_id, player_color=player_color, image = pygame.image.load("cow.png"))
         self.harvest_rate = 0.01
         self.assigned_corner = None
 
     def draw(self, screen, camera_x, camera_y):
         color = GREEN if self.selected else self.color
         pygame.draw.rect(screen, color, (self.pos.x - self.size / 2 - camera_x, self.pos.y - self.size / 2 - camera_y, self.size, self.size))
+        circle_radius = self.size / 8
+        pygame.draw.circle(screen, self.player_color, (int(self.pos.x - camera_x), int(self.pos.y - camera_y)), circle_radius)
         bar_width = 16
         bar_height = 4
         bar_offset = 2
@@ -273,12 +335,22 @@ class Cow(Unit):
         fill_width = (self.special / 100) * bar_width
         pygame.draw.rect(screen, WHITE, (bar_x, bar_y, fill_width, bar_height))
 
-    def move(self, units):
+    def move(self, units, grass_tiles):
         self.velocity = Vector2(0, 0)
         if self.target:
+            tile_x = int(self.pos.x // TILE_SIZE)
+            tile_y = int(self.pos.y // TILE_SIZE)
+            target_tile_x = int(self.target.x // TILE_SIZE)
+            target_tile_y = int(self.target.y // TILE_SIZE)
             direction = self.target - self.pos
             distance_to_target = direction.length()
             if distance_to_target > 2:
+                next_pos = self.pos + direction.normalize() * self.speed
+                next_tile_x = int(next_pos.x // TILE_SIZE)
+                next_tile_y = int(next_pos.y // TILE_SIZE)
+                if 0 <= next_tile_x < GRASS_COLS and 0 <= next_tile_y < GRASS_ROWS:
+                    if isinstance(grass_tiles[next_tile_y][next_tile_x], RiverTile) and not isinstance(grass_tiles[next_tile_y][next_tile_x], Dirt):
+                        return
                 self.velocity = direction.normalize() * self.speed
             else:
                 self.pos = Vector2(self.target)
@@ -336,7 +408,7 @@ class Cow(Unit):
                 random.shuffle(adjacent_tiles)
                 for adj_x, adj_y in adjacent_tiles:
                     if 0 <= adj_x < GRASS_COLS and 0 <= adj_y < GRASS_ROWS:
-                        if isinstance(grass_tiles[adj_y][adj_x], GrassTile) and not isinstance(grass_tiles[adj_y][adj_x], (Dirt, Tree)) and grass_tiles[adj_y][adj_x].grass_level > 0.5:
+                        if isinstance(grass_tiles[adj_y][adj_x], GrassTile) and not isinstance(grass_tiles[adj_y][adj_x], (Dirt, Tree, RiverTile)):
                             self.target = Vector2(adj_x * TILE_SIZE + TILE_SIZE / 2, adj_y * TILE_SIZE + TILE_SIZE / 2)
                             break
                 return
@@ -344,7 +416,7 @@ class Cow(Unit):
             tile_x = int(self.pos.x // TILE_SIZE)
             tile_y = int(self.pos.y // TILE_SIZE)
             if 0 <= tile_x < GRASS_COLS and 0 <= tile_y < GRASS_ROWS:
-                if isinstance(grass_tiles[tile_y][tile_x], GrassTile) and not isinstance(grass_tiles[tile_y][tile_x], (Dirt, Tree)):
+                if isinstance(grass_tiles[tile_y][tile_x], GrassTile) and not isinstance(grass_tiles[tile_y][tile_x], (Dirt, Tree, RiverTile)):
                     harvested = grass_tiles[tile_y][tile_x].harvest(self.harvest_rate)
                     self.special = min(100, self.special + harvested * 50)
                     if grass_tiles[tile_y][tile_x].grass_level == 0:
@@ -355,7 +427,7 @@ class Cow(Unit):
                         random.shuffle(adjacent_tiles)
                         for adj_x, adj_y in adjacent_tiles:
                             if 0 <= adj_x < GRASS_COLS and 0 <= adj_y < GRASS_ROWS:
-                                if isinstance(grass_tiles[adj_y][adj_x], GrassTile) and not isinstance(grass_tiles[adj_y][adj_x], (Dirt, Tree)) and grass_tiles[adj_y][adj_x].grass_level > 0.5:
+                                if isinstance(grass_tiles[adj_y][adj_x], GrassTile) and not isinstance(grass_tiles[adj_y][adj_x], (Dirt, Tree, RiverTile)):
                                     self.target = Vector2(adj_x * TILE_SIZE + TILE_SIZE / 2, adj_y * TILE_SIZE + TILE_SIZE / 2)
                                     break
 
@@ -374,8 +446,8 @@ class Player:
             Knight(offset_x + 150, offset_y + 100, player_id, self.color),
             Archer(offset_x + 200, offset_y + 100, player_id, self.color),
             Cow(offset_x + 300, offset_y + 100, player_id, self.color),
-            Barn(offset_x + 310, offset_y + 150, player_id),
-            TownCenter(offset_x + 150, offset_y + 150, player_id)
+            Barn(offset_x + 310, offset_y + 150, player_id, self.color),
+            TownCenter(offset_x + 150, offset_y + 150, player_id, self.color)
         ])
 
     def select_all_units(self):
@@ -455,6 +527,103 @@ while len(tree_tiles) < target_tree_tiles and eligible_tiles:
     if (center_row, center_col) in eligible_tiles:
         eligible_tiles.remove((center_row, center_col))
 
+# Generate 2–4 rivers
+def bresenham_line(x0, y0, x1, y1):
+    points = []
+    dx = abs(x1 - x0)
+    dy = abs(y1 - y0)
+    sx = 1 if x0 < x1 else -1
+    sy = 1 if y0 < y1 else -1
+    err = dx - dy
+    while True:
+        points.append((x0, y0))
+        if x0 == x1 and y0 == y1:
+            break
+        e2 = 2 * err
+        if e2 > -dy:
+            err -= dy
+            x0 += sx
+        if e2 < dx:
+            err += dx
+            y0 += sy
+    return points
+
+num_rivers = random.randint(2, 4)
+max_river_tiles = int(total_tiles * 0.05)  # 500 tiles
+river_tiles = []
+borders = ['top', 'bottom', 'left', 'right']
+for _ in range(num_rivers):
+    start_border = random.choice(borders)
+    end_border = random.choice([b for b in borders if b != start_border])
+    if start_border == 'top':
+        start_x, start_y = random.randint(0, GRASS_COLS - 1), 0
+    elif start_border == 'bottom':
+        start_x, start_y = random.randint(0, GRASS_COLS - 1), GRASS_ROWS - 1
+    elif start_border == 'left':
+        start_x, start_y = 0, random.randint(0, GRASS_ROWS - 1)
+    else:  # right
+        start_x, start_y = GRASS_COLS - 1, random.randint(0, GRASS_ROWS - 1)
+    if end_border == 'top':
+        end_x, end_y = random.randint(0, GRASS_COLS - 1), 0
+    elif end_border == 'bottom':
+        end_x, end_y = random.randint(0, GRASS_COLS - 1), GRASS_ROWS - 1
+    elif end_border == 'left':
+        end_x, end_y = 0, random.randint(0, GRASS_ROWS - 1)
+    else:  # right
+        end_x, end_y = GRASS_COLS - 1, random.randint(0, GRASS_ROWS - 1)
+    path = bresenham_line(start_x, start_y, end_x, end_y)
+    river_path = []
+    for x, y in path:
+        if 0 <= x < GRASS_COLS and 0 <= y < GRASS_ROWS and not is_tile_occupied(y, x, all_units) and not isinstance(grass_tiles[y][x], Dirt):
+            river_path.append((x, y))
+            # Add adjacent tile for 2-tile width
+            if start_border in ['top', 'bottom'] and end_border in ['top', 'bottom']:
+                if 0 <= x + 1 < GRASS_COLS and not is_tile_occupied(y, x + 1, all_units) and not isinstance(grass_tiles[y][x + 1], Dirt):
+                    river_path.append((x + 1, y))
+                elif 0 <= x - 1 < GRASS_COLS and not is_tile_occupied(y, x - 1, all_units) and not isinstance(grass_tiles[y][x - 1], Dirt):
+                    river_path.append((x - 1, y))
+            else:  # left, right
+                if 0 <= y + 1 < GRASS_ROWS and not is_tile_occupied(y + 1, x, all_units) and not isinstance(grass_tiles[y + 1][x], Dirt):
+                    river_path.append((x, y + 1))
+                elif 0 <= y - 1 < GRASS_ROWS and not is_tile_occupied(y - 1, x, all_units) and not isinstance(grass_tiles[y - 1][x], Dirt):
+                    river_path.append((x, y - 1))
+    if len(river_path) * 2 <= max_river_tiles - len(river_tiles):
+        for x, y in river_path:
+            grass_tiles[y][x] = RiverTile(x * TILE_SIZE, y * TILE_SIZE)
+            river_tiles.append((x, y))
+    if len(river_tiles) >= max_river_tiles:
+        break
+
+# Add 1–3 dirt bridges per river
+bridge_tiles = []
+rivers = []
+current_river = []
+last_pos = None
+for x, y in sorted(river_tiles):
+    if last_pos and (abs(x - last_pos[0]) > 1 or abs(y - last_pos[1]) > 1):
+        rivers.append(current_river)
+        current_river = []
+    current_river.append((x, y))
+    last_pos = (x, y)
+if current_river:
+    rivers.append(current_river)
+
+for river in rivers:
+    num_bridges = random.randint(1, 3)
+    available_positions = [(x, y) for x, y in river if not is_tile_occupied(y, x, all_units)]
+    random.shuffle(available_positions)
+    for _ in range(min(num_bridges, len(available_positions))):
+        bx, by = available_positions.pop()
+        # Place 2x2 dirt bridge
+        for dx in range(-1, 1):
+            for dy in range(-1, 1):
+                nx, ny = bx + dx, by + dy
+                if (0 <= nx < GRASS_COLS and 0 <= ny < GRASS_ROWS and
+                    isinstance(grass_tiles[ny][nx], RiverTile) and
+                    not is_tile_occupied(ny, nx, all_units)):
+                    grass_tiles[ny][nx] = Dirt(nx * TILE_SIZE, ny * TILE_SIZE)
+                    bridge_tiles.append((nx, ny))
+
 # Selection rectangle and player selection mode
 selection_start = None
 selection_end = None
@@ -470,18 +639,6 @@ button_spawn_cow = pygame.Rect(BUTTON_SPAWN_COW_POS[0], BUTTON_SPAWN_COW_POS[1],
 running = True
 font = pygame.font.SysFont(None, 24)
 while running:
-    # # Update camera for edge scrolling
-    # mouse_pos = pygame.mouse.get_pos()
-    # if mouse_pos[0] < VIEW_X + SCROLL_MARGIN:
-    #     camera_x = max(0, camera_x - SCROLL_SPEED)
-    # elif mouse_pos[0] > VIEW_X + VIEW_WIDTH - SCROLL_MARGIN:
-    #     camera_x = min(MAP_WIDTH - VIEW_WIDTH, camera_x + SCROLL_SPEED)
-    # if mouse_pos[1] < VIEW_Y + SCROLL_MARGIN:
-    #     camera_y = max(0, camera_y - SCROLL_SPEED)
-    # elif mouse_pos[1] > VIEW_Y + VIEW_HEIGHT - SCROLL_MARGIN:
-    #     camera_y = min(MAP_HEIGHT - VIEW_HEIGHT, camera_y + SCROLL_SPEED)
-
-    # Update camera for arrow key scrolling
     keys = pygame.key.get_pressed()
     if keys[pygame.K_LEFT]:
         camera_x = max(0, camera_x - SCROLL_SPEED)
@@ -507,7 +664,6 @@ while running:
         elif event.type == pygame.MOUSEBUTTONDOWN:
             if event.button == 1:
                 mouse_pos = Vector2(event.pos)
-                # Only allow selection in game view
                 if VIEW_X <= mouse_pos.x <= VIEW_X + VIEW_WIDTH and VIEW_Y <= mouse_pos.y <= VIEW_Y + VIEW_HEIGHT:
                     click_pos = Vector2(mouse_pos.x - VIEW_X + camera_x, mouse_pos.y - VIEW_Y + camera_y)
                     unit_clicked = None
@@ -524,7 +680,6 @@ while running:
                         selection_start = click_pos
                         selecting = True
                         print(f"Selection started at: {selection_start}")
-                # Handle button clicks
                 elif button_player1.collidepoint(event.pos):
                     current_player = players[0]
                     for player in players:
@@ -588,8 +743,8 @@ while running:
     for player in players:
         barns = [unit for unit in player.units if isinstance(unit, Barn)]
         for unit in player.units:
-            unit.move(all_units)
-            unit.resolve_collisions(all_units)
+            unit.move(all_units, grass_tiles)
+            unit.resolve_collisions(all_units, grass_tiles)
             unit.keep_in_bounds()
             if isinstance(unit, Cow):
                 unit.harvest_grass(grass_tiles, barns, player.cow_in_barn, player)
@@ -611,10 +766,10 @@ while running:
                         break
 
     # Draw
-    screen.fill(BORDER_OUTER)  # Fill with border color
-    pygame.draw.rect(screen, BORDER_INNER, (VIEW_X + 5, VIEW_Y + 5, VIEW_WIDTH - 10, VIEW_HEIGHT - 10))  # Inner border
-    pygame.draw.rect(screen, WHITE, (VIEW_X, VIEW_Y, VIEW_WIDTH, VIEW_HEIGHT))  # Game view
-    pygame.draw.rect(screen, PANEL_COLOR, (VIEW_X, PANEL_Y, VIEW_WIDTH, PANEL_HEIGHT))  # Bottom panel
+    screen.fill(BORDER_OUTER)
+    pygame.draw.rect(screen, BORDER_INNER, (VIEW_X + 5, VIEW_Y + 5, VIEW_WIDTH - 10, VIEW_HEIGHT - 10))
+    pygame.draw.rect(screen, WHITE, (VIEW_X, VIEW_Y, VIEW_WIDTH, VIEW_HEIGHT))
+    pygame.draw.rect(screen, PANEL_COLOR, (VIEW_X, PANEL_Y, VIEW_WIDTH, PANEL_HEIGHT))
 
     # Draw only visible tiles
     start_col = int(camera_x // TILE_SIZE)
