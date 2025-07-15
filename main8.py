@@ -11,50 +11,84 @@ pygame.init()
 SCREEN_WIDTH = 1000
 SCREEN_HEIGHT = 1000
 screen = pygame.display.set_mode((SCREEN_WIDTH, SCREEN_HEIGHT))
-pygame.display.set_caption("Simple RTS Game with Buildings and TownCenter")
+pygame.display.set_caption("Simple RTS Game with Border and Bottom UI")
 clock = pygame.time.Clock()
 
 # Colors
-WHITE = (255, 255, 255)  # Background
-BLUE = (0, 0, 255)  # Player 1 units and selection rectangle
-PURPLE = (128, 0, 128)  # Player 2 units and selection rectangle
-RED = (255, 0, 0)  # Cow special bar background
-GREEN = (0, 255, 0)  # Selected unit highlight and Cow special bar fill
-GRASS_GREEN = (0, 100, 0)  # Full grass
-GRASS_BROWN = (139, 69, 19)  # Depleted grass and Dirt
-TREE_GREEN = (0, 50, 0)  # Tree tiles
-GRAY = (128, 128, 128, 128)  # Barn, 50% transparent
-TOWN_CENTER_GRAY = (100, 100, 100, 128)  # TownCenter, darker gray, 50% transparent
-BLACK = (0, 0, 0)  # Button text and FPS
-LIGHT_GRAY = (150, 150, 150)  # Button background (normal)
-HIGHLIGHT_GRAY = (200, 200, 200)  # Button background (highlighted)
+WHITE = (255, 255, 255)
+BLUE = (0, 0, 255)
+PURPLE = (128, 0, 128)
+RED = (255, 0, 0)
+GREEN = (0, 255, 0)
+GRASS_GREEN = (0, 100, 0)
+GRASS_BROWN = (139, 69, 19)
+TREE_GREEN = (0, 50, 0)
+GRAY = (128, 128, 128, 128)
+TOWN_CENTER_GRAY = (100, 100, 100, 128)
+BLACK = (0, 0, 0)
+LIGHT_GRAY = (150, 150, 150)
+HIGHLIGHT_GRAY = (200, 200, 200)
+BORDER_OUTER = (50, 50, 50)  # Dark gray for border
+BORDER_INNER = (200, 200, 200)  # Light gray for inner edge
+PANEL_COLOR = (100, 100, 100)  # Bottom panel background
 
-# Grass tile settings
+# Tile settings
 TILE_SIZE = 20
-GRASS_ROWS = SCREEN_HEIGHT // TILE_SIZE  # 50 rows
-GRASS_COLS = SCREEN_WIDTH // TILE_SIZE  # 50 cols
+GRASS_ROWS = 100
+GRASS_COLS = 100
+MAP_WIDTH = GRASS_COLS * TILE_SIZE  # 2000
+MAP_HEIGHT = GRASS_ROWS * TILE_SIZE  # 2000
+
+# UI settings
+BORDER_WIDTH = 10
+VIEW_WIDTH = SCREEN_WIDTH - 2 * BORDER_WIDTH  # 980
+VIEW_HEIGHT = SCREEN_HEIGHT - 2 * BORDER_WIDTH - 150  # 830 (150 for bottom panel)
+VIEW_X = BORDER_WIDTH  # 10
+VIEW_Y = BORDER_WIDTH  # 10
+PANEL_HEIGHT = 150
+PANEL_Y = SCREEN_HEIGHT - PANEL_HEIGHT  # 850
 
 # Button settings
 BUTTON_WIDTH = 150
 BUTTON_HEIGHT = 40
 BUTTON_MARGIN = 10
-BUTTON_PLAYER1_POS = (SCREEN_WIDTH - BUTTON_WIDTH - BUTTON_MARGIN, BUTTON_MARGIN)
-BUTTON_PLAYER2_POS = (SCREEN_WIDTH - BUTTON_WIDTH - BUTTON_MARGIN, BUTTON_MARGIN + BUTTON_HEIGHT + 10)
-BUTTON_SPAWN_COW_POS = (SCREEN_WIDTH - BUTTON_WIDTH - BUTTON_MARGIN, BUTTON_MARGIN + 2 * (BUTTON_HEIGHT + 10))
+BUTTON_PLAYER1_POS = (SCREEN_WIDTH // 2 - BUTTON_WIDTH - BUTTON_MARGIN - 50, PANEL_Y + 10)
+BUTTON_PLAYER2_POS = (SCREEN_WIDTH // 2 - 50, PANEL_Y + 10)
+BUTTON_SPAWN_COW_POS = (SCREEN_WIDTH // 2 + BUTTON_WIDTH + BUTTON_MARGIN - 50, PANEL_Y + 10)
 
-# GrassTile class
-class GrassTile:
+# Camera settings
+camera_x = 0
+camera_y = 0
+SCROLL_SPEED = 10
+SCROLL_MARGIN = 20
+
+# SimpleTile base class
+class SimpleTile:
     def __init__(self, x, y):
         self.pos = Vector2(x, y)
+
+    def draw(self, screen, camera_x, camera_y):
+        pass
+
+    def harvest(self, amount):
+        return 0.0
+
+    def regrow(self, amount):
+        pass
+
+# GrassTile class
+class GrassTile(SimpleTile):
+    def __init__(self, x, y):
+        super().__init__(x, y)
         self.grass_level = 1.0
 
-    def draw(self, screen):
+    def draw(self, screen, camera_x, camera_y):
         color = (
             int(GRASS_GREEN[0] * self.grass_level + GRASS_BROWN[0] * (1 - self.grass_level)),
             int(GRASS_GREEN[1] * self.grass_level + GRASS_BROWN[1] * (1 - self.grass_level)),
             int(GRASS_GREEN[2] * self.grass_level + GRASS_BROWN[2] * (1 - self.grass_level))
         )
-        pygame.draw.rect(screen, color, (self.pos.x, self.pos.y, TILE_SIZE, TILE_SIZE))
+        pygame.draw.rect(screen, color, (self.pos.x - camera_x, self.pos.y - camera_y, TILE_SIZE, TILE_SIZE))
 
     def harvest(self, amount):
         old_level = self.grass_level
@@ -66,34 +100,20 @@ class GrassTile:
         self.grass_level = min(1.0, self.grass_level + amount)
 
 # Dirt class
-class Dirt(GrassTile):
+class Dirt(SimpleTile):
     def __init__(self, x, y):
         super().__init__(x, y)
-        self.grass_level = 0.0
 
-    def draw(self, screen):
-        pygame.draw.rect(screen, GRASS_BROWN, (self.pos.x, self.pos.y, TILE_SIZE, TILE_SIZE))
-
-    def regrow(self, amount):
-        pass
-
-    def harvest(self, amount):
-        return 0.0
+    def draw(self, screen, camera_x, camera_y):
+        pygame.draw.rect(screen, GRASS_BROWN, (self.pos.x - camera_x, self.pos.y - camera_y, TILE_SIZE, TILE_SIZE))
 
 # Tree class
-class Tree(GrassTile):
+class Tree(SimpleTile):
     def __init__(self, x, y):
         super().__init__(x, y)
-        self.grass_level = 0.0
 
-    def draw(self, screen):
-        pygame.draw.rect(screen, TREE_GREEN, (self.pos.x, self.pos.y, TILE_SIZE, TILE_SIZE))
-
-    def regrow(self, amount):
-        pass
-
-    def harvest(self, amount):
-        return 0.0
+    def draw(self, screen, camera_x, camera_y):
+        pygame.draw.rect(screen, TREE_GREEN, (self.pos.x - camera_x, self.pos.y - camera_y, TILE_SIZE, TILE_SIZE))
 
 # Unit class
 class Unit:
@@ -112,9 +132,9 @@ class Unit:
         self.mana = 0
         self.special = 0
 
-    def draw(self, screen):
+    def draw(self, screen, camera_x, camera_y):
         color = GREEN if self.selected else self.color
-        pygame.draw.rect(screen, color, (self.pos.x - self.size / 2, self.pos.y - self.size / 2, self.size, self.size))
+        pygame.draw.rect(screen, color, (self.pos.x - self.size / 2 - camera_x, self.pos.y - self.size / 2 - camera_y, self.size, self.size))
 
     def move(self, units):
         self.velocity = Vector2(0, 0)
@@ -132,7 +152,6 @@ class Unit:
     def resolve_collisions(self, units):
         for other in units:
             if other is not self:
-                # Cow vs. Barn: Allow entry, repel from corners
                 if isinstance(self, Cow) and isinstance(other, Barn):
                     barn_corners = [
                         Vector2(other.pos.x - other.size / 2, other.pos.y - other.size / 2),
@@ -148,7 +167,6 @@ class Unit:
                             overlap = corner_radius - distance
                             direction = (self.pos - nearest_corner).normalize()
                             self.pos += direction * overlap
-                # Cow vs. other Building (e.g., TownCenter): Impassable
                 elif isinstance(self, Cow) and isinstance(other, Building) and not isinstance(other, Barn):
                     distance = self.pos.distance_to(other.pos)
                     combined_min_distance = (self.size + other.size) / 2
@@ -156,7 +174,6 @@ class Unit:
                         overlap = combined_min_distance - distance
                         direction = (self.pos - other.pos).normalize()
                         self.pos += direction * overlap
-                # Non-Cow unit vs. any Building: Impassable
                 elif not isinstance(self, Cow) and isinstance(other, Building):
                     distance = self.pos.distance_to(other.pos)
                     combined_min_distance = (self.size + other.size) / 2
@@ -164,7 +181,6 @@ class Unit:
                         overlap = combined_min_distance - distance
                         direction = (self.pos - other.pos).normalize()
                         self.pos += direction * overlap
-                # Non-Building vs. non-Building: Mutual repulsion
                 elif not isinstance(self, Building) and not isinstance(other, Building):
                     distance = self.pos.distance_to(other.pos)
                     combined_min_distance = (self.size + other.size) / 2
@@ -174,20 +190,20 @@ class Unit:
                         correction = direction * overlap * 0.5
                         self.pos += correction
                         other.pos -= correction
-                # Building vs. anything: No action (buildings are stationary)
                 elif isinstance(self, Building):
                     pass
 
     def keep_in_bounds(self):
-        self.pos.x = max(self.size / 2, min(SCREEN_WIDTH - self.size / 2, self.pos.x))
-        self.pos.y = max(self.size / 2, min(SCREEN_HEIGHT - self.size / 2, self.pos.y))
+        self.pos.x = max(self.size / 2, min(MAP_WIDTH - self.size / 2, self.pos.x))
+        self.pos.y = max(self.size / 2, min(MAP_HEIGHT - self.size / 2, self.pos.y))
 
     def harvest_grass(self, grass_tiles):
         pass
 
-    def is_clicked(self, click_pos):
-        return (abs(click_pos.x - self.pos.x) <= self.size / 2 and
-                abs(click_pos.y - self.pos.y) <= self.size / 2)
+    def is_clicked(self, click_pos, camera_x, camera_y):
+        adjusted_pos = Vector2(click_pos.x + camera_x, click_pos.y + camera_y)
+        return (abs(adjusted_pos.x - self.pos.x) <= self.size / 2 and
+                abs(adjusted_pos.y - self.pos.y) <= self.size / 2)
 
 # Building class
 class Building(Unit):
@@ -201,24 +217,24 @@ class Building(Unit):
 class Barn(Building):
     def __init__(self, x, y, player_id):
         super().__init__(x, y, size=48, color=GRAY, player_id=player_id)
-        self.harvest_rate = 1
+        self.harvest_rate = 60 / 60  # 1 per second at 60 FPS
 
-    def draw(self, screen):
+    def draw(self, screen, camera_x, camera_y):
         color = GREEN if self.selected else self.color
         barn_surface = pygame.Surface((self.size, self.size), pygame.SRCALPHA)
         pygame.draw.rect(barn_surface, color, (0, 0, self.size, self.size))
-        screen.blit(barn_surface, (self.pos.x - self.size / 2, self.pos.y - self.size / 2))
+        screen.blit(barn_surface, (self.pos.x - self.size / 2 - camera_x, self.pos.y - self.size / 2 - camera_y))
 
 # TownCenter class
 class TownCenter(Building):
     def __init__(self, x, y, player_id):
         super().__init__(x, y, size=64, color=TOWN_CENTER_GRAY, player_id=player_id)
 
-    def draw(self, screen):
+    def draw(self, screen, camera_x, camera_y):
         color = GREEN if self.selected else self.color
         town_center_surface = pygame.Surface((self.size, self.size), pygame.SRCALPHA)
         pygame.draw.rect(town_center_surface, color, (0, 0, self.size, self.size))
-        screen.blit(town_center_surface, (self.pos.x - self.size / 2, self.pos.y - self.size / 2))
+        screen.blit(town_center_surface, (self.pos.x - self.size / 2 - camera_x, self.pos.y - self.size / 2 - camera_y))
 
 # Axeman class
 class Axeman(Unit):
@@ -242,17 +258,17 @@ class Cow(Unit):
         self.harvest_rate = 0.01
         self.assigned_corner = None
 
-    def draw(self, screen):
+    def draw(self, screen, camera_x, camera_y):
         color = GREEN if self.selected else self.color
-        pygame.draw.rect(screen, color, (self.pos.x - self.size / 2, self.pos.y - self.size / 2, self.size, self.size))
+        pygame.draw.rect(screen, color, (self.pos.x - self.size / 2 - camera_x, self.pos.y - self.size / 2 - camera_y, self.size, self.size))
         bar_width = 16
         bar_height = 4
         bar_offset = 2
-        bar_x = self.pos.x - bar_width / 2
-        bar_y = self.pos.y - self.size / 2 - bar_height - bar_offset
-        pygame.draw.rect(screen, RED, (bar_x, bar_y, bar_width, bar_height))
+        bar_x = self.pos.x - bar_width / 2 - camera_x
+        bar_y = self.pos.y - self.size / 2 - bar_height - bar_offset - camera_y
+        pygame.draw.rect(screen, BLACK, (bar_x, bar_y, bar_width, bar_height))
         fill_width = (self.special / 100) * bar_width
-        pygame.draw.rect(screen, GREEN, (bar_x, bar_y, fill_width, bar_height))
+        pygame.draw.rect(screen, WHITE, (bar_x, bar_y, fill_width, bar_height))
 
     def move(self, units):
         self.velocity = Vector2(0, 0)
@@ -264,6 +280,7 @@ class Cow(Unit):
             else:
                 self.pos = Vector2(self.target)
                 self.target = None
+                self.assigned_corner = None
         self.velocity *= self.damping
         self.pos += self.velocity
 
@@ -271,6 +288,9 @@ class Cow(Unit):
         return (isinstance(barn, Barn) and
                 barn.pos.x - barn.size / 2 <= self.pos.x <= barn.pos.x + barn.size / 2 and
                 barn.pos.y - barn.size / 2 <= self.pos.y <= barn.pos.y + barn.size / 2)
+
+    def is_in_barn_any(self, barns):
+        return any(self.is_in_barn(barn) for barn in barns)
 
     def harvest_grass(self, grass_tiles, barns, cow_in_barn, player):
         if self.is_in_barn_any(barns) and self.special > 0:
@@ -336,9 +356,6 @@ class Cow(Unit):
                                     self.target = Vector2(adj_x * TILE_SIZE + TILE_SIZE / 2, adj_y * TILE_SIZE + TILE_SIZE / 2)
                                     break
 
-    def is_in_barn_any(self, barns):
-        return any(self.is_in_barn(barn) for barn in barns)
-
 # Player class
 class Player:
     def __init__(self, player_id, color, start_x, start_y):
@@ -371,8 +388,8 @@ grass_tiles = [[GrassTile(col * TILE_SIZE, row * TILE_SIZE) for col in range(GRA
 
 # Create players
 players = [
-    Player(1, BLUE, 0, 0),  # Player 1 (BLUE) starts top-left
-    Player(2, PURPLE, 0, 600)  # Player 2 (PURPLE) starts bottom-right
+    Player(1, BLUE, 0, 0),
+    Player(2, PURPLE, 0, 600)
 ]
 
 # Combine all units
@@ -380,7 +397,7 @@ all_units = []
 for player in players:
     all_units.extend(player.units)
 
-# Place Dirt tiles under buildings (Barns and TownCenters)
+# Place Dirt tiles under buildings
 for unit in all_units:
     if isinstance(unit, Building):
         buildings_cols = range(
@@ -405,7 +422,6 @@ def is_tile_occupied(row, col, units):
             return True
     return False
 
-# Calculate number of grass tiles to convert (30% of total tiles, excluding dirt and occupied tiles)
 total_tiles = GRASS_ROWS * GRASS_COLS
 target_tree_tiles = int(total_tiles * 0.3)
 eligible_tiles = []
@@ -414,10 +430,9 @@ for row in range(GRASS_ROWS):
         if isinstance(grass_tiles[row][col], GrassTile) and not isinstance(grass_tiles[row][col], Dirt) and not is_tile_occupied(row, col, all_units):
             eligible_tiles.append((row, col))
 
-# Create patches of tree tiles
 tree_tiles = []
 while len(tree_tiles) < target_tree_tiles and eligible_tiles:
-    patch_size = random.randint(0, 2)  # 3x3 patches
+    patch_size = random.randint(0, 2)
     center_row, center_col = random.choice(eligible_tiles)
     patch = []
     for dr in range(-(patch_size - (patch_size // 2)), patch_size):
@@ -452,7 +467,28 @@ button_spawn_cow = pygame.Rect(BUTTON_SPAWN_COW_POS[0], BUTTON_SPAWN_COW_POS[1],
 running = True
 font = pygame.font.SysFont(None, 24)
 while running:
-    # Check if a barn is selected for the current player
+    # # Update camera for edge scrolling
+    # mouse_pos = pygame.mouse.get_pos()
+    # if mouse_pos[0] < VIEW_X + SCROLL_MARGIN:
+    #     camera_x = max(0, camera_x - SCROLL_SPEED)
+    # elif mouse_pos[0] > VIEW_X + VIEW_WIDTH - SCROLL_MARGIN:
+    #     camera_x = min(MAP_WIDTH - VIEW_WIDTH, camera_x + SCROLL_SPEED)
+    # if mouse_pos[1] < VIEW_Y + SCROLL_MARGIN:
+    #     camera_y = max(0, camera_y - SCROLL_SPEED)
+    # elif mouse_pos[1] > VIEW_Y + VIEW_HEIGHT - SCROLL_MARGIN:
+    #     camera_y = min(MAP_HEIGHT - VIEW_HEIGHT, camera_y + SCROLL_SPEED)
+
+    # Update camera for arrow key scrolling
+    keys = pygame.key.get_pressed()
+    if keys[pygame.K_LEFT]:
+        camera_x = max(0, camera_x - SCROLL_SPEED)
+    if keys[pygame.K_RIGHT]:
+        camera_x = min(MAP_WIDTH - VIEW_WIDTH, camera_x + SCROLL_SPEED)
+    if keys[pygame.K_UP]:
+        camera_y = max(0, camera_y - SCROLL_SPEED)
+    if keys[pygame.K_DOWN]:
+        camera_y = min(MAP_HEIGHT - VIEW_HEIGHT, camera_y + SCROLL_SPEED)
+
     barn_selected = False
     if current_player is not None:
         for player in players:
@@ -467,8 +503,26 @@ while running:
             running = False
         elif event.type == pygame.MOUSEBUTTONDOWN:
             if event.button == 1:
-                click_pos = Vector2(event.pos)
-                if button_player1.collidepoint(event.pos):
+                mouse_pos = Vector2(event.pos)
+                # Only allow selection in game view
+                if VIEW_X <= mouse_pos.x <= VIEW_X + VIEW_WIDTH and VIEW_Y <= mouse_pos.y <= VIEW_Y + VIEW_HEIGHT:
+                    click_pos = Vector2(mouse_pos.x - VIEW_X + camera_x, mouse_pos.y - VIEW_Y + camera_y)
+                    unit_clicked = None
+                    for unit in all_units:
+                        if current_player and unit.player_id == current_player.player_id and unit.is_clicked(Vector2(mouse_pos.x - VIEW_X, mouse_pos.y - VIEW_Y), camera_x, camera_y):
+                            unit_clicked = unit
+                            break
+                    if unit_clicked:
+                        for player in players:
+                            player.deselect_all_units()
+                        unit_clicked.selected = True
+                        print(f"Selected unit at {unit_clicked.pos} (Player {unit_clicked.player_id})")
+                    else:
+                        selection_start = click_pos
+                        selecting = True
+                        print(f"Selection started at: {selection_start}")
+                # Handle button clicks
+                elif button_player1.collidepoint(event.pos):
                     current_player = players[0]
                     for player in players:
                         player.deselect_all_units()
@@ -481,14 +535,12 @@ while running:
                 elif button_spawn_cow.collidepoint(event.pos) and current_player is not None and barn_selected:
                     for player in players:
                         if player.player_id == current_player.player_id and player.milk >= 500:
-                            # Find a selected barn
                             selected_barn = None
                             for unit in player.units:
                                 if isinstance(unit, Barn) and unit.selected:
                                     selected_barn = unit
                                     break
                             if selected_barn:
-                                # Spawn a new cow near the selected barn
                                 new_cow = Cow(
                                     selected_barn.pos.x + selected_barn.size / 2 + 20,
                                     selected_barn.pos.y,
@@ -499,38 +551,29 @@ while running:
                                 all_units.append(new_cow)
                                 player.milk -= 500
                                 print(f"Spawned new cow for Player {player.player_id} at {new_cow.pos}")
-                elif current_player is not None:
-                    unit_clicked = None
-                    for unit in all_units:
-                        if unit.player_id == current_player.player_id and unit.is_clicked(click_pos):
-                            unit_clicked = unit
-                            break
-                    if unit_clicked:
-                        for player in players:
-                            player.deselect_all_units()
-                        unit_clicked.selected = True
-                        print(f"Selected unit at {unit_clicked.pos} (Player {unit_clicked.player_id})")
-                    else:
-                        selection_start = click_pos
-                        selecting = True
-                        print(f"Selection started at: {selection_start}")
             elif event.button == 3:
-                for unit in all_units:
-                    if unit.selected and not isinstance(unit, Building):
-                        unit.target = Vector2(event.pos)
-                        print(f"Set target for unit at {unit.pos} to {unit.target}")
+                mouse_pos = Vector2(event.pos)
+                if VIEW_X <= mouse_pos.x <= VIEW_X + VIEW_WIDTH and VIEW_Y <= mouse_pos.y <= VIEW_Y + VIEW_HEIGHT:
+                    for unit in all_units:
+                        if unit.selected and not isinstance(unit, Building):
+                            unit.target = Vector2(mouse_pos.x - VIEW_X + camera_x, mouse_pos.y - VIEW_Y + camera_y)
+                            print(f"Set target for unit at {unit.pos} to {unit.target}")
         elif event.type == pygame.MOUSEBUTTONUP:
             if event.button == 1 and selecting and current_player is not None:
-                selection_end = Vector2(event.pos)
-                selecting = False
-                for player in players:
-                    if player.player_id == current_player.player_id:
-                        for unit in player.units:
-                            unit.selected = (min(selection_start.x, selection_end.x) <= unit.pos.x <= max(selection_start.x, selection_end.x) and
-                                             min(selection_start.y, selection_end.y) <= unit.pos.y <= max(selection_start.y, selection_end.y))
-                print(f"Selection ended at: {selection_end}")
+                mouse_pos = Vector2(event.pos)
+                if VIEW_X <= mouse_pos.x <= VIEW_X + VIEW_WIDTH and VIEW_Y <= mouse_pos.y <= VIEW_Y + VIEW_HEIGHT:
+                    selection_end = Vector2(mouse_pos.x - VIEW_X + camera_x, mouse_pos.y - VIEW_Y + camera_y)
+                    selecting = False
+                    for player in players:
+                        if player.player_id == current_player.player_id:
+                            for unit in player.units:
+                                unit.selected = (min(selection_start.x, selection_end.x) <= unit.pos.x <= max(selection_start.x, selection_end.x) and
+                                                min(selection_start.y, selection_end.y) <= unit.pos.y <= max(selection_start.y, selection_end.y))
+                    print(f"Selection ended at: {selection_end}")
         elif event.type == pygame.MOUSEMOTION and selecting:
-            selection_end = Vector2(event.pos)
+            mouse_pos = Vector2(event.pos)
+            if VIEW_X <= mouse_pos.x <= VIEW_X + VIEW_WIDTH and VIEW_Y <= mouse_pos.y <= VIEW_Y + VIEW_HEIGHT:
+                selection_end = Vector2(mouse_pos.x - VIEW_X + camera_x, mouse_pos.y - VIEW_Y + camera_y)
 
     # Update grass regrowth
     regrowth_rate = 0.001
@@ -538,7 +581,7 @@ while running:
         for tile in row:
             tile.regrow(regrowth_rate)
 
-    # Update units and handle cow-barn interactions per player
+    # Update units and handle cow-barn interactions
     for player in players:
         barns = [unit for unit in player.units if isinstance(unit, Barn)]
         for unit in player.units:
@@ -565,28 +608,41 @@ while running:
                         break
 
     # Draw
-    screen.fill(WHITE)
-    for row in grass_tiles:
-        for tile in row:
-            tile.draw(screen)
+    screen.fill(BORDER_OUTER)  # Fill with border color
+    pygame.draw.rect(screen, BORDER_INNER, (VIEW_X + 5, VIEW_Y + 5, VIEW_WIDTH - 10, VIEW_HEIGHT - 10))  # Inner border
+    pygame.draw.rect(screen, WHITE, (VIEW_X, VIEW_Y, VIEW_WIDTH, VIEW_HEIGHT))  # Game view
+    pygame.draw.rect(screen, PANEL_COLOR, (VIEW_X, PANEL_Y, VIEW_WIDTH, PANEL_HEIGHT))  # Bottom panel
+
+    # Draw only visible tiles
+    start_col = int(camera_x // TILE_SIZE)
+    end_col = min(GRASS_COLS, int((camera_x + VIEW_WIDTH) // TILE_SIZE) + 1)
+    start_row = int(camera_y // TILE_SIZE)
+    end_row = min(GRASS_ROWS, int((camera_y + VIEW_HEIGHT) // TILE_SIZE) + 1)
+    for row in range(start_row, end_row):
+        for col in range(start_col, end_col):
+            grass_tiles[row][col].draw(screen, camera_x - VIEW_X, camera_y - VIEW_Y)
+
+    # Draw selection rectangle
     if selecting and selection_start and selection_end and current_player is not None:
         rect = pygame.Rect(
-            min(selection_start.x, selection_end.x),
-            min(selection_start.y, selection_end.y),
+            min(selection_start.x - camera_x + VIEW_X, selection_end.x - camera_x + VIEW_X),
+            min(selection_start.y - camera_y + VIEW_Y, selection_end.y - camera_y + VIEW_Y),
             abs(selection_end.x - selection_start.x),
             abs(selection_end.y - selection_start.y)
         )
         selection_color = next(player.color for player in players if player.player_id == current_player.player_id)
         pygame.draw.rect(screen, selection_color, rect, 3)
+
+    # Draw units
     for unit in all_units:
-        unit.draw(screen)
-    # Draw buttons
+        unit.draw(screen, camera_x - VIEW_X, camera_y - VIEW_Y)
+
+    # Draw UI
     player_button_color_1 = BLUE if current_player and current_player.player_id == 1 else LIGHT_GRAY
     player_button_color_2 = PURPLE if current_player and current_player.player_id == 2 else LIGHT_GRAY
+    spawn_button_color = HIGHLIGHT_GRAY if barn_selected and current_player is not None and current_player.milk >= 500 else LIGHT_GRAY
     pygame.draw.rect(screen, player_button_color_1, button_player1)
     pygame.draw.rect(screen, player_button_color_2, button_player2)
-    # Highlight Spawn Cow button if a barn is selected and player has enough milk
-    spawn_button_color = HIGHLIGHT_GRAY if barn_selected and current_player is not None and current_player.milk >= 500 else LIGHT_GRAY
     pygame.draw.rect(screen, spawn_button_color, button_spawn_cow)
     player1_text = font.render("Select Player 1", True, BLACK)
     player2_text = font.render("Select Player 2", True, BLACK)
@@ -594,13 +650,18 @@ while running:
     screen.blit(player1_text, (BUTTON_PLAYER1_POS[0] + 10, BUTTON_PLAYER1_POS[1] + 10))
     screen.blit(player2_text, (BUTTON_PLAYER2_POS[0] + 10, BUTTON_PLAYER2_POS[1] + 10))
     screen.blit(spawn_cow_text, (BUTTON_SPAWN_COW_POS[0] + 10, BUTTON_SPAWN_COW_POS[1] + 10))
-    # Draw FPS and milk for each player
+
+    # Draw additional info
     fps = clock.get_fps()
     fps_text = font.render(f"FPS: {int(fps)}", True, BLACK)
-    screen.blit(fps_text, (10, 10))
+    screen.blit(fps_text, (VIEW_X + 10, PANEL_Y + 60))
     for i, player in enumerate(players):
         milk_text = font.render(f"Player {player.player_id} Milk: {player.milk:.2f}", True, player.color)
-        screen.blit(milk_text, (10, 40 + i * 30))
+        screen.blit(milk_text, (VIEW_X + 10, PANEL_Y + 90 + i * 30))
+    selected_count = sum(1 for unit in all_units if unit.selected and unit.player_id == (current_player.player_id if current_player else 0))
+    selected_text = font.render(f"Selected Units: {selected_count}", True, BLACK)
+    screen.blit(selected_text, (VIEW_X + 10, PANEL_Y + 150))
+
     pygame.display.flip()
     clock.tick(60)
 
