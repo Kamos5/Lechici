@@ -1,0 +1,16 @@
+pory roku:
+-trawa inna predkosc rosniecia
+-wolniejszy ruch
+-snieg zakrywa x% trawy
+
+wiek krów max 4 lata (co rok -25 hp)
+
+admin point (max budynki) + max supply
+poziomy technologii (1,2,3) + initial cost + ongoing
+max jednostki w grupie (technologia: zwiad (3), zespol (5), grupa (10))
+
+silosy na drewno (moze zloto)
+
+drwale (podstawowa jednostka + zbiera drewno + upgrade do piknierow) -> strong vs cavalery
+lucznicy (duzy dmg przeciwko piechocie + ogniste strzaly (dodatkowy dmg wzledem pelnosci silosu) -> strong vs inf
+rycerze (szybkie jednostki) -> strong vs arch
