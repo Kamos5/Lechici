@@ -139,41 +139,33 @@ class Unit:
         self.hp = 100
         self.mana = 0
         self.special = 0
-        self.image = None  # Default to no image
-        self.unit_icon = None  # Icon for UI display
+        self.image = None
+        self.unit_icon = None
+        # Load unit image
+        try:
+            self.image = pygame.image.load(f"{self.__class__.__name__.lower()}.png")
+            self.image = pygame.transform.scale(self.image, (int(self.size), int(self.size)))
+        except (pygame.error, FileNotFoundError) as e:
+            print(f"Failed to load {self.__class__.__name__.lower()}.png: {e}")
+            self.image = None
+        # Load unit icon
+        self.load_icon(self.__class__.__name__)
 
     def load_icon(self, class_name):
         try:
             self.unit_icon = pygame.image.load(f"{class_name.lower()}_icon.png")
             self.unit_icon = pygame.transform.scale(self.unit_icon, (ICON_SIZE, ICON_SIZE))
-        except pygame.error as e:
+        except (pygame.error, FileNotFoundError) as e:
             print(f"Failed to load {class_name.lower()}_icon.png: {e}")
             self.unit_icon = None
-
-        except FileNotFoundError as err:
-            print(f"Failed to load {class_name.lower()}_icon.png: {err}")
-            self.unit_icon = None
-
-        try:
-            self.image = pygame.image.load(f"{class_name.lower()}.png")
-            self.image = pygame.transform.scale(self.image, (int(self.size), int(self.size)))
-        except pygame.error as e:
-            print(f"Failed to load cow.png: {e}")
-            self.image = None
-        except FileNotFoundError as err:
-            print(f"Failed to load {class_name.lower()}.png: {err}")
-            self.image = None
 
     def draw(self, screen, camera_x, camera_y):
         if not self.image:
             color = GREEN if self.selected else self.color
             pygame.draw.rect(screen, color, (self.pos.x - self.size / 2 - camera_x, self.pos.y - self.size / 2 - camera_y, self.size, self.size))
-            circle_radius = self.size / 8
-            pygame.draw.circle(screen, self.player_color, (int(self.pos.x - camera_x), int(self.pos.y - camera_y)), circle_radius)
         else:
-            scaled_image = pygame.transform.scale(self.image, (int(self.size), int(self.size)))
-            image_rect = scaled_image.get_rect(center=(int(self.pos.x - camera_x), int(self.pos.y - camera_y)))
-            screen.blit(scaled_image, image_rect)
+            image_rect = self.image.get_rect(center=(int(self.pos.x - camera_x), int(self.pos.y - camera_y)))
+            screen.blit(self.image, image_rect)
         if self.selected:
             pygame.draw.rect(screen, self.player_color, (self.pos.x - self.size / 2 - camera_x, self.pos.y - self.size / 2 - camera_y, self.size, self.size), 1)
 
@@ -250,7 +242,21 @@ class Unit:
 class Building(Unit):
     def __init__(self, x, y, size, color, player_id, player_color):
         super().__init__(x, y, size, speed=0, color=color, player_id=player_id, player_color=player_color)
-        self.load_icon(self.__class__.__name__)
+
+    # def draw(self, screen, camera_x, camera_y):
+    #     color = GREEN if self.selected else self.color
+    #     building_surface = pygame.Surface((self.size, self.size), pygame.SRCALPHA)
+    #     if self.image:
+    #         # Blend image with transparent color
+    #         temp_surface = pygame.Surface((self.size, self.size), pygame.SRCALPHA)
+    #         temp_surface.blit(self.image, (0, 0))
+    #         temp_surface.fill(color, special_flags=pygame.BLEND_RGBA_MULT)
+    #         building_surface.blit(temp_surface, (0, 0))
+    #     else:
+    #         pygame.draw.rect(building_surface, color, (0, 0, self.size, self.size))
+    #     screen.blit(building_surface, (self.pos.x - self.size / 2 - camera_x, self.pos.y - self.size / 2 - camera_y))
+    #     if self.selected:
+    #         pygame.draw.rect(screen, self.player_color, (self.pos.x - self.size / 2 - camera_x, self.pos.y - self.size / 2 - camera_y, self.size, self.size), 1)
 
     def move(self, units):
         pass
@@ -258,51 +264,28 @@ class Building(Unit):
 # Barn class
 class Barn(Building):
     def __init__(self, x, y, player_id, player_color):
-        super().__init__(x, y, size=48, color=DARK_GRAY, player_id=player_id, player_color=player_color)
+        super().__init__(x, y, size=60, color=DARK_GRAY, player_id=player_id, player_color=player_color)
         self.harvest_rate = 60 / 60  # Fixed to 1 per second at 60 FPS
-
-    def draw(self, screen, camera_x, camera_y):
-        color = GREEN if self.selected else self.color
-        barn_surface = pygame.Surface((self.size, self.size), pygame.SRCALPHA)
-        pygame.draw.rect(barn_surface, color, (0, 0, self.size, self.size))
-        screen.blit(barn_surface, (self.pos.x - self.size / 2 - camera_x, self.pos.y - self.size / 2 - camera_y))
-        circle_radius = self.size / 8
-        pygame.draw.circle(screen, self.player_color, (int(self.pos.x - camera_x), int(self.pos.y - camera_y)), circle_radius)
-        if self.selected:
-            pygame.draw.rect(screen, self.player_color, (self.pos.x - self.size / 2 - camera_x, self.pos.y - self.size / 2 - camera_y, self.size, self.size), 1)
 
 # TownCenter class
 class TownCenter(Building):
     def __init__(self, x, y, player_id, player_color):
-        super().__init__(x, y, size=64, color=TOWN_CENTER_GRAY, player_id=player_id, player_color=player_color)
-
-    def draw(self, screen, camera_x, camera_y):
-        color = GREEN if self.selected else self.color
-        town_center_surface = pygame.Surface((self.size, self.size), pygame.SRCALPHA)
-        pygame.draw.rect(town_center_surface, color, (0, 0, self.size, self.size))
-        screen.blit(town_center_surface, (self.pos.x - self.size / 2 - camera_x, self.pos.y - self.size / 2 - camera_y))
-        circle_radius = self.size / 8
-        pygame.draw.circle(screen, self.player_color, (int(self.pos.x - camera_x), int(self.pos.y - camera_y)), circle_radius)
-        if self.selected:
-            pygame.draw.rect(screen, self.player_color, (self.pos.x - self.size / 2 - camera_x, self.pos.y - self.size / 2 - camera_y, self.size, self.size), 1)
+        super().__init__(x, y, size=60, color=TOWN_CENTER_GRAY, player_id=player_id, player_color=player_color)
 
 # Axeman class
 class Axeman(Unit):
     def __init__(self, x, y, player_id, player_color):
         super().__init__(x, y, size=16, speed=5, color=RED, player_id=player_id, player_color=player_color)
-        self.load_icon(self.__class__.__name__)
 
 # Knight class
 class Knight(Unit):
     def __init__(self, x, y, player_id, player_color):
         super().__init__(x, y, size=16, speed=2, color=BLUE, player_id=player_id, player_color=player_color)
-        self.load_icon(self.__class__.__name__)
 
 # Archer class
 class Archer(Unit):
     def __init__(self, x, y, player_id, player_color):
         super().__init__(x, y, size=16, speed=8, color=YELLOW, player_id=player_id, player_color=player_color)
-        self.load_icon(self.__class__.__name__)
 
 # Cow class
 class Cow(Unit):
@@ -310,14 +293,11 @@ class Cow(Unit):
         super().__init__(x, y, size=16, speed=4, color=BROWN, player_id=player_id, player_color=player_color)
         self.harvest_rate = 0.01
         self.assigned_corner = None
-        self.load_icon(self.__class__.__name__)
 
     def draw(self, screen, camera_x, camera_y):
         if not self.image:
             color = GREEN if self.selected else self.color
             pygame.draw.rect(screen, color, (self.pos.x - self.size / 2 - camera_x, self.pos.y - self.size / 2 - camera_y, self.size, self.size))
-            circle_radius = self.size / 8
-            pygame.draw.circle(screen, self.player_color, (int(self.pos.x - camera_x), int(self.pos.y - camera_y)), circle_radius)
         else:
             image_rect = self.image.get_rect(center=(int(self.pos.x - camera_x), int(self.pos.y - camera_y)))
             screen.blit(self.image, image_rect)
