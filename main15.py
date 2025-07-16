@@ -34,33 +34,44 @@ HIGHLIGHT_GRAY = (200, 200, 200)
 BORDER_OUTER = (50, 50, 50)
 BORDER_INNER = (200, 200, 200)
 PANEL_COLOR = (100, 100, 100)
+SPRING_COLOR = (0, 255, 0)  # Green
+SUMMER_COLOR = (255, 255, 0)  # Yellow
+AUTUMN_COLOR = (255, 165, 0)  # Orange
+WINTER_COLOR = (255, 255, 255)  # White
 
 # Tile settings
 TILE_SIZE = 20
-GRASS_ROWS = 60
-GRASS_COLS = 60
-MAP_WIDTH = GRASS_COLS * TILE_SIZE  # 1200
-MAP_HEIGHT = GRASS_ROWS * TILE_SIZE  # 1200
+GRASS_ROWS = 100
+GRASS_COLS = 100
+MAP_WIDTH = GRASS_COLS * TILE_SIZE  # 2000
+MAP_HEIGHT = GRASS_ROWS * TILE_SIZE  # 2000
 
 # UI settings
 BORDER_WIDTH = 10
 VIEW_WIDTH = SCREEN_WIDTH - 2 * BORDER_WIDTH  # 980
-VIEW_HEIGHT = SCREEN_HEIGHT - 2 * BORDER_WIDTH - 150  # 830
+VIEW_HEIGHT = SCREEN_HEIGHT - 2 * BORDER_WIDTH - 300  # Adjusted for panel height
 VIEW_X = BORDER_WIDTH  # 10
-VIEW_Y = BORDER_WIDTH  # 10
-PANEL_HEIGHT = 150
-PANEL_Y = SCREEN_HEIGHT - PANEL_HEIGHT  # 850
+VIEW_TOP = BORDER_WIDTH + 50  # Space for season bar
+PANEL_HEIGHT = 300  # Increased by 50% from 200
+PANEL_BOTTOM = SCREEN_HEIGHT - PANEL_HEIGHT  # 700
+
+# Bar settings
+BAR_HEIGHT = 30
+BAR_WIDTH = VIEW_WIDTH // 2  # 1/4 width from center to left and right
+BAR_X = VIEW_X + (VIEW_WIDTH - BAR_WIDTH) // 2  # Centered
+BAR_Y = BORDER_WIDTH  # Top of screen
+BAR_RADIUS = 15
 
 # Button settings
 BUTTON_WIDTH = 150
 BUTTON_HEIGHT = 40
 BUTTON_MARGIN = 10
-BUTTON_PLAYER1_POS = (SCREEN_WIDTH // 2 - BUTTON_WIDTH - BUTTON_MARGIN - 50, PANEL_Y + 10)
-BUTTON_PLAYER2_POS = (SCREEN_WIDTH // 2 - BUTTON_WIDTH - BUTTON_MARGIN - 50, PANEL_Y + 10 + BUTTON_HEIGHT + BUTTON_MARGIN)
-BUTTON_SPAWN_COW_POS = (SCREEN_WIDTH // 2 + BUTTON_WIDTH + BUTTON_MARGIN - 50, PANEL_Y + 10)
+BUTTON_PLAYER1_POS = (SCREEN_WIDTH // 2 - BUTTON_WIDTH - BUTTON_MARGIN - 50, PANEL_BOTTOM + 10)  # (450, 710)
+BUTTON_PLAYER2_POS = (SCREEN_WIDTH // 2 - BUTTON_WIDTH - BUTTON_MARGIN - 50, PANEL_BOTTOM + 60)  # (450, 760)
+BUTTON_SPAWN_COW_POS = (SCREEN_WIDTH // 2 + BUTTON_WIDTH + BUTTON_MARGIN - 50, PANEL_BOTTOM + 10)  # (650, 710)
 
 # Camera settings
-camera_x = 0
+camera_x = BORDER_WIDTH  # Start with left border visible
 camera_y = 0
 SCROLL_SPEED = 10
 SCROLL_MARGIN = 20
@@ -68,6 +79,12 @@ SCROLL_MARGIN = 20
 # Icon settings
 ICON_SIZE = 32
 ICON_MARGIN = 5
+
+# Time and Season settings
+TIME_LIMIT = 60  # 1 minute in seconds
+season = "Spring"
+year = 1
+game_time = 0
 
 # SimpleTile base class
 class SimpleTile:
@@ -166,15 +183,13 @@ class Tree(SimpleTile):
         super().__init__(x, y)
         if Tree._image is None:
             Tree.load_image()
-        # Center the tree position within the tile
-        self.pos.x = x - TILE_SIZE / 2  # Adjust x to center of tile
-        self.pos.y = y - TILE_SIZE / 2  # Adjust y to center of tile
+        self.pos.x = x - TILE_SIZE / 2
+        self.pos.y = y - TILE_SIZE / 2
 
     @classmethod
     def load_image(cls):
         try:
             cls._image = pygame.image.load("tree.png").convert_alpha()
-            # Scale the image to fit within TILE_SIZE (20x20) while preserving aspect ratio
             original_width, original_height = cls._image.get_size()
             scale_factor = min(TILE_SIZE / original_width, TILE_SIZE / original_height)
             new_width = int(original_width * scale_factor)
@@ -186,7 +201,6 @@ class Tree(SimpleTile):
 
     def draw(self, screen, camera_x, camera_y):
         if self._image:
-            # Center the image within the tile
             image_rect = self._image.get_rect(center=(int(self.pos.x + TILE_SIZE / 2 - camera_x), int(self.pos.y + TILE_SIZE / 2 - camera_y)))
             screen.blit(self._image, image_rect)
         else:
@@ -324,7 +338,7 @@ class Building(Unit):
 class Barn(Building):
     def __init__(self, x, y, player_id, player_color):
         super().__init__(x, y, size=60, color=DARK_GRAY, player_id=player_id, player_color=player_color)
-        self.harvest_rate = 60 / 60  # Fixed to 1 per second at 60 FPS
+        self.harvest_rate = 60 / 60
 
 # TownCenter class
 class TownCenter(Building):
@@ -348,10 +362,12 @@ class Archer(Unit):
 
 # Cow class
 class Cow(Unit):
-    def __init__(self, x, y, player_id, player_color):
+    def __init__(self, x, y, player_id, player_color, birth_season="Spring"):
         super().__init__(x, y, size=16, speed=4, color=BROWN, player_id=player_id, player_color=player_color)
         self.harvest_rate = 0.01
         self.assigned_corner = None
+        self.age = 1
+        self.birth_season = birth_season
 
     def draw(self, screen, camera_x, camera_y):
         cls_name = self.__class__.__name__
@@ -364,7 +380,6 @@ class Cow(Unit):
             screen.blit(image, image_rect)
         if self.selected:
             pygame.draw.rect(screen, self.player_color, (self.pos.x - self.size / 2 - camera_x, self.pos.y - self.size / 2 - camera_y, self.size, self.size), 1)
-        # Draw health bar
         bar_width = 16
         bar_height = 4
         bar_offset = 2
@@ -404,7 +419,6 @@ class Cow(Unit):
                 available_barns = [barn for barn in barns if barn.player_id == self.player_id and isinstance(barn, Barn) and (barn not in cow_in_barn or cow_in_barn[barn] is None)]
                 if available_barns:
                     closest_barn = min(available_barns, key=lambda barn: self.pos.distance_to(barn.pos))
-                    # Target the bottom-left tile center of the barn
                     target_x = closest_barn.pos.x - closest_barn.size / 2 + TILE_SIZE / 2
                     target_y = closest_barn.pos.y + closest_barn.size / 2 - TILE_SIZE / 2
                     self.target = Vector2(target_x, target_y)
@@ -429,7 +443,6 @@ class Cow(Unit):
             tile_y = int(self.pos.y // TILE_SIZE)
             if 0 <= tile_x < GRASS_COLS and 0 <= tile_y < GRASS_ROWS:
                 if isinstance(grass_tiles[tile_y][tile_x], GrassTile) and not isinstance(grass_tiles[tile_y][tile_x], Dirt):
-                    # Check if the current position has a tree overlay
                     has_tree = any(tree.pos.x <= self.pos.x <= tree.pos.x + TILE_SIZE and
                                  tree.pos.y <= self.pos.y <= tree.pos.y + TILE_SIZE
                                  for tree in tree_objects)
@@ -462,7 +475,7 @@ class Player:
             Axeman(offset_x + 100, offset_y + 100, player_id, self.color),
             Knight(offset_x + 150, offset_y + 100, player_id, self.color),
             Archer(offset_x + 200, offset_y + 100, player_id, self.color),
-            Cow(offset_x + 300, offset_y + 100, player_id, self.color),
+            Cow(offset_x + 300, offset_y + 100, player_id, self.color, "Spring"),
             Barn(offset_x + 310, offset_y + 150, player_id, self.color),
             TownCenter(offset_x + 150, offset_y + 150, player_id, self.color)
         ])
@@ -474,6 +487,15 @@ class Player:
     def deselect_all_units(self):
         for unit in self.units:
             unit.selected = False
+
+
+def is_tile_occupied(row, col, units):
+    tile_rect = pygame.Rect(col * TILE_SIZE, row * TILE_SIZE, TILE_SIZE, TILE_SIZE)
+    for unit in units:
+        unit_rect = pygame.Rect(unit.pos.x - unit.size / 2, unit.pos.y - unit.size / 2, unit.size, unit.size)
+        if tile_rect.colliderect(unit_rect):
+            return True
+    return False
 
 # Create grass field
 grass_tiles = [[GrassTile(col * TILE_SIZE, row * TILE_SIZE) for col in range(GRASS_COLS)] for row in range(GRASS_ROWS)]
@@ -504,14 +526,6 @@ for unit in all_units:
             for col in buildings_cols:
                 if 0 <= row < GRASS_ROWS and 0 <= col < GRASS_COLS:
                     grass_tiles[row][col] = Dirt(col * TILE_SIZE, row * TILE_SIZE)
-
-def is_tile_occupied(row, col, units):
-    tile_rect = pygame.Rect(col * TILE_SIZE, row * TILE_SIZE, TILE_SIZE, TILE_SIZE)
-    for unit in units:
-        unit_rect = pygame.Rect(unit.pos.x - unit.size / 2, unit.pos.y - unit.size / 2, unit.size, unit.size)
-        if tile_rect.colliderect(unit_rect):
-            return True
-    return False
 
 # Create a separate list for tree objects to overlay on 30% of grass tiles in small patches
 tree_objects = []
@@ -559,12 +573,30 @@ button_spawn_cow = pygame.Rect(BUTTON_SPAWN_COW_POS[0], BUTTON_SPAWN_COW_POS[1],
 running = True
 font = pygame.font.SysFont(None, 24)
 while running:
+    # Update time and season
+    game_time += clock.get_rawtime() / 1000
+    if game_time >= TIME_LIMIT:
+        game_time -= TIME_LIMIT
+        if season == "Winter":
+            season = "Spring"
+            year += 1
+            for player in players:
+                for unit in player.units:
+                    if isinstance(unit, Cow):
+                        unit.age += 1
+        elif season == "Spring":
+            season = "Summer"
+        elif season == "Summer":
+            season = "Autumn"
+        elif season == "Autumn":
+            season = "Winter"
+
     # Update camera for arrow key scrolling
     keys = pygame.key.get_pressed()
     if keys[pygame.K_LEFT]:
-        camera_x = max(0, camera_x - SCROLL_SPEED)
+        camera_x = max(BORDER_WIDTH, camera_x - SCROLL_SPEED)  # Ensure left border stays visible
     if keys[pygame.K_RIGHT]:
-        camera_x = min(MAP_WIDTH - VIEW_WIDTH, camera_x + SCROLL_SPEED)
+        camera_x = min(MAP_WIDTH - VIEW_WIDTH + BORDER_WIDTH, camera_x + SCROLL_SPEED)  # Ensure right border stays visible
     if keys[pygame.K_UP]:
         camera_y = max(0, camera_y - SCROLL_SPEED)
     if keys[pygame.K_DOWN]:
@@ -585,11 +617,11 @@ while running:
         elif event.type == pygame.MOUSEBUTTONDOWN:
             if event.button == 1:
                 mouse_pos = Vector2(event.pos)
-                if VIEW_X <= mouse_pos.x <= VIEW_X + VIEW_WIDTH and VIEW_Y <= mouse_pos.y <= VIEW_Y + VIEW_HEIGHT:
-                    click_pos = Vector2(mouse_pos.x - VIEW_X + camera_x, mouse_pos.y - VIEW_Y + camera_y)
+                if VIEW_X <= mouse_pos.x <= VIEW_X + VIEW_WIDTH and VIEW_TOP <= mouse_pos.y <= VIEW_TOP + VIEW_HEIGHT:
+                    click_pos = Vector2(mouse_pos.x - VIEW_X + camera_x, mouse_pos.y - VIEW_TOP + camera_y)
                     unit_clicked = None
                     for unit in all_units:
-                        if current_player and unit.player_id == current_player.player_id and unit.is_clicked(Vector2(mouse_pos.x - VIEW_X, mouse_pos.y - VIEW_Y), camera_x, camera_y):
+                        if current_player and unit.player_id == current_player.player_id and unit.is_clicked(Vector2(mouse_pos.x - VIEW_X, mouse_pos.y - VIEW_TOP), camera_x, camera_y):
                             unit_clicked = unit
                             break
                     if unit_clicked:
@@ -624,7 +656,8 @@ while running:
                                     selected_barn.pos.x + selected_barn.size / 2 + 20,
                                     selected_barn.pos.y,
                                     player.player_id,
-                                    player.color
+                                    player.color,
+                                    season
                                 )
                                 player.units.append(new_cow)
                                 all_units.append(new_cow)
@@ -632,16 +665,16 @@ while running:
                                 print(f"Spawned new cow for Player {player.player_id} at {new_cow.pos}")
             elif event.button == 3:
                 mouse_pos = Vector2(event.pos)
-                if VIEW_X <= mouse_pos.x <= VIEW_X + VIEW_WIDTH and VIEW_Y <= mouse_pos.y <= VIEW_Y + VIEW_HEIGHT:
+                if VIEW_X <= mouse_pos.x <= VIEW_X + VIEW_WIDTH and VIEW_TOP <= mouse_pos.y <= VIEW_TOP + VIEW_HEIGHT:
                     for unit in all_units:
                         if unit.selected and not isinstance(unit, Building):
-                            unit.target = Vector2(mouse_pos.x - VIEW_X + camera_x, mouse_pos.y - VIEW_Y + camera_y)
+                            unit.target = Vector2(mouse_pos.x - VIEW_X + camera_x, mouse_pos.y - VIEW_TOP + camera_y)
                             print(f"Set target for unit at {unit.pos} to {unit.target}")
         elif event.type == pygame.MOUSEBUTTONUP:
             if event.button == 1 and selecting and current_player is not None:
                 mouse_pos = Vector2(event.pos)
-                if VIEW_X <= mouse_pos.x <= VIEW_X + VIEW_WIDTH and VIEW_Y <= mouse_pos.y <= VIEW_Y + VIEW_HEIGHT:
-                    selection_end = Vector2(mouse_pos.x - VIEW_X + camera_x, mouse_pos.y - VIEW_Y + camera_y)
+                if VIEW_X <= mouse_pos.x <= VIEW_X + VIEW_WIDTH and VIEW_TOP <= mouse_pos.y <= VIEW_TOP + VIEW_HEIGHT:
+                    selection_end = Vector2(mouse_pos.x - VIEW_X + camera_x, mouse_pos.y - VIEW_TOP + camera_y)
                     selecting = False
                     for player in players:
                         if player.player_id == current_player.player_id:
@@ -651,8 +684,8 @@ while running:
                     print(f"Selection ended at: {selection_end}")
         elif event.type == pygame.MOUSEMOTION and selecting:
             mouse_pos = Vector2(event.pos)
-            if VIEW_X <= mouse_pos.x <= VIEW_X + VIEW_WIDTH and VIEW_Y <= mouse_pos.y <= VIEW_Y + VIEW_HEIGHT:
-                selection_end = Vector2(mouse_pos.x - VIEW_X + camera_x, mouse_pos.y - VIEW_Y + camera_y)
+            if VIEW_X <= mouse_pos.x <= VIEW_X + VIEW_WIDTH and VIEW_TOP <= mouse_pos.y <= VIEW_TOP + VIEW_HEIGHT:
+                selection_end = Vector2(mouse_pos.x - VIEW_X + camera_x, mouse_pos.y - VIEW_TOP + camera_y)
 
     # Update grass regrowth
     regrowth_rate = 0.001
@@ -688,54 +721,61 @@ while running:
 
     # Draw
     screen.fill(BORDER_OUTER)
-    pygame.draw.rect(screen, BORDER_INNER, (VIEW_X + 5, VIEW_Y + 5, VIEW_WIDTH - 10, VIEW_HEIGHT - 10))
-    pygame.draw.rect(screen, WHITE, (VIEW_X, VIEW_Y, VIEW_WIDTH, VIEW_HEIGHT))
-    pygame.draw.rect(screen, PANEL_COLOR, (VIEW_X, PANEL_Y, VIEW_WIDTH, PANEL_HEIGHT))
+    pygame.draw.rect(screen, BORDER_INNER, (VIEW_X + 5, VIEW_TOP + 5, VIEW_WIDTH - 10, VIEW_HEIGHT - 10))
+    pygame.draw.rect(screen, WHITE, (VIEW_X, VIEW_TOP, VIEW_WIDTH, VIEW_HEIGHT))
+    pygame.draw.rect(screen, PANEL_COLOR, (VIEW_X, PANEL_BOTTOM, VIEW_WIDTH, PANEL_HEIGHT))
+
+    # Draw season bar
+    pygame.draw.rect(screen, BLACK, (BAR_X, BAR_Y, BAR_WIDTH, BAR_HEIGHT), border_radius=BAR_RADIUS)
+    fill_ratio = min(1.0, game_time / TIME_LIMIT)
+    fill_width = int(BAR_WIDTH * fill_ratio / 2)  # Fill from center outward
+    pygame.draw.rect(screen, BLUE, (BAR_X + BAR_WIDTH // 2 - fill_width, BAR_Y + 5, fill_width, BAR_HEIGHT - 10))
+    pygame.draw.rect(screen, BLUE, (BAR_X + BAR_WIDTH // 2, BAR_Y + 5, fill_width, BAR_HEIGHT - 10))
+    season_color = {"Spring": SPRING_COLOR, "Summer": SUMMER_COLOR, "Autumn": AUTUMN_COLOR, "Winter": WINTER_COLOR}[season]
+    season_text = font.render(f"Season: {season} (Year: {year})", True, season_color)
+    screen.blit(season_text, (BAR_X + BAR_WIDTH // 2 - season_text.get_width() // 2, BAR_Y - 30))
 
     # Draw only visible tiles with grass first, then trees as overlays
     start_col = int(camera_x // TILE_SIZE)
     end_col = min(GRASS_COLS, int((camera_x + VIEW_WIDTH) // TILE_SIZE) + 1)
     start_row = int(camera_y // TILE_SIZE)
     end_row = min(GRASS_ROWS, int((camera_y + VIEW_HEIGHT) // TILE_SIZE) + 1)
-    # First pass: Draw dirt tiles (under buildings)
     for row in range(start_row, end_row):
         for col in range(start_col, end_col):
             tile = grass_tiles[row][col]
             if isinstance(tile, Dirt):
-                tile.draw(screen, camera_x - VIEW_X, camera_y - VIEW_Y)
-    # Second pass: Draw grass tiles
+                tile.draw(screen, camera_x - VIEW_X, camera_y - VIEW_TOP)
     for row in range(start_row, end_row):
         for col in range(start_col, end_col):
             tile = grass_tiles[row][col]
             if isinstance(tile, GrassTile):
-                tile.draw(screen, camera_x - VIEW_X, camera_y - VIEW_Y)
-    # Third pass: Draw tree objects on top of grass, excluding UI area
+                tile.draw(screen, camera_x - VIEW_X, camera_y - VIEW_TOP)
+    # Draw trees only within the game view, excluding UI areas (top bar and bottom panel)
     for tree in tree_objects:
-        # Convert tree position to screen coordinates
-        screen_y = tree.pos.y + TILE_SIZE / 2 - camera_y  # Adjusted for centered position
-        if VIEW_Y <= screen_y <= VIEW_Y + VIEW_HEIGHT:  # Only draw if within game view, not UI
-            tree.draw(screen, camera_x - VIEW_X, camera_y - VIEW_Y)
+        screen_y = tree.pos.y + TILE_SIZE / 2 - camera_y
+        if VIEW_TOP < screen_y < PANEL_BOTTOM:  # Only draw between season bar and bottom panel
+            tree.draw(screen, camera_x - VIEW_X, camera_y - VIEW_TOP)
+
+    # Draw units (buildings and non-buildings) before UI
+    for unit in all_units:
+        if isinstance(unit, Building):
+            unit.draw(screen, camera_x - VIEW_X, camera_y - VIEW_TOP)
+    for unit in all_units:
+        if not isinstance(unit, Building):
+            unit.draw(screen, camera_x - VIEW_X, camera_y - VIEW_TOP)
 
     # Draw selection rectangle
     if selecting and selection_start and selection_end and current_player is not None:
         rect = pygame.Rect(
             min(selection_start.x - camera_x + VIEW_X, selection_end.x - camera_x + VIEW_X),
-            min(selection_start.y - camera_y + VIEW_Y, selection_end.y - camera_y + VIEW_Y),
+            min(selection_start.y - camera_y + VIEW_TOP, selection_end.y - camera_y + VIEW_TOP),
             abs(selection_end.x - selection_start.x),
             abs(selection_end.y - selection_start.y)
         )
         selection_color = next(player.color for player in players if player.player_id == current_player.player_id)
         pygame.draw.rect(screen, selection_color, rect, 3)
 
-    # Draw buildings first, then units to ensure units are on top
-    for unit in all_units:
-        if isinstance(unit, Building):
-            unit.draw(screen, camera_x - VIEW_X, camera_y - VIEW_Y)
-    for unit in all_units:
-        if not isinstance(unit, Building):
-            unit.draw(screen, camera_x - VIEW_X, camera_y - VIEW_Y)
-
-    # Draw UI
+    # Draw UI elements last to ensure they are on top
     player_button_color_1 = BLUE if current_player and current_player.player_id == 1 else LIGHT_GRAY
     player_button_color_2 = PURPLE if current_player and current_player.player_id == 2 else LIGHT_GRAY
     spawn_button_color = HIGHLIGHT_GRAY if barn_selected and current_player is not None and current_player.milk >= 500 else LIGHT_GRAY
@@ -751,7 +791,7 @@ while running:
 
     # Draw unit icons for selected units
     icon_x = VIEW_X + 10
-    icon_y = PANEL_Y + 10
+    icon_y = PANEL_BOTTOM + 70  # Start 70 pixels from panel top (770)
     for unit in all_units:
         if unit.selected and current_player and unit.player_id == current_player.player_id:
             cls_name = unit.__class__.__name__
@@ -760,22 +800,23 @@ while running:
                 screen.blit(unit_icon, (icon_x, icon_y))
             else:
                 pygame.draw.rect(screen, WHITE, (icon_x, icon_y, ICON_SIZE, ICON_SIZE))
+            text = font.render(cls_name, True, BLACK)
+            screen.blit(text, (icon_x, icon_y + ICON_SIZE + 5))
+            if isinstance(unit, Cow):
+                age_text = font.render(f"Age: {unit.age}", True, BLACK)
+                screen.blit(age_text, (icon_x, icon_y + ICON_SIZE + 25))
             icon_x += ICON_SIZE + ICON_MARGIN
 
     # Draw additional info
     fps = clock.get_fps()
     fps_text = font.render(f"FPS: {int(fps)}", True, BLACK)
-    screen.blit(fps_text, (VIEW_X + 10, PANEL_Y + 60))
+    screen.blit(fps_text, (VIEW_X + 10, PANEL_BOTTOM + 120))  # Adjusted to 120 (820)
     for i, player in enumerate(players):
         milk_text = font.render(f"Player {player.player_id} Milk: {player.milk:.2f}", True, player.color)
-        screen.blit(milk_text, (VIEW_X + 10, PANEL_Y + 90 + i * 30))
+        screen.blit(milk_text, (VIEW_X + 10, PANEL_BOTTOM + 150 + i * 30))  # Adjusted to 150 (850)
     selected_count = sum(1 for unit in all_units if unit.selected and unit.player_id == (current_player.player_id if current_player else 0))
     selected_text = font.render(f"Selected Units: {selected_count}", True, BLACK)
-    screen.blit(selected_text, (VIEW_X + 10, PANEL_Y + 150))
+    screen.blit(selected_text, (VIEW_X + 10, PANEL_BOTTOM + 210))  # Adjusted to 210 (910)
 
     pygame.display.flip()
     clock.tick(60)
-
-pygame.quit()
-sys.exit()
-

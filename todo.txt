@@ -5,7 +5,10 @@ pory roku:
 
 wiek krów max 4 lata (co rok -25 hp)
 
-admin point (max budynki) + max supply
+planowanych 10 misji w kampanii
+po 3 misjach dodatkowe startowe opcje (1)+1 krowa (2)+1 drwal i +1 lucznik (3) dodatkowych parę adnim pointów  - budynki (4) max supply - jednostki
+
+admin point (max budynki) + max supply - przekroczenie powoduje zmniejszenie ekstraktowanych surowcow
 poziomy technologii (1,2,3) + initial cost + ongoing
 max jednostki w grupie (technologia: zwiad (3), zespol (5), grupa (10))
 
@@ -14,3 +17,4 @@ silosy na drewno (moze zloto)
 drwale (podstawowa jednostka + zbiera drewno + upgrade do piknierow) -> strong vs cavalery
 lucznicy (duzy dmg przeciwko piechocie + ogniste strzaly (dodatkowy dmg wzledem pelnosci silosu) -> strong vs inf
 rycerze (szybkie jednostki) -> strong vs arch
+
