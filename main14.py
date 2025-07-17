@@ -44,10 +44,10 @@ MAP_HEIGHT = GRASS_ROWS * TILE_SIZE  # 1200
 
 # UI settings
 BORDER_WIDTH = 10
+VIEW_X = 10  # 10
+VIEW_Y = 10  # 10
 VIEW_WIDTH = SCREEN_WIDTH - 2 * BORDER_WIDTH  # 980
 VIEW_HEIGHT = SCREEN_HEIGHT - 2 * BORDER_WIDTH - 150  # 830
-VIEW_X = BORDER_WIDTH  # 10
-VIEW_Y = BORDER_WIDTH  # 10
 PANEL_HEIGHT = 150
 PANEL_Y = SCREEN_HEIGHT - PANEL_HEIGHT  # 850
 
@@ -673,8 +673,8 @@ while running:
             if barn in player.cow_in_barn and player.cow_in_barn[barn]:
                 cow = player.cow_in_barn[barn]
                 if cow.is_in_barn(barn):
-                    cow.special = max(0, cow.special - barn.harvest_rate)
-                    if player.milk < 1000 and cow.special >= 0:
+                    if player.milk < 1000 and cow.special > 0:
+                        cow.special = max(0, cow.special - barn.harvest_rate)
                         player.milk = min(1000, player.milk + barn.harvest_rate)
                     if cow.special <= 0:
                         player.cow_in_barn[barn] = None
@@ -685,12 +685,6 @@ while running:
                     if isinstance(unit, Cow) and unit.is_in_barn(barn):
                         player.cow_in_barn[barn] = unit
                         break
-
-    # Draw
-    screen.fill(BORDER_OUTER)
-    pygame.draw.rect(screen, BORDER_INNER, (VIEW_X + 5, VIEW_Y + 5, VIEW_WIDTH - 10, VIEW_HEIGHT - 10))
-    pygame.draw.rect(screen, WHITE, (VIEW_X, VIEW_Y, VIEW_WIDTH, VIEW_HEIGHT))
-    pygame.draw.rect(screen, PANEL_COLOR, (VIEW_X, PANEL_Y, VIEW_WIDTH, PANEL_HEIGHT))
 
     # Draw only visible tiles with grass first, then trees as overlays
     start_col = int(camera_x // TILE_SIZE)
@@ -730,10 +724,25 @@ while running:
     # Draw buildings first, then units to ensure units are on top
     for unit in all_units:
         if isinstance(unit, Building):
-            unit.draw(screen, camera_x - VIEW_X, camera_y - VIEW_Y)
+            screen_y = unit.pos.y + TILE_SIZE / 2 - camera_y
+            if VIEW_Y <= screen_y <= VIEW_Y + VIEW_HEIGHT:  # Only draw if within game view, not UI
+                unit.draw(screen, camera_x - VIEW_X, camera_y - VIEW_Y)
     for unit in all_units:
         if not isinstance(unit, Building):
-            unit.draw(screen, camera_x - VIEW_X, camera_y - VIEW_Y)
+            screen_y = unit.pos.y + TILE_SIZE / 2 - camera_y
+            if VIEW_Y <= screen_y <= VIEW_Y + VIEW_HEIGHT:  # Only draw if within game view, not UI
+                unit.draw(screen, camera_x - VIEW_X, camera_y - VIEW_Y)
+
+    # Draw
+
+    # Left Border
+    pygame.draw.rect(screen, PANEL_COLOR, (0, 0, VIEW_X, SCREEN_HEIGHT))
+    # Right Border
+    pygame.draw.rect(screen, PANEL_COLOR, (SCREEN_WIDTH - VIEW_X, 0, SCREEN_WIDTH, SCREEN_HEIGHT))
+    # Top Border
+    pygame.draw.rect(screen, PANEL_COLOR, (0, 0, SCREEN_WIDTH, VIEW_Y))
+    # Bottom Border
+    pygame.draw.rect(screen, PANEL_COLOR, (VIEW_X, PANEL_Y, VIEW_WIDTH, PANEL_HEIGHT))
 
     # Draw UI
     player_button_color_1 = BLUE if current_player and current_player.player_id == 1 else LIGHT_GRAY
@@ -764,7 +773,7 @@ while running:
 
     # Draw additional info
     fps = clock.get_fps()
-    fps_text = font.render(f"FPS: {int(fps)}", True, BLACK)
+    fps_text = font.render(f"FPS: {int(fps)}", True, WHITE)
     screen.blit(fps_text, (VIEW_X + 10, PANEL_Y + 60))
     for i, player in enumerate(players):
         milk_text = font.render(f"Player {player.player_id} Milk: {player.milk:.2f}", True, player.color)
