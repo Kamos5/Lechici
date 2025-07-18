@@ -925,11 +925,14 @@ while running:
     player0_text = font.render("Player 0", True, BLACK)
     player1_text = font.render("Player 1", True, BLACK)
     player2_text = font.render("Player 2", True, BLACK)
-    spawn_cow_text = font.render("Spawn Cow", True, BLACK)
+    spawn_cow_text = font.render("500 milk", True, BLACK)
     screen.blit(player0_text, (BUTTON_PLAYER0_POS[0] + 10, BUTTON_PLAYER0_POS[1] + 10))
     screen.blit(player1_text, (BUTTON_PLAYER1_POS[0] + 10, BUTTON_PLAYER1_POS[1] + 10))
     screen.blit(player2_text, (BUTTON_PLAYER2_POS[0] + 10, BUTTON_PLAYER2_POS[1] + 10))
-    screen.blit(spawn_cow_text, (BUTTON_SPAWN_COW_POS[0] + 10, BUTTON_SPAWN_COW_POS[1] + 10))
+
+    screen.blit(Unit._unit_icons.get('Cow'), (BUTTON_SPAWN_COW_POS[0] + 10, BUTTON_SPAWN_COW_POS[1] + 5))
+    screen.blit(spawn_cow_text, (BUTTON_SPAWN_COW_POS[0] + 60, BUTTON_SPAWN_COW_POS[1] + 5))
+    screen.blit(spawn_cow_text, (BUTTON_SPAWN_COW_POS[0] + 60, BUTTON_SPAWN_COW_POS[1] + 20))
 
     # Draw unit icons for selected units
     icon_x = VIEW_MARGIN_LEFT + 10
