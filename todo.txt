@@ -18,3 +18,6 @@ drwale (podstawowa jednostka + zbiera drewno + upgrade do piknierow) -> strong v
 lucznicy (duzy dmg przeciwko piechocie + ogniste strzaly (dodatkowy dmg wzledem pelnosci silosu) -> strong vs inf
 rycerze (szybkie jednostki) -> strong vs arch
 
+krowy do prawego rogu
+
+drwale 0.5 sek ramki do zniekniecia
