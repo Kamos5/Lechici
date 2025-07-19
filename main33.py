@@ -93,12 +93,18 @@ SCROLL_MARGIN = 20
 ICON_SIZE = 32
 ICON_MARGIN = 5
 
-wood_icon = pygame.image.load("wood_icon.png").convert_alpha()
-milk_icon = pygame.image.load("milk_icon.png").convert_alpha()
-
-# Scale icons
-wood_icon = pygame.transform.scale(wood_icon, (20, 20))
-milk_icon = pygame.transform.scale(milk_icon, (20, 20))
+# Load icons with error handling
+try:
+    wood_icon = pygame.image.load("wood_icon.png").convert_alpha()
+    milk_icon = pygame.image.load("milk_icon.png").convert_alpha()
+    wood_icon = pygame.transform.scale(wood_icon, (20, 20))
+    milk_icon = pygame.transform.scale(milk_icon, (20, 20))
+except (pygame.error, FileNotFoundError) as e:
+    print(f"Failed to load icons: {e}")
+    wood_icon = pygame.Surface((20, 20))
+    milk_icon = pygame.Surface((20, 20))
+    wood_icon.fill(BROWN)
+    milk_icon.fill(WHITE)
 
 # Spatial grid settings
 GRID_CELL_SIZE = 60
@@ -315,10 +321,10 @@ class Unit:
         if self.target:
             direction = self.target - self.pos
             distance_to_target = direction.length()
-            if distance_to_target > self.size:  # Stop within unit's size without snapping
+            if distance_to_target > self.size:
                 self.velocity = direction.normalize() * self.speed
             else:
-                self.target = None  # Stop moving without snapping position
+                self.target = None
         self.velocity *= self.damping
         self.pos += self.velocity
 
@@ -595,6 +601,7 @@ class Cow(Unit):
     wood_cost = 0
     returning = False
     return_pos = None
+
     def __init__(self, x, y, player_id, player_color):
         super().__init__(x, y, size=16, speed=4, color=BROWN, player_id=player_id, player_color=player_color)
         self.harvest_rate = 0.01
@@ -647,21 +654,38 @@ class Cow(Unit):
     def is_in_barn_any(self, barns):
         return any(self.is_in_barn(barn) for barn in barns)
 
+    def is_tile_walkable(self, tile_x, tile_y, spatial_grid):
+        """Check if a tile is walkable (no trees or non-barn buildings)."""
+        tile_rect = pygame.Rect(tile_x * TILE_SIZE, tile_y * TILE_SIZE, TILE_SIZE, TILE_SIZE)
+        nearby_units = spatial_grid.get_nearby_units(self, radius=TILE_SIZE)
+        for unit in nearby_units:
+            if isinstance(unit, Tree) or (isinstance(unit, Building) and not isinstance(unit, Barn)):
+                unit_rect = pygame.Rect(unit.pos.x - unit.size / 2, unit.pos.y - unit.size / 2, unit.size, unit.size)
+                if tile_rect.colliderect(unit_rect):
+                    return False
+        return True
+
     def harvest_grass(self, grass_tiles, barns, cow_in_barn, player, spatial_grid):
+        # If cow is in barn and has milk, let it deposit (handled in game loop)
         if self.is_in_barn_any(barns) and self.special > 0:
             return
-        if self.special >= 100:
-            if not self.target:
-                available_barns = [barn for barn in barns if barn.player_id == self.player_id and (barn not in cow_in_barn or cow_in_barn[barn] is None)]
-                if available_barns:
-                    closest_barn = min(available_barns, key=lambda barn: self.pos.distance_to(barn.pos))
-                    target_x = closest_barn.pos.x - closest_barn.size / 2 + TILE_HALF
-                    target_y = closest_barn.pos.y + closest_barn.size / 2 - TILE_HALF
-                    self.target = Vector2(target_x, target_y)
-                    self.return_pos = Vector2(self.pos)
+
+        # If cow is full, go to the nearest available barn
+        if self.special >= 100 and not self.target:
+            available_barns = [barn for barn in barns if barn.player_id == self.player_id and (barn not in cow_in_barn or cow_in_barn[barn] is None)]
+            if available_barns:
+                closest_barn = min(available_barns, key=lambda barn: self.pos.distance_to(barn.pos))
+                target_x = closest_barn.pos.x - closest_barn.size / 2 + TILE_HALF
+                target_y = closest_barn.pos.y + closest_barn.size / 2 - TILE_HALF
+                self.target = Vector2(target_x, target_y)
+                self.return_pos = Vector2(self.pos)  # Save position before moving to barn
+                self.assigned_corner = self.target
+                print(f"Cow at {self.pos} targeting barn at {self.target}")
             return
-        for barn in barns:
-            if self.special == 0 and self.is_in_barn(barn):
+
+        # If cow is in barn and empty, return to last grass tile or find a new one
+        if self.special == 0 and self.is_in_barn_any(barns):
+            if not self.returning:
                 tile_x = int(self.pos.x // TILE_SIZE)
                 tile_y = int(self.pos.y // TILE_SIZE)
                 adjacent_tiles = [
@@ -669,14 +693,19 @@ class Cow(Unit):
                     (tile_x - 1, tile_y - 1), (tile_x + 1, tile_y - 1), (tile_x - 1, tile_y + 1), (tile_x + 1, tile_y + 1)
                 ]
                 random.shuffle(adjacent_tiles)
-                if self.returning == False:
-                    for adj_x, adj_y in adjacent_tiles:
-                        if 0 <= adj_x < GRASS_COLS and 0 <= adj_y < GRASS_ROWS:
-                            tile = grass_tiles[adj_y][adj_x]
-                            if isinstance(tile, GrassTile) and not isinstance(tile, Dirt) and tile.grass_level > 0.5:
-                                self.target = tile.center
-                                return
-                return
+                for adj_x, adj_y in adjacent_tiles:
+                    if (0 <= adj_x < GRASS_COLS and 0 <= adj_y < GRASS_ROWS and
+                        isinstance(grass_tiles[adj_y][adj_x], GrassTile) and
+                        not isinstance(grass_tiles[adj_y][adj_x], Dirt) and
+                        grass_tiles[adj_y][adj_x].grass_level > 0.5 and
+                        self.is_tile_walkable(adj_x, adj_y, spatial_grid)):
+                        self.target = grass_tiles[adj_y][adj_x].center
+                        self.returning = True
+                        print(f"Cow at {self.pos} targeting adjacent grass tile at {self.target} after barn")
+                        return
+            return
+
+        # If not full and not moving (or nearly stopped), harvest grass
         if not self.target or self.velocity.length() < 0.5:
             tile_x = int(self.pos.x // TILE_SIZE)
             tile_y = int(self.pos.y // TILE_SIZE)
@@ -689,6 +718,8 @@ class Cow(Unit):
                                    unit.pos.y - TILE_HALF <= self.pos.y <= unit.pos.y + TILE_HALF
                                    for unit in nearby_units)
                     if not has_tree:
+                        if self.special < 100:  # Only update return_pos if not full
+                            self.return_pos = Vector2(self.pos)
                         harvested = tile.harvest(self.harvest_rate)
                         self.special = min(100, self.special + harvested * 50)
                         if tile.grass_level == 0:
@@ -698,11 +729,16 @@ class Cow(Unit):
                             ]
                             random.shuffle(adjacent_tiles)
                             for adj_x, adj_y in adjacent_tiles:
-                                if 0 <= adj_x < GRASS_COLS and 0 <= adj_y < GRASS_ROWS:
-                                    adj_tile = grass_tiles[adj_y][adj_x]
-                                    if isinstance(adj_tile, GrassTile) and not isinstance(adj_tile, Dirt) and adj_tile.grass_level > 0.5:
-                                        self.target = adj_tile.center
-                                        break
+                                if (0 <= adj_x < GRASS_COLS and 0 <= adj_y < GRASS_ROWS and
+                                    isinstance(grass_tiles[adj_y][adj_x], GrassTile) and
+                                    not isinstance(grass_tiles[adj_y][adj_x], Dirt) and
+                                    grass_tiles[adj_y][adj_x].grass_level > 0.5 and
+                                    self.is_tile_walkable(adj_x, adj_y, spatial_grid)):
+                                    self.target = grass_tiles[adj_y][adj_x].center
+                                    if self.special < 100:  # Only update return_pos if not full
+                                        self.return_pos = grass_tiles[adj_y][adj_x].center
+                                    print(f"Cow at {self.pos} targeting adjacent grass tile at {self.target}")
+                                    break
 
 # Player class
 class Player:
@@ -711,7 +747,7 @@ class Player:
         self.color = color
         self.milk = 500.0
         self.max_milk = 1000
-        self.wood = 500.0  # Starting wood set to 500
+        self.wood = 500.0
         self.max_wood = 1000
         self.units = []
         self.cow_in_barn = {}
@@ -931,12 +967,12 @@ while running:
                             for player in players:
                                 player.deselect_all_units()
                             unit_clicked.selected = True
-                            selecting = False  # Reset selection state
+                            selecting = False
                             selection_start = None
                             selection_end = None
                         else:
                             for player in players:
-                                player.deselect_all_units()  # Deselect all units on empty click
+                                player.deselect_all_units()
                             selection_start = click_pos
                             selecting = True
             elif event.button == 3:
@@ -951,6 +987,8 @@ while running:
                                 print(f"Axeman at {unit.pos} assigned to tree at {unit.target}")
                             else:
                                 unit.target = Vector2(click_pos.x, click_pos.y)
+                                if isinstance(unit, Cow):
+                                    unit.returning = False  # Reset returning state on manual move
                                 move_order_times[(click_pos.x, click_pos.y)] = current_time
         elif event.type == pygame.MOUSEBUTTONUP:
             if event.button == 1 and selecting and current_player:
@@ -963,7 +1001,6 @@ while running:
                     for unit in current_player.units:
                         unit.selected = (min(selection_start.x, selection_end.x) <= unit.pos.x <= max(selection_start.x, selection_end.x) and
                                         min(selection_start.y, selection_end.y) <= unit.pos.y <= max(selection_start.y, selection_end.y))
-                    # Reset selection positions to forget last mouse_pos
                     selection_start = None
                     selection_end = None
         elif event.type == pygame.MOUSEMOTION and selecting:
@@ -1001,7 +1038,7 @@ while running:
         for barn in player.barns:
             if barn in player.cow_in_barn and player.cow_in_barn[barn]:
                 cow = player.cow_in_barn[barn]
-                if cow.is_in_barn(barn) and player.milk < player.max_milk and cow.special > 0:
+                if cow.is_in_barn(barn) and cow.special > 0:
                     cow.special = max(0, cow.special - barn.harvest_rate / 60)
                     player.milk = min(player.milk + barn.harvest_rate / 60, player.max_milk)
                     if cow.special <= 0:
@@ -1009,6 +1046,7 @@ while running:
                         cow.target = cow.return_pos
                         cow.returning = True
                         cow.return_pos = None
+                        print(f"Cow at {cow.pos} fully drained in barn, targeting return_pos {cow.target}")
                 else:
                     player.cow_in_barn[barn] = None
             else:
