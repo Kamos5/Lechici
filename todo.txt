@@ -18,6 +18,11 @@ drwale (podstawowa jednostka + zbiera drewno + upgrade do piknierow) -> strong v
 lucznicy (duzy dmg przeciwko piechocie + ogniste strzaly (dodatkowy dmg wzledem pelnosci silosu) -> strong vs inf
 rycerze (szybkie jednostki) -> strong vs arch
 
-krowy do prawego rogu
+todo:
 
-drwale 0.5 sek ramki do zniekniecia
+- fullscreen
+- clicking on unit icon should select this unit
+- attacking/defending - stances?
+- a-move
+- control groups
+- fix: without selected player selection boarders clicks are remember
