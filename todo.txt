@@ -18,11 +18,17 @@ drwale (podstawowa jednostka + zbiera drewno + upgrade do piknierow) -> strong v
 lucznicy (duzy dmg przeciwko piechocie + ogniste strzaly (dodatkowy dmg wzledem pelnosci silosu) -> strong vs inf
 rycerze (szybkie jednostki) -> strong vs arch
 
+done:
+
++ clicking on unit icon should select this unit
+
 todo:
 
 - fullscreen
-- clicking on unit icon should select this unit
 - attacking/defending - stances?
 - a-move
+- spawning delay (production time)
+- spawning building
 - control groups
 - fix: without selected player selection boarders clicks are remember
+- fix: with multiple things being selected dont show spawning button options unless they are the same type
