@@ -23,16 +23,17 @@ done:
 + clicking on unit icon should select this unit
 + attacking
 + spawning building
++ production times
++ spawning delay (production time)
 
 todo:
 
 - fullscreen
-- production times
 - fog of war
 - sounds?
 - /defending - stances?
 - a-move
-- spawning delay (production time)
 - control groups
 - fix: without selected player selection boarders clicks are remember
 - fix: with multiple things being selected dont show spawning button options unless they are the same type
+- punkt zbiorczy dla budynkow

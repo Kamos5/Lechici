@@ -123,6 +123,10 @@ move_order_times = {}
 highlight_times = {}
 attack_animations = []  # List to store attack animation data (start_pos, end_pos, start_time)
 
+# Production queue and animation tracking
+production_queues = {}  # Maps building to {'unit_type': Class, 'start_time': float, 'player_id': int}
+building_animations = {}  # Maps building to {'start_time': float, 'alpha': float} for transparency animation
+
 # SpatialGrid class
 class SpatialGrid:
     def __init__(self, cell_size, map_width, map_height):
@@ -275,6 +279,7 @@ class Unit:
     _unit_icons = {}
     milk_cost = 0
     wood_cost = 0
+    production_time = 15.0  # Default production time for units (seconds)
 
     def __init__(self, x, y, size, speed, color, player_id, player_color):
         self.pos = Vector2(x, y)
@@ -301,6 +306,7 @@ class Unit:
         cls_name = self.__class__.__name__
         if cls_name not in Unit._images:
             self.load_images(cls_name, size)
+        self.alpha = 255  # Default fully opaque, used for building animation
 
     @classmethod
     def load_images(cls, cls_name, size):
@@ -330,10 +336,14 @@ class Unit:
         y = self.pos.y - camera_y + VIEW_MARGIN_TOP
         if not image:
             color = GREEN if self.selected else self.color
-            pygame.draw.rect(screen, color, (x - self.size / 2, y - self.size / 2, self.size, self.size))
+            surface = pygame.Surface((self.size, self.size), pygame.SRCALPHA)
+            surface.fill(color[:3] + (self.alpha,))  # Apply alpha
+            screen.blit(surface, (x - self.size / 2, y - self.size / 2))
         else:
-            image_rect = image.get_rect(center=(int(x), int(y)))
-            screen.blit(image, image_rect)
+            image_surface = image.copy()
+            image_surface.set_alpha(self.alpha)  # Apply alpha
+            image_rect = image_surface.get_rect(center=(int(x), int(y)))
+            screen.blit(image_surface, image_rect)
         if self.selected:
             pygame.draw.rect(screen, self.player_color, (x - self.size / 2, y - self.size / 2, self.size, self.size), 1)
         if self.should_highlight(current_time):
@@ -568,6 +578,8 @@ class Tree(Unit):
 
 # Building class
 class Building(Unit):
+
+    production_time = 30.0  # Production time for buildings (seconds)
     def __init__(self, x, y, size, color, player_id, player_color):
         super().__init__(x, y, size, speed=0, color=color, player_id=player_id, player_color=player_color)
         self.hp = 150  # High HP for buildings
@@ -1058,26 +1070,74 @@ tile_surface = pygame.Surface((VIEW_WIDTH, VIEW_HEIGHT), pygame.SRCALPHA)
 placing_building = False
 building_to_place = None
 building_pos = None
-building_size = 60  # All buildings (Barn, Barracks, TownCenter) have size=60
+building_size = 60
 
 while running:
     current_time = pygame.time.get_ticks() / 1000
+    dt = clock.get_time() / 1000  # Delta time for frame-rate independent updates
 
     # Update camera
-    keys = pygame.key.get_pressed()
-    if keys[pygame.K_LEFT]:
+    mouse_pos_screen = pygame.mouse.get_pos()
+    if mouse_pos_screen[0] < SCROLL_MARGIN:
         camera_x = max(0, camera_x - SCROLL_SPEED)
-    if keys[pygame.K_RIGHT]:
+    if mouse_pos_screen[0] > SCREEN_WIDTH - SCROLL_MARGIN:
         camera_x = min(MAP_WIDTH - VIEW_WIDTH, camera_x + SCROLL_SPEED)
-    if keys[pygame.K_UP]:
+    if mouse_pos_screen[1] < SCROLL_MARGIN:
         camera_y = max(0, camera_y - SCROLL_SPEED)
-    if keys[pygame.K_DOWN]:
+    if mouse_pos_screen[1] > SCREEN_HEIGHT - SCROLL_MARGIN:
         camera_y = min(MAP_HEIGHT - VIEW_HEIGHT, camera_y + SCROLL_SPEED)
 
-    # Check for building selection
-    barn_selected = any(isinstance(unit, Barn) and unit.selected for unit in (current_player.units if current_player else []))
-    barracks_selected = any(isinstance(unit, Barracks) and unit.selected for unit in (current_player.units if current_player else []))
-    town_center_selected = any(isinstance(unit, TownCenter) and unit.selected for unit in (current_player.units if current_player else []))
+    # Check for building selection (only fully constructed buildings for production)
+    barn_selected = any(isinstance(unit, Barn) and unit.selected and unit.alpha == 255 for unit in (current_player.units if current_player else []))
+    barracks_selected = any(isinstance(unit, Barracks) and unit.selected and unit.alpha == 255 for unit in (current_player.units if current_player else []))
+    town_center_selected = any(isinstance(unit, TownCenter) and unit.selected and unit.alpha == 255 for unit in (current_player.units if current_player else []))
+
+    # Update production queues
+    units_to_spawn = []
+    for building, queue in list(production_queues.items()):
+        if building not in all_units:
+            del production_queues[building]
+            continue
+        production_time = queue['unit_type'].production_time
+        if current_time - queue['start_time'] >= production_time:
+            player = next(p for p in players if p.player_id == queue['player_id'])
+            if not issubclass(queue['unit_type'], Building):
+                new_unit = queue['unit_type'](building.pos.x + building.size / 2 + 20, building.pos.y, player.player_id, player.color)
+                units_to_spawn.append((new_unit, player))
+            del production_queues[building]
+            print(f"Production complete for {queue['unit_type'].__name__} at {building.pos} for Player {player.player_id}")
+
+    # Spawn completed units
+    for unit, player in units_to_spawn:
+        if (player.unit_limit is None or player.unit_count < player.unit_limit):
+            player.add_unit(unit)
+            all_units.add(unit)
+            spatial_grid.add_unit(unit)
+            player.milk -= unit.milk_cost
+            player.wood -= unit.wood_cost
+            player.barns = [u for u in player.units if isinstance(u, Barn) and u.alpha == 255]
+            highlight_times[unit] = current_time
+            print(f"Spawned {unit.__class__.__name__} at {unit.pos} for Player {player.player_id}")
+        else:
+            print(f"Cannot spawn {unit.__class__.__name__}: unit limit reached ({player.unit_count}/{player.unit_limit})")
+
+    # Update building animations (construction fade)
+    for building, anim in list(building_animations.items()):
+        if building not in all_units:
+            del building_animations[building]
+            continue
+        elapsed = current_time - anim['start_time']
+        if elapsed >= building.production_time:
+            building.alpha = 255  # Fully opaque
+            player = next(p for p in players if p.player_id == building.player_id)
+            # Only increment if not previously counted
+            if building not in player.units or building.alpha < 255:
+                player.building_count += 1
+            if isinstance(building, Barn):
+                player.barns = [u for u in player.units if isinstance(u, Barn) and u.alpha == 255]
+            del building_animations[building]
+        else:
+            building.alpha = int(255 * (elapsed / building.production_time))  # Fade from 0 to 255
 
     # Handle events
     for event in pygame.event.get():
@@ -1114,104 +1174,93 @@ while running:
                 # Check grid buttons for spawning units or initiating building placement
                 elif current_player:
                     grid_button_clicked = False
-                    if barn_selected and grid_buttons[0][0].collidepoint(event.pos):
-                        print("First grid button clicked for Barn")
-                        if (current_player.milk >= Cow.milk_cost and current_player.wood >= Cow.wood_cost and
-                            (current_player.unit_limit is None or current_player.unit_count < current_player.unit_limit)):
-                            selected_barn = next((unit for unit in current_player.units if isinstance(unit, Barn) and unit.selected), None)
-                            if selected_barn:
-                                new_cow = Cow(selected_barn.pos.x + selected_barn.size / 2 + 20, selected_barn.pos.y, current_player.player_id, current_player.color)
-                                current_player.add_unit(new_cow)
-                                all_units.add(new_cow)
-                                spatial_grid.add_unit(new_cow)
-                                current_player.milk -= Cow.milk_cost
-                                current_player.wood -= Cow.wood_cost
-                                current_player.barns = [unit for unit in current_player.units if isinstance(unit, Barn)]
+                    selected_barn = next((unit for unit in current_player.units if isinstance(unit, Barn) and unit.selected and unit.alpha == 255), None)
+                    selected_barracks = next((unit for unit in current_player.units if isinstance(unit, Barracks) and unit.selected and unit.alpha == 255), None)
+                    selected_town_center = next((unit for unit in current_player.units if isinstance(unit, TownCenter) and unit.selected and unit.alpha == 255), None)
+                    if barn_selected and grid_buttons[0][0].collidepoint(event.pos) and selected_barn:
+                        if selected_barn in production_queues:
+                            print(f"Barn at {selected_barn.pos} is already producing")
+                        elif (current_player.milk >= Cow.milk_cost and current_player.wood >= Cow.wood_cost and
+                              (current_player.unit_limit is None or current_player.unit_count < current_player.unit_limit)):
+                            production_queues[selected_barn] = {
+                                'unit_type': Cow,
+                                'start_time': current_time,
+                                'player_id': current_player.player_id
+                            }
+                            grid_button_clicked = True
+                            print(f"Started production of Cow at Barn {selected_barn.pos} for Player {current_player.player_id}")
+                        else:
+                            print(f"Cannot queue Cow: milk={current_player.milk}/{Cow.milk_cost}, wood={current_player.wood}/{Cow.wood_cost}, units={current_player.unit_count}/{current_player.unit_limit}")
+                    elif barracks_selected and selected_barracks:
+                        if selected_barracks in production_queues:
+                            print(f"Barracks at {selected_barracks.pos} is already producing")
+                        elif grid_buttons[0][0].collidepoint(event.pos):
+                            if (current_player.milk >= Axeman.milk_cost and current_player.wood >= Axeman.wood_cost and
+                                (current_player.unit_limit is None or current_player.unit_count < current_player.unit_limit)):
+                                production_queues[selected_barracks] = {
+                                    'unit_type': Axeman,
+                                    'start_time': current_time,
+                                    'player_id': current_player.player_id
+                                }
                                 grid_button_clicked = True
-                                highlight_times[new_cow] = current_time
-                                print(f"Created new Cow at {new_cow.pos} for Player {current_player.player_id}")
+                                print(f"Started production of Axeman at Barracks {selected_barracks.pos} for Player {current_player.player_id}")
                             else:
-                                print("No selected Barn found")
-                        else:
-                            print(f"Cannot spawn Cow: milk={current_player.milk}/{Cow.milk_cost}, wood={current_player.wood}/{Cow.wood_cost}, units={current_player.unit_count}/{current_player.unit_limit}")
-                    elif barracks_selected:
-                        selected_barracks = next((unit for unit in current_player.units if isinstance(unit, Barracks) and unit.selected), None)
-                        if selected_barracks:
-                            if grid_buttons[0][0].collidepoint(event.pos):
-                                print("First grid button clicked for Barracks")
-                                if (current_player.milk >= Axeman.milk_cost and current_player.wood >= Axeman.wood_cost and
-                                    (current_player.unit_limit is None or current_player.unit_count < current_player.unit_limit)):
-                                    new_unit = Axeman(selected_barracks.pos.x + selected_barracks.size / 2 + 20, selected_barracks.pos.y, current_player.player_id, current_player.color)
-                                    current_player.add_unit(new_unit)
-                                    all_units.add(new_unit)
-                                    spatial_grid.add_unit(new_unit)
-                                    current_player.milk -= Axeman.milk_cost
-                                    current_player.wood -= Axeman.wood_cost
-                                    grid_button_clicked = True
-                                    highlight_times[new_unit] = current_time
-                                    print(f"Created new Axeman at {new_unit.pos} for Player {current_player.player_id}")
-                                else:
-                                    print(f"Cannot spawn Axeman: milk={current_player.milk}/{Axeman.milk_cost}, wood={current_player.wood}/{Axeman.wood_cost}, units={current_player.unit_count}/{current_player.unit_limit}")
-                            elif grid_buttons[1][0].collidepoint(event.pos):
-                                print("Second grid button clicked for Barracks")
-                                if (current_player.milk >= Archer.milk_cost and current_player.wood >= Archer.wood_cost and
-                                    (current_player.unit_limit is None or current_player.unit_count < current_player.unit_limit)):
-                                    new_unit = Archer(selected_barracks.pos.x + selected_barracks.size / 2 + 20, selected_barracks.pos.y, current_player.player_id, current_player.color)
-                                    current_player.add_unit(new_unit)
-                                    all_units.add(new_unit)
-                                    spatial_grid.add_unit(new_unit)
-                                    current_player.milk -= Archer.milk_cost
-                                    current_player.wood -= Archer.wood_cost
-                                    grid_button_clicked = True
-                                    highlight_times[new_unit] = current_time
-                                    print(f"Created new Archer at {new_unit.pos} for Player {current_player.player_id}")
-                                else:
-                                    print(f"Cannot spawn Archer: milk={current_player.milk}/{Archer.milk_cost}, wood={current_player.wood}/{Archer.wood_cost}, units={current_player.unit_count}/{current_player.unit_limit}")
-                            elif grid_buttons[2][0].collidepoint(event.pos):
-                                print("Third grid button clicked for Barracks")
-                                if (current_player.milk >= Knight.milk_cost and current_player.wood >= Knight.wood_cost and
-                                    (current_player.unit_limit is None or current_player.unit_count < current_player.unit_limit)):
-                                    new_unit = Knight(selected_barracks.pos.x + selected_barracks.size / 2 + 20, selected_barracks.pos.y, current_player.player_id, current_player.color)
-                                    current_player.add_unit(new_unit)
-                                    all_units.add(new_unit)
-                                    spatial_grid.add_unit(new_unit)
-                                    current_player.milk -= Knight.milk_cost
-                                    current_player.wood -= Knight.wood_cost
-                                    grid_button_clicked = True
-                                    highlight_times[new_unit] = current_time
-                                    print(f"Created new Knight at {new_unit.pos} for Player {current_player.player_id}")
-                                else:
-                                    print(f"Cannot spawn Knight: milk={current_player.milk}/{Knight.milk_cost}, wood={current_player.wood}/{Knight.wood_cost}, units={current_player.unit_count}/{current_player.unit_limit}")
-                        else:
-                            print("No selected Barracks found")
-                    elif town_center_selected:
-                        if grid_buttons[0][0].collidepoint(event.pos):
-                            print("First grid button clicked for TownCenter - Barn")
-                            if (current_player.milk >= Barn.milk_cost and current_player.wood >= Barn.wood_cost and
-                                (current_player.building_limit is None or current_player.building_count < current_player.building_limit)):
-                                building_to_place = Barn
-                                placing_building = True
-                                print(f"Started placing Barn for Player {current_player.player_id}")
-                            else:
-                                print(f"Cannot place Barn: milk={current_player.milk}/{Barn.milk_cost}, wood={current_player.wood}/{Barn.wood_cost}, buildings={current_player.building_count}/{current_player.building_limit}")
+                                print(f"Cannot queue Axeman: milk={current_player.milk}/{Axeman.milk_cost}, wood={current_player.wood}/{Axeman.wood_cost}, units={current_player.unit_count}/{current_player.unit_limit}")
                         elif grid_buttons[1][0].collidepoint(event.pos):
-                            print("Second grid button clicked for TownCenter - Barracks")
-                            if (current_player.milk >= Barracks.milk_cost and current_player.wood >= Barracks.wood_cost and
-                                (current_player.building_limit is None or current_player.building_count < current_player.building_limit)):
-                                building_to_place = Barracks
-                                placing_building = True
-                                print(f"Started placing Barracks for Player {current_player.player_id}")
+                            if (current_player.milk >= Archer.milk_cost and current_player.wood >= Archer.wood_cost and
+                                (current_player.unit_limit is None or current_player.unit_count < current_player.unit_limit)):
+                                production_queues[selected_barracks] = {
+                                    'unit_type': Archer,
+                                    'start_time': current_time,
+                                    'player_id': current_player.player_id
+                                }
+                                grid_button_clicked = True
+                                print(f"Started production of Archer at Barracks {selected_barracks.pos} for Player {current_player.player_id}")
                             else:
-                                print(f"Cannot place Barracks: milk={current_player.milk}/{Barracks.milk_cost}, wood={current_player.wood}/{Barracks.wood_cost}, buildings={current_player.building_count}/{current_player.building_limit}")
+                                print(f"Cannot queue Archer: milk={current_player.milk}/{Archer.milk_cost}, wood={current_player.wood}/{Archer.wood_cost}, units={current_player.unit_count}/{current_player.unit_limit}")
                         elif grid_buttons[2][0].collidepoint(event.pos):
-                            print("Third grid button clicked for TownCenter - TownCenter")
-                            if (current_player.milk >= TownCenter.milk_cost and current_player.wood >= TownCenter.wood_cost and
-                                (current_player.building_limit is None or current_player.building_count < current_player.building_limit)):
-                                building_to_place = TownCenter
-                                placing_building = True
-                                print(f"Started placing TownCenter for Player {current_player.player_id}")
+                            if (current_player.milk >= Knight.milk_cost and current_player.wood >= Knight.wood_cost and
+                                (current_player.unit_limit is None or current_player.unit_count < current_player.unit_limit)):
+                                production_queues[selected_barracks] = {
+                                    'unit_type': Knight,
+                                    'start_time': current_time,
+                                    'player_id': current_player.player_id
+                                }
+                                grid_button_clicked = True
+                                print(f"Started production of Knight at Barracks {selected_barracks.pos} for Player {current_player.player_id}")
                             else:
-                                print(f"Cannot place TownCenter: milk={current_player.milk}/{TownCenter.milk_cost}, wood={current_player.wood}/{TownCenter.wood_cost}, buildings={current_player.building_count}/{current_player.building_limit}")
+                                print(f"Cannot queue Knight: milk={current_player.milk}/{Knight.milk_cost}, wood={current_player.wood}/{Knight.wood_cost}, units={current_player.unit_count}/{current_player.unit_limit}")
+                    elif town_center_selected and selected_town_center:
+                        if grid_buttons[0][0].collidepoint(event.pos):
+                            if (current_player.milk >= Barn.milk_cost and current_player.wood >= Barn.wood_cost and
+                                (current_player.building_limit is None or current_player.building_count < current_player.building_limit) and
+                                selected_town_center not in production_queues):
+                                placing_building = True
+                                building_to_place = Barn
+                                grid_button_clicked = True
+                                print(f"Initiated placement of Barn for Player {current_player.player_id}")
+                            else:
+                                print(f"Cannot place Barn: milk={current_player.milk}/{Barn.milk_cost}, wood={current_player.wood}/{Barn.wood_cost}, buildings={current_player.building_count}/{current_player.building_limit}, producing={selected_town_center in production_queues}")
+                        elif grid_buttons[1][0].collidepoint(event.pos):
+                            if (current_player.milk >= Barracks.milk_cost and current_player.wood >= Barracks.wood_cost and
+                                (current_player.building_limit is None or current_player.building_count < current_player.building_limit) and
+                                selected_town_center not in production_queues):
+                                placing_building = True
+                                building_to_place = Barracks
+                                grid_button_clicked = True
+                                print(f"Initiated placement of Barracks for Player {current_player.player_id}")
+                            else:
+                                print(f"Cannot place Barracks: milk={current_player.milk}/{Barracks.milk_cost}, wood={current_player.wood}/{Barracks.wood_cost}, buildings={current_player.building_count}/{current_player.building_limit}, producing={selected_town_center in production_queues}")
+                        elif grid_buttons[2][0].collidepoint(event.pos):
+                            if (current_player.milk >= TownCenter.milk_cost and current_player.wood >= TownCenter.wood_cost and
+                                (current_player.building_limit is None or current_player.building_count < current_player.building_limit) and
+                                selected_town_center not in production_queues):
+                                placing_building = True
+                                building_to_place = TownCenter
+                                grid_button_clicked = True
+                                print(f"Initiated placement of TownCenter for Player {current_player.player_id}")
+                            else:
+                                print(f"Cannot place TownCenter: milk={current_player.milk}/{TownCenter.milk_cost}, wood={current_player.wood}/{TownCenter.wood_cost}, buildings={current_player.building_count}/{current_player.building_limit}, producing={selected_town_center in production_queues}")
                     # Check unit icon clicks
                     if not grid_button_clicked and PANEL_Y <= mouse_pos.y <= PANEL_Y + ICON_SIZE + 10:
                         selected_units = [unit for unit in current_player.units if unit.selected]
@@ -1232,8 +1281,8 @@ while running:
                         click_pos = Vector2(mouse_pos.x - VIEW_MARGIN_LEFT + camera_x, mouse_pos.y - VIEW_MARGIN_TOP + camera_y)
                         if placing_building:
                             # Snap to the center of the tile under the mouse
-                            tile_x = int((click_pos.x + TILE_HALF) // TILE_SIZE)
-                            tile_y = int((click_pos.y + TILE_HALF) // TILE_SIZE)
+                            tile_x = int(click_pos.x // TILE_SIZE)
+                            tile_y = int(click_pos.y // TILE_SIZE)
                             building_pos = Vector2(tile_x * TILE_SIZE + TILE_HALF, tile_y * TILE_SIZE + TILE_HALF)
                             building_size_tiles = int(building_size // TILE_SIZE)
                             valid_placement = True
@@ -1246,18 +1295,28 @@ while running:
                                     break
                             if valid_placement:
                                 new_building = building_to_place(building_pos.x, building_pos.y, current_player.player_id, current_player.color)
+                                new_building.alpha = 0  # Start fully transparent
                                 current_player.add_unit(new_building)
                                 all_units.add(new_building)
                                 spatial_grid.add_unit(new_building)
                                 current_player.milk -= building_to_place.milk_cost
                                 current_player.wood -= building_to_place.wood_cost
-                                current_player.barns = [unit for unit in current_player.units if isinstance(unit, Barn)]
                                 for row in range(tile_y - building_size_tiles // 2, tile_y + building_size_tiles // 2 + 1):
                                     for col in range(tile_x - building_size_tiles // 2, tile_x + building_size_tiles // 2 + 1):
                                         if 0 <= row < GRASS_ROWS and 0 <= col < GRASS_COLS:
                                             grass_tiles[row][col] = Dirt(col * TILE_SIZE, row * TILE_SIZE)
                                 highlight_times[new_building] = current_time
-                                print(f"Placed {building_to_place.__name__} at {building_pos} for Player {current_player.player_id}")
+                                building_animations[new_building] = {
+                                    'start_time': current_time,
+                                    'alpha': 0,
+                                    'town_center': selected_town_center
+                                }
+                                production_queues[selected_town_center] = {
+                                    'unit_type': building_to_place,
+                                    'start_time': current_time,
+                                    'player_id': current_player.player_id
+                                }
+                                print(f"Placed {building_to_place.__name__} at {building_pos} for Player {current_player.player_id} with construction fade")
                                 placing_building = False
                                 building_to_place = None
                                 building_pos = None
@@ -1308,7 +1367,6 @@ while running:
                                 unit.autonomous_target = False
                                 print(f"Axeman at {unit.pos} assigned to tree at {unit.target}")
                                 highlight_times[clicked_tree] = current_time
-                                print(f"Highlighting tree at {clicked_tree.pos} for 0.4 seconds")
                             elif clicked_unit and not isinstance(clicked_unit, Tree) and (clicked_unit.player_id != unit.player_id or clicked_unit.player_id == 0):
                                 unit.target = clicked_unit
                                 unit.autonomous_target = False
@@ -1344,7 +1402,10 @@ while running:
             if placing_building:
                 mouse_pos = Vector2(event.pos)
                 if VIEW_MARGIN_LEFT <= mouse_pos.x <= VIEW_BOUNDS_X and VIEW_MARGIN_TOP <= mouse_pos.y <= VIEW_BOUNDS_Y:
-                    building_pos = Vector2(mouse_pos.x - VIEW_MARGIN_LEFT + camera_x, mouse_pos.y - VIEW_MARGIN_TOP + camera_y)
+                    click_pos = Vector2(mouse_pos.x - VIEW_MARGIN_LEFT + camera_x, mouse_pos.y - VIEW_MARGIN_TOP + camera_y)
+                    tile_x = int(click_pos.x // TILE_SIZE)
+                    tile_y = int(click_pos.y // TILE_SIZE)
+                    building_pos = Vector2(tile_x * TILE_SIZE + TILE_HALF, tile_y * TILE_SIZE + TILE_HALF)
 
     # Update grass regrowth
     for row, col in list(needs_regrowth):
@@ -1404,8 +1465,21 @@ while running:
 
     # Remove dead units
     for unit in units_to_remove:
+        if unit in building_animations:
+            # Cancel TownCenter production queue if building is destroyed during construction
+            anim = building_animations[unit]
+            town_center = anim.get('town_center')
+            if town_center and town_center in production_queues and production_queues[town_center]['unit_type'] == unit.__class__:
+                del production_queues[town_center]
+                print(f"Canceled TownCenter production queue for {unit.__class__.__name__} due to destruction")
+            del building_animations[unit]
         for player in players:
-            player.remove_unit(unit)
+            if unit in player.units:
+                player.remove_unit(unit)
+                if isinstance(unit, Building) and unit.alpha == 255:
+                    player.building_count -= 1
+                    if isinstance(unit, Barn):
+                        player.barns = [u for u in player.units if isinstance(u, Barn) and u.alpha == 255]
         all_units.discard(unit)
         spatial_grid.remove_unit(unit)
         print(f"Unit {unit.__class__.__name__} at {unit.pos} destroyed")
@@ -1458,8 +1532,20 @@ while running:
         temp_building = building_to_place(building_pos.x, building_pos.y, current_player.player_id, current_player.color)
         cls_name = building_to_place.__name__
         image = Unit._images.get(cls_name)
-        x = building_pos.x - camera_x + VIEW_MARGIN_LEFT
-        y = building_pos.y - camera_y + VIEW_MARGIN_TOP
+        tile_x = int(building_pos.x // TILE_SIZE)
+        tile_y = int(building_pos.y // TILE_SIZE)
+        snapped_building_pos = Vector2(tile_x * TILE_SIZE + TILE_HALF, tile_y * TILE_SIZE + TILE_HALF)
+        x = snapped_building_pos.x - camera_x + VIEW_MARGIN_LEFT
+        y = snapped_building_pos.y - camera_y + VIEW_MARGIN_TOP
+        valid_placement = True
+        building_size_tiles = int(building_size // TILE_SIZE)
+        for row in range(tile_y - building_size_tiles // 2, tile_y + building_size_tiles // 2 + 1):
+            for col in range(tile_x - building_size_tiles // 2, tile_x + building_size_tiles // 2 + 1):
+                if not (0 <= row < GRASS_ROWS and 0 <= col < GRASS_COLS) or is_tile_occupied(row, col, all_units):
+                    valid_placement = False
+                    break
+            if not valid_placement:
+                break
         if image:
             preview_image = image.copy()
             preview_image.set_alpha(128)
@@ -1469,18 +1555,6 @@ while running:
             preview_surface = pygame.Surface((building_size, building_size), pygame.SRCALPHA)
             preview_surface.fill(temp_building.color[:3] + (128,))
             screen.blit(preview_surface, (x - building_size / 2, y - building_size / 2))
-        tile_x = int((building_pos.x + TILE_HALF) // TILE_SIZE)
-        tile_y = int((building_pos.y + TILE_HALF) // TILE_SIZE)
-        snapped_building_pos = Vector2(tile_x * TILE_SIZE + TILE_HALF, tile_y * TILE_SIZE + TILE_HALF)
-        building_size_tiles = int(building_size // TILE_SIZE)
-        valid_placement = True
-        for row in range(tile_y - building_size_tiles // 2, tile_y + building_size_tiles // 2 + 1):
-            for col in range(tile_x - building_size_tiles // 2, tile_x + building_size_tiles // 2 + 1):
-                if not (0 <= row < GRASS_ROWS and 0 <= col < GRASS_COLS) or is_tile_occupied(row, col, all_units):
-                    valid_placement = False
-                    break
-            if not valid_placement:
-                break
         border_color = GREEN if valid_placement else RED
         snapped_x = snapped_building_pos.x - camera_x + VIEW_MARGIN_LEFT
         snapped_y = snapped_building_pos.y - camera_y + VIEW_MARGIN_TOP
@@ -1515,13 +1589,15 @@ while running:
     screen.blit(player1_text, (BUTTON_PLAYER1_POS[0] + 10, BUTTON_PLAYER1_POS[1] + 5))
     screen.blit(player2_text, (BUTTON_PLAYER2_POS[0] + 10, BUTTON_PLAYER2_POS[1] + 5))
 
-    # Draw 3x1 grid of buttons
+    # Draw 3x1 grid of buttons with moving line animation
     for row in range(GRID_BUTTON_ROWS):
         for col in range(GRID_BUTTON_COLS):
             button_rect = grid_buttons[row][col]
+            selected_town_center = next((unit for unit in current_player.units if isinstance(unit, TownCenter) and unit.selected and unit.alpha == 255), None) if current_player else None
             if barn_selected and current_player and row == 0 and col == 0:
                 spawn_button_color = HIGHLIGHT_GRAY if (current_player.milk >= Cow.milk_cost and current_player.wood >= Cow.wood_cost and
-                                                       (current_player.unit_limit is None or current_player.unit_count < current_player.unit_limit)) else GRAY
+                                                       (current_player.unit_limit is None or current_player.unit_count < current_player.unit_limit) and
+                                                       selected_barn not in production_queues) else GRAY
                 pygame.draw.rect(screen, spawn_button_color, button_rect)
                 screen.blit(Unit._unit_icons.get('Cow'), (button_rect.x + 8, button_rect.y + 4))
                 screen.blit(milk_icon, (button_rect.x + 44, button_rect.y + 2))
@@ -1530,10 +1606,15 @@ while running:
                 screen.blit(wood_icon, (button_rect.x + 44, button_rect.y + 22))
                 spawn_wood_text = small_font.render(f"{Cow.wood_cost}", True, BLACK)
                 screen.blit(spawn_wood_text, (button_rect.x + 70, button_rect.y + 26))
+                if selected_barn in production_queues:
+                    progress = (current_time - production_queues[selected_barn]['start_time']) / Cow.production_time
+                    progress_width = int(progress * (GRID_BUTTON_WIDTH - 4))
+                    pygame.draw.rect(screen, GREEN, (button_rect.x + 2, button_rect.y + 2, progress_width, 4))
             elif barracks_selected and current_player:
                 if row == 0 and col == 0:
                     spawn_button_color = HIGHLIGHT_GRAY if (current_player.milk >= Axeman.milk_cost and current_player.wood >= Axeman.wood_cost and
-                                                           (current_player.unit_limit is None or current_player.unit_count < current_player.unit_limit)) else GRAY
+                                                           (current_player.unit_limit is None or current_player.unit_count < current_player.unit_limit) and
+                                                           selected_barracks not in production_queues) else GRAY
                     pygame.draw.rect(screen, spawn_button_color, button_rect)
                     screen.blit(Unit._unit_icons.get('Axeman'), (button_rect.x + 8, button_rect.y + 4))
                     screen.blit(milk_icon, (button_rect.x + 44, button_rect.y + 2))
@@ -1542,9 +1623,14 @@ while running:
                     screen.blit(wood_icon, (button_rect.x + 44, button_rect.y + 22))
                     spawn_wood_text = small_font.render(f"{Axeman.wood_cost}", True, BLACK)
                     screen.blit(spawn_wood_text, (button_rect.x + 70, button_rect.y + 26))
+                    if selected_barracks in production_queues and production_queues[selected_barracks]['unit_type'] == Axeman:
+                        progress = (current_time - production_queues[selected_barracks]['start_time']) / Axeman.production_time
+                        progress_width = int(progress * (GRID_BUTTON_WIDTH - 4))
+                        pygame.draw.rect(screen, GREEN, (button_rect.x + 2, button_rect.y + 2, progress_width, 4))
                 elif row == 1 and col == 0:
                     spawn_button_color = HIGHLIGHT_GRAY if (current_player.milk >= Archer.milk_cost and current_player.wood >= Archer.wood_cost and
-                                                           (current_player.unit_limit is None or current_player.unit_count < current_player.unit_limit)) else GRAY
+                                                           (current_player.unit_limit is None or current_player.unit_count < current_player.unit_limit) and
+                                                           selected_barracks not in production_queues) else GRAY
                     pygame.draw.rect(screen, spawn_button_color, button_rect)
                     screen.blit(Unit._unit_icons.get('Archer'), (button_rect.x + 8, button_rect.y + 4))
                     screen.blit(milk_icon, (button_rect.x + 44, button_rect.y + 2))
@@ -1553,9 +1639,14 @@ while running:
                     screen.blit(wood_icon, (button_rect.x + 44, button_rect.y + 22))
                     spawn_wood_text = small_font.render(f"{Archer.wood_cost}", True, BLACK)
                     screen.blit(spawn_wood_text, (button_rect.x + 70, button_rect.y + 26))
+                    if selected_barracks in production_queues and production_queues[selected_barracks]['unit_type'] == Archer:
+                        progress = (current_time - production_queues[selected_barracks]['start_time']) / Archer.production_time
+                        progress_width = int(progress * (GRID_BUTTON_WIDTH - 4))
+                        pygame.draw.rect(screen, GREEN, (button_rect.x + 2, button_rect.y + 2, progress_width, 4))
                 elif row == 2 and col == 0:
                     spawn_button_color = HIGHLIGHT_GRAY if (current_player.milk >= Knight.milk_cost and current_player.wood >= Knight.wood_cost and
-                                                           (current_player.unit_limit is None or current_player.unit_count < current_player.unit_limit)) else GRAY
+                                                           (current_player.unit_limit is None or current_player.unit_count < current_player.unit_limit) and
+                                                           selected_barracks not in production_queues) else GRAY
                     pygame.draw.rect(screen, spawn_button_color, button_rect)
                     screen.blit(Unit._unit_icons.get('Knight'), (button_rect.x + 8, button_rect.y + 4))
                     screen.blit(milk_icon, (button_rect.x + 44, button_rect.y + 2))
@@ -1564,10 +1655,15 @@ while running:
                     screen.blit(wood_icon, (button_rect.x + 44, button_rect.y + 22))
                     spawn_wood_text = small_font.render(f"{Knight.wood_cost}", True, BLACK)
                     screen.blit(spawn_wood_text, (button_rect.x + 70, button_rect.y + 26))
-            elif town_center_selected and current_player:
+                    if selected_barracks in production_queues and production_queues[selected_barracks]['unit_type'] == Knight:
+                        progress = (current_time - production_queues[selected_barracks]['start_time']) / Knight.production_time
+                        progress_width = int(progress * (GRID_BUTTON_WIDTH - 4))
+                        pygame.draw.rect(screen, GREEN, (button_rect.x + 2, button_rect.y + 2, progress_width, 4))
+            elif town_center_selected and current_player and selected_town_center:
                 if row == 0 and col == 0:
                     spawn_button_color = HIGHLIGHT_GRAY if (current_player.milk >= Barn.milk_cost and current_player.wood >= Barn.wood_cost and
-                                                           (current_player.building_limit is None or current_player.building_count < current_player.building_limit)) else GRAY
+                                                           (current_player.building_limit is None or current_player.building_count < current_player.building_limit) and
+                                                           selected_town_center not in production_queues) else GRAY
                     pygame.draw.rect(screen, spawn_button_color, button_rect)
                     screen.blit(Unit._unit_icons.get('Barn'), (button_rect.x + 8, button_rect.y + 4))
                     screen.blit(milk_icon, (button_rect.x + 44, button_rect.y + 2))
@@ -1576,9 +1672,14 @@ while running:
                     screen.blit(wood_icon, (button_rect.x + 44, button_rect.y + 22))
                     spawn_wood_text = small_font.render(f"{Barn.wood_cost}", True, BLACK)
                     screen.blit(spawn_wood_text, (button_rect.x + 70, button_rect.y + 26))
+                    if selected_town_center in production_queues and production_queues[selected_town_center]['unit_type'] == Barn:
+                        progress = (current_time - production_queues[selected_town_center]['start_time']) / Barn.production_time
+                        progress_width = int(progress * (GRID_BUTTON_WIDTH - 4))
+                        pygame.draw.rect(screen, GREEN, (button_rect.x + 2, button_rect.y + 2, progress_width, 4))
                 elif row == 1 and col == 0:
                     spawn_button_color = HIGHLIGHT_GRAY if (current_player.milk >= Barracks.milk_cost and current_player.wood >= Barracks.wood_cost and
-                                                           (current_player.building_limit is None or current_player.building_count < current_player.building_limit)) else GRAY
+                                                           (current_player.building_limit is None or current_player.building_count < current_player.building_limit) and
+                                                           selected_town_center not in production_queues) else GRAY
                     pygame.draw.rect(screen, spawn_button_color, button_rect)
                     screen.blit(Unit._unit_icons.get('Barracks'), (button_rect.x + 8, button_rect.y + 4))
                     screen.blit(milk_icon, (button_rect.x + 44, button_rect.y + 2))
@@ -1587,9 +1688,14 @@ while running:
                     screen.blit(wood_icon, (button_rect.x + 44, button_rect.y + 22))
                     spawn_wood_text = small_font.render(f"{Barracks.wood_cost}", True, BLACK)
                     screen.blit(spawn_wood_text, (button_rect.x + 70, button_rect.y + 26))
+                    if selected_town_center in production_queues and production_queues[selected_town_center]['unit_type'] == Barracks:
+                        progress = (current_time - production_queues[selected_town_center]['start_time']) / Barracks.production_time
+                        progress_width = int(progress * (GRID_BUTTON_WIDTH - 4))
+                        pygame.draw.rect(screen, GREEN, (button_rect.x + 2, button_rect.y + 2, progress_width, 4))
                 elif row == 2 and col == 0:
                     spawn_button_color = HIGHLIGHT_GRAY if (current_player.milk >= TownCenter.milk_cost and current_player.wood >= TownCenter.wood_cost and
-                                                           (current_player.building_limit is None or current_player.building_count < current_player.building_limit)) else GRAY
+                                                           (current_player.building_limit is None or current_player.building_count < current_player.building_limit) and
+                                                           selected_town_center not in production_queues) else GRAY
                     pygame.draw.rect(screen, spawn_button_color, button_rect)
                     screen.blit(Unit._unit_icons.get('TownCenter'), (button_rect.x + 8, button_rect.y + 4))
                     screen.blit(milk_icon, (button_rect.x + 44, button_rect.y + 2))
@@ -1598,6 +1704,10 @@ while running:
                     screen.blit(wood_icon, (button_rect.x + 44, button_rect.y + 22))
                     spawn_wood_text = small_font.render(f"{TownCenter.wood_cost}", True, BLACK)
                     screen.blit(spawn_wood_text, (button_rect.x + 70, button_rect.y + 26))
+                    if selected_town_center in production_queues and production_queues[selected_town_center]['unit_type'] == TownCenter:
+                        progress = (current_time - production_queues[selected_town_center]['start_time']) / TownCenter.production_time
+                        progress_width = int(progress * (GRID_BUTTON_WIDTH - 4))
+                        pygame.draw.rect(screen, GREEN, (button_rect.x + 2, button_rect.y + 2, progress_width, 4))
             else:
                 pygame.draw.rect(screen, LIGHT_GRAY, button_rect)
 
@@ -1607,6 +1717,9 @@ while running:
     if current_player:
         for unit in current_player.units:
             if unit.selected and unit.player_id == current_player.player_id:
+                # Only show grid buttons for fully constructed buildings
+                if isinstance(unit, Building) and unit.alpha < 255:
+                    continue
                 cls_name = unit.__class__.__name__
                 unit_icon_img = Unit._unit_icons.get(cls_name)
                 if unit_icon_img:
