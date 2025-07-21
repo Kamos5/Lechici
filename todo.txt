@@ -21,14 +21,18 @@ rycerze (szybkie jednostki) -> strong vs arch
 done:
 
 + clicking on unit icon should select this unit
++ attacking
++ spawning building
 
 todo:
 
 - fullscreen
-- attacking/defending - stances?
+- production times
+- fog of war
+- sounds?
+- /defending - stances?
 - a-move
 - spawning delay (production time)
-- spawning building
 - control groups
 - fix: without selected player selection boarders clicks are remember
 - fix: with multiple things being selected dont show spawning button options unless they are the same type
