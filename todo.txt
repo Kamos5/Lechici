@@ -37,3 +37,4 @@ todo:
 - control groups
 - fix: without selected player selection boarders clicks are remember
 - fix: with multiple things being selected dont show spawning button options unless they are the same type
+- self learning AI?
