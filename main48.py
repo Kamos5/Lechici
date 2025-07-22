@@ -65,6 +65,24 @@ BUTTON_PLAYER0_POS = (VIEW_MARGIN_LEFT + VIEW_WIDTH - BUTTON_WIDTH - 10, VIEW_MA
 BUTTON_PLAYER1_POS = (VIEW_MARGIN_LEFT + VIEW_WIDTH - BUTTON_WIDTH - 10, VIEW_MARGIN_TOP + 40 + (BUTTON_HEIGHT + BUTTON_MARGIN))
 BUTTON_PLAYER2_POS = (VIEW_MARGIN_LEFT + VIEW_WIDTH - BUTTON_WIDTH - 10, VIEW_MARGIN_TOP + 40 + 2 * (BUTTON_HEIGHT + BUTTON_MARGIN))
 
+# List of unique names for units
+UNIQUE_MALE_NAMES = [
+    "Bolesław", "Mieszko", "Władysław", "Kazimierz", "Dobrosław", "Mirosław", "Sławomir", "Wojciech",
+    "Stanisław", "Zbigniew", "Bogumił", "Jaromir", "Witosław", "Czesław", "Leszek", "Radosław",
+    "Witold", "Ziemowit", "Przemysław", "Bohusław", "Lubomir", "Wacław", "Zdzisław", "Mieczysław",
+    "Radomił", "Świętosław", "Bronisław", "Gniewomir", "Siemowit", "Bohdan", "Jarosław", "Krzysztof",
+    "Władimir", "Domarad", "Sulimir", "Bezprym", "Sambor", "Rostysław", "Wyszesław", "Bogusław"
+]
+
+FEMALE_NAMES = [
+    "Milena", "Zofia", "Wanda", "Dobrawa", "Ludmiła", "Bronisława", "Jadwiga", "Elżbieta",
+    "Radosława", "Bogumiła", "Stanisława", "Wiesława", "Mirosława", "Sławomira", "Zdzisława",
+    "Czesława", "Jaromira", "Witosława", "Przemysława", "Bohusława", "Lubomira", "Wacława",
+    "Radomiła", "Świętosława", "Dobrosława", "Gosława", "Mieczysława", "Władysława", "Kazimiera",
+    "Ziemowita", "Bogna", "Danuta", "Halina", "Irena", "Krystyna", "Aldona", "Jolanta",
+    "Beata", "Agnieszka", "Ewa"
+]
+
 # 3x1 Grid Button settings
 GRID_BUTTON_ROWS = 3
 GRID_BUTTON_COLS = 1
@@ -273,13 +291,13 @@ class Dirt(SimpleTile):
             print(f"Failed to load {cls.__name__.lower()}.png: {e}")
             cls._image = None
 
-# Unit class (replace the existing Unit class in your code)
+# Unit class
 class Unit:
     _images = {}
     _unit_icons = {}
     milk_cost = 0
     wood_cost = 0
-    production_time = 15.0  # Default production time for units (seconds)
+    production_time = 15.0
 
     def __init__(self, x, y, size, speed, color, player_id, player_color):
         self.pos = Vector2(x, y)
@@ -297,16 +315,16 @@ class Unit:
         self.max_hp = 50
         self.mana = 0
         self.special = 0
-        # Combat attributes
-        self.attack_damage = 0  # Default: no attack for base class
+        self.attack_damage = 0
         self.attack_range = 0
-        self.attack_cooldown = 1.0  # Seconds between attacks
+        self.attack_cooldown = 1.0
         self.last_attack_time = 0
-        self.armor = 0  # Reduces incoming damage
+        self.armor = 0
+        self.name = None  # Initialize name as None for base class
         cls_name = self.__class__.__name__
         if cls_name not in Unit._images:
             self.load_images(cls_name, size)
-        self.alpha = 255  # Default fully opaque, used for building animation
+        self.alpha = 255
 
     @classmethod
     def load_images(cls, cls_name, size):
@@ -917,33 +935,53 @@ class Player:
         self.unit_count = 0
         self.building_limit = None if player_id == 0 else 5
         self.building_count = 0
+        self.used_male_names = set()  # Track used male names for Axeman, Archer, Knight
+        self.used_female_names = set()  # Track used female names for Cow
         offset_x = start_x
         offset_y = start_y
         if self.player_id > 0:
-            self.units.extend([
+            initial_units = [
                 Axeman(offset_x + 100, offset_y + 100, player_id, self.color),
                 Knight(offset_x + 150, offset_y + 100, player_id, self.color),
                 Archer(offset_x + 200, offset_y + 100, player_id, self.color),
                 Cow(offset_x + 260, offset_y + 100, player_id, self.color),
                 Barn(offset_x + 230, offset_y + 150, player_id, self.color),
                 TownCenter(offset_x + 150, offset_y + 150, player_id, self.color),
-                Barracks(offset_x + 70, offset_y + 150, player_id, self.color)
-            ])
+                Barracks(offset_x + 70, offset_y + 150, player_id, self.color),
+            ]
+            for unit in initial_units:
+                self.add_unit(unit)
             self.unit_count = len([unit for unit in self.units if not isinstance(unit, Building)])
             self.building_count = len([unit for unit in self.units if isinstance(unit, Building)])
             self.barns = [unit for unit in self.units if isinstance(unit, Barn)]
             print(f"Player {self.player_id} initialized with {self.unit_count}/{self.unit_limit} units and {self.building_count}/{self.building_limit} buildings")
 
-    def select_all_units(self):
-        for unit in self.units:
-            unit.selected = True
-
-    def deselect_all_units(self):
-        for unit in self.units:
-            unit.selected = False
-
     def add_unit(self, unit):
         self.units.append(unit)
+        # Assign a unique name to Axeman, Archer, Knight, or Cow
+        if isinstance(unit, (Axeman, Archer, Knight, Cow)) and unit.name is None:
+            if isinstance(unit, Cow):
+                # Assign female name to Cow
+                available_names = [name for name in FEMALE_NAMES if name not in self.used_female_names]
+                if available_names:
+                    unit.name = random.choice(available_names)
+                    self.used_female_names.add(unit.name)
+                    print(f"Assigned female name {unit.name} to Cow for Player {self.player_id}")
+                else:
+                    unit.name = f"Cow_{len(self.used_female_names) + 1}"
+                    self.used_female_names.add(unit.name)
+                    print(f"No female names available, assigned {unit.name} to Cow for Player {self.player_id}")
+            else:
+                # Assign male name to Axeman, Archer, Knight
+                available_names = [name for name in UNIQUE_MALE_NAMES if name not in self.used_male_names]
+                if available_names:
+                    unit.name = random.choice(available_names)
+                    self.used_male_names.add(unit.name)
+                    print(f"Assigned male name {unit.name} to {unit.__class__.__name__} for Player {self.player_id}")
+                else:
+                    unit.name = f"{unit.__class__.__name__}_{len(self.used_male_names) + 1}"
+                    self.used_male_names.add(unit.name)
+                    print(f"No male names available, assigned {unit.name} to {unit.__class__.__name__} for Player {self.player_id}")
         if isinstance(unit, Building):
             if self.building_limit is not None:
                 self.building_count += 1
@@ -956,6 +994,14 @@ class Player:
     def remove_unit(self, unit):
         if unit in self.units:
             self.units.remove(unit)
+            # Remove the unit's name from the appropriate name set
+            if unit.name:
+                if isinstance(unit, Cow) and unit.name in self.used_female_names:
+                    self.used_female_names.remove(unit.name)
+                    print(f"Removed female name {unit.name} from Player {self.player_id}")
+                elif isinstance(unit, (Axeman, Archer, Knight)) and unit.name in self.used_male_names:
+                    self.used_male_names.remove(unit.name)
+                    print(f"Removed male name {unit.name} from Player {self.player_id}")
             if isinstance(unit, Building):
                 if self.building_limit is not None:
                     self.building_count -= 1
@@ -967,6 +1013,13 @@ class Player:
                     self.unit_count -= 1
                     print(f"Player {self.player_id} unit count decreased to {self.unit_count}/{self.unit_limit}")
 
+    def select_all_units(self):
+        for unit in self.units:
+            unit.selected = True
+
+    def deselect_all_units(self):
+        for unit in self.units:
+            unit.selected = False
 
 class PlayerAI:
     def __init__(self, player, grass_tiles, spatial_grid, all_units, production_queues):
@@ -982,8 +1035,6 @@ class PlayerAI:
         self.max_barns = 2  # AI-specific limit for barns
         self.max_cows = 3  # AI-specific limit for cows
         self.max_units = 15  # 50% over unit_limit (10 + 5 = 15)
-        self.min_axemen_harvesting = 2  # Minimum number of Axemen harvesting trees
-        self.defense_range = 200  # Range (pixels) for units to mobilize to defend
 
     def find_valid_building_position(self, center_pos):
         """Find a valid position to place a building near center_pos."""
@@ -1003,7 +1054,7 @@ class PlayerAI:
                     if not valid:
                         break
                 if valid:
-                    return Vector2(tile_x * TILE_SIZE + TILE_HALF, tile_y * TILE_HALF)
+                    return Vector2(tile_x * TILE_SIZE + TILE_HALF, tile_y * TILE_SIZE + TILE_HALF)
         return None
 
     def update(self, current_time):
@@ -1011,9 +1062,6 @@ class PlayerAI:
         if current_time - self.last_decision_time < self.decision_interval:
             return
         self.last_decision_time = current_time
-
-        # Handle defense mobilization first
-        self.mobilize_defense(current_time)
 
         # Gather resources
         self.manage_cows()
@@ -1023,73 +1071,10 @@ class PlayerAI:
         self.manage_buildings()
         self.manage_unit_production()
 
-    def mobilize_defense(self, current_time):
-        """Mobilize nearby units to defend any attacked unit or building, reserving Axemen for harvesting."""
-        # Find all attacked units or buildings
-        attacked_entities = [
-            unit for unit in self.player.units
-            if unit.attacker and unit.attacker in self.all_units and unit.attacker.hp > 0 and unit.attacker.player_id != self.player.player_id
-        ]
-        if not attacked_entities:
-            return
-
-        # Count harvesting Axemen to ensure minimum requirement is maintained
-        axemen = [u for u in self.player.units if isinstance(u, Axeman)]
-        harvesting_axemen = [
-            axeman for axeman in axemen
-            if axeman.target and not isinstance(axeman.target, Unit) and axeman.special == 0 and not axeman.depositing and not axeman.attacker
-        ]
-        harvesting_count = len(harvesting_axemen)
-
-        # Reserve up to 2 Axemen for harvesting by selecting the closest to trees
-        reserved_axemen = []
-        trees = [u for u in self.all_units if isinstance(u, Tree) and u.player_id == 0]
-        if harvesting_count < self.min_axemen_harvesting and trees:
-            available_axemen = [
-                axeman for axeman in axemen
-                if not axeman.attacker and axeman.special == 0 and not axeman.depositing
-            ]
-            # Sort by proximity to trees to reserve the best candidates
-            available_axemen = sorted(available_axemen, key=lambda a: min((a.pos.distance_to(t.pos) for t in trees), default=float('inf')))
-            reserved_axemen = available_axemen[:self.min_axemen_harvesting - harvesting_count]
-            print(f"AI: Reserved {len(reserved_axemen)} Axemen for harvesting to meet minimum of {self.min_axemen_harvesting}")
-
-        for attacked in attacked_entities:
-            nearby_units = [
-                unit for unit in self.spatial_grid.get_nearby_units(attacked)
-                if unit in self.player.units and
-                   unit.attack_damage > 0 and  # Combat-capable units only
-                   not isinstance(unit, (Building, Tree)) and  # Exclude Buildings and Trees
-                   unit.pos.distance_to(attacked.pos) <= self.defense_range and
-                   unit != attacked and  # Exclude the attacked unit itself
-                   unit not in reserved_axemen  # Exclude reserved harvesting Axemen
-            ]
-            for unit in nearby_units:
-                # Skip units already engaged with an enemy
-                current_target_is_enemy = (
-                        isinstance(unit.target, Unit) and not isinstance(unit.target, Tree) and
-                        unit.target.player_id != self.player.player_id and unit.target in self.all_units and unit.target.hp > 0
-                )
-                if current_target_is_enemy:
-                    continue
-                # Assign unit to attack the attacker
-                unit.target = attacked.attacker
-                unit.autonomous_target = True
-                highlight_times[unit.target] = current_time
-                print(f"AI: {unit.__class__.__name__} at {unit.pos} mobilized to defend {attacked.__class__.__name__} at {attacked.pos} against {unit.target.__class__.__name__} at {unit.target.pos}")
-                # If an Axeman was mobilized, update harvesting count
-                if isinstance(unit, Axeman) and unit in harvesting_axemen:
-                    harvesting_axemen.remove(unit)
-                    harvesting_count -= 1
-
     def manage_cows(self):
         """Assign cows to harvest grass or deposit milk."""
         for cow in [u for u in self.player.units if isinstance(u, Cow)]:
-            # Check if cow's target is still valid
-            if (isinstance(cow.target, Unit) and (cow.target not in self.all_units or cow.target.hp <= 0)):
-                cow.target = None
-                cow.autonomous_target = False
-            if not cow.target and cow.special < 100 and not cow.attacker:
+            if not cow.target and cow.special < 100:
                 # Find a grass tile to harvest
                 tile_x = int(cow.pos.x // TILE_SIZE)
                 tile_y = int(cow.pos.y // TILE_SIZE)
@@ -1100,15 +1085,15 @@ class PlayerAI:
                 random.shuffle(adjacent_tiles)
                 for adj_x, adj_y in adjacent_tiles:
                     if (0 <= adj_x < GRASS_COLS and 0 <= adj_y < GRASS_ROWS and
-                            isinstance(self.grass_tiles[adj_y][adj_x], GrassTile) and
-                            not isinstance(self.grass_tiles[adj_y][adj_x], Dirt) and
-                            self.grass_tiles[adj_y][adj_x].grass_level > 0.5 and
-                            cow.is_tile_walkable(adj_x, adj_y, self.spatial_grid)):
+                        isinstance(self.grass_tiles[adj_y][adj_x], GrassTile) and
+                        not isinstance(self.grass_tiles[adj_y][adj_x], Dirt) and
+                        self.grass_tiles[adj_y][adj_x].grass_level > 0.5 and
+                        cow.is_tile_walkable(adj_x, adj_y, self.spatial_grid)):
                         cow.target = self.grass_tiles[adj_y][adj_x].center
                         cow.autonomous_target = True
                         print(f"AI: Cow at {cow.pos} assigned to grass tile at {cow.target}")
                         break
-            elif cow.special >= 100 and not cow.target and not cow.attacker:
+            elif cow.special >= 100 and not cow.target:
                 # Find a barn to deposit milk
                 barns = [u for u in self.player.units if isinstance(u, Barn) and u.alpha == 255 and u not in self.player.cow_in_barn]
                 if barns:
@@ -1122,58 +1107,22 @@ class PlayerAI:
                     print(f"AI: Cow at {cow.pos} assigned to barn at {cow.target} for milk deposit")
 
     def manage_axemen(self):
-        """Assign axemen to chop trees or deposit wood, ensuring at least 2 are harvesting unless attacked."""
+        """Assign axemen to chop trees or deposit wood."""
         trees = [u for u in self.all_units if isinstance(u, Tree) and u.player_id == 0]
-        axemen = [u for u in self.player.units if isinstance(u, Axeman)]
-
-        # Count Axemen currently harvesting trees (target is a tree and no attacker)
-        harvesting_axemen = [
-            axeman for axeman in axemen
-            if axeman.target and not isinstance(axeman.target, Unit) and axeman.special == 0 and not axeman.depositing and not axeman.attacker
-        ]
-        harvesting_count = len(harvesting_axemen)
-        print(f"AI: {harvesting_count}/{self.min_axemen_harvesting} Axemen harvesting trees")
-
-        # Assign additional Axemen to trees if needed
-        if harvesting_count < self.min_axemen_harvesting and trees:
-            # Find available Axemen (not depositing, not attacking, not already harvesting, no attacker)
-            available_axemen = [
-                axeman for axeman in axemen
-                if not axeman.target and axeman.special == 0 and not axeman.depositing and not axeman.attacker
-            ]
-            # Sort by proximity to trees to assign closest first
-            for axeman in sorted(available_axemen, key=lambda a: min((a.pos.distance_to(t.pos) for t in trees), default=float('inf'))):
-                if harvesting_count >= self.min_axemen_harvesting:
-                    break
-                closest_tree = min(trees, key=lambda t: axeman.pos.distance_to(t.pos))
-                axeman.target = closest_tree.pos
-                axeman.autonomous_target = True
-                harvesting_count += 1
-                harvesting_axemen.append(axeman)
-                print(f"AI: Axeman at {axeman.pos} assigned to tree at {axeman.target} to meet minimum harvesting requirement")
-
-        # Handle remaining Axemen
-        for axeman in axemen:
-            # Check if current target is still valid
-            if (isinstance(axeman.target, Unit) and (axeman.target not in self.all_units or axeman.target.hp <= 0)):
-                axeman.target = None
-                axeman.autonomous_target = False
-            if axeman.attacker and axeman.attacker in self.all_units and axeman.attacker.hp > 0:
-                # Axeman is retaliating, do not reassign
-                continue
-            if axeman.special >= 100 and not axeman.target:
+        for axeman in [u for u in self.player.units if isinstance(u, Axeman)]:
+            if not axeman.target and axeman.special == 0 and not axeman.depositing:
+                if trees:
+                    closest_tree = min(trees, key=lambda t: axeman.pos.distance_to(t.pos))
+                    axeman.target = closest_tree.pos
+                    axeman.autonomous_target = True
+                    print(f"AI: Axeman at {axeman.pos} assigned to tree at {axeman.target}")
+            elif axeman.special >= 100 and not axeman.target:
                 town_centers = [u for u in self.player.units if isinstance(u, TownCenter) and u.alpha == 255]
                 if town_centers:
                     closest_town = min(town_centers, key=lambda t: axeman.pos.distance_to(t.pos))
                     axeman.target = closest_town.pos
                     axeman.depositing = True
                     print(f"AI: Axeman at {axeman.pos} assigned to TownCenter at {axeman.target} for wood deposit")
-            elif not axeman.target and axeman.special == 0 and not axeman.depositing and not axeman.attacker:
-                if trees:
-                    closest_tree = min(trees, key=lambda t: axeman.pos.distance_to(t.pos))
-                    axeman.target = closest_tree.pos
-                    axeman.autonomous_target = True
-                    print(f"AI: Axeman at {axeman.pos} assigned to tree at {axeman.target}")
 
     def manage_buildings(self):
         """Decide to build barns or barracks, limiting to 2 barns."""
@@ -1242,35 +1191,16 @@ class PlayerAI:
                 print(f"AI: Placed Barracks at {pos} for Player {self.player.player_id}")
 
     def manage_unit_production(self):
-        """Queue unit production in barns and barracks, prioritizing Axemen if needed to maintain 2 harvesting."""
+        """Queue unit production in barns and barracks, limiting to 3 cows and 15 total units."""
         barns = [u for u in self.player.units if isinstance(u, Barn) and u.alpha == 255 and u not in self.production_queues]
         barracks = [u for u in self.player.units if isinstance(u, Barracks) and u.alpha == 255 and u not in self.production_queues]
 
-        # Count current Axemen and harvesting Axemen
-        axemen = [u for u in self.player.units if isinstance(u, Axeman)]
-        axeman_count = len(axemen)
-        harvesting_axemen = [
-            axeman for axeman in axemen
-            if axeman.target and not isinstance(axeman.target, Unit) and axeman.special == 0 and not axeman.depositing and not axeman.attacker
-        ]
-        harvesting_count = len(harvesting_axemen)
-
-        # Prioritize Axeman production if fewer than 2 are harvesting or total Axemen are less than 2
-        if (axeman_count < self.min_axemen_harvesting or harvesting_count < self.min_axemen_harvesting) and barracks:
-            if (self.player.milk >= Axeman.milk_cost and self.player.wood >= Axeman.wood_cost and
-                    self.player.unit_count < self.max_units):
-                barracks = random.choice(barracks)
-                self.production_queues[barracks] = {
-                    'unit_type': Axeman,
-                    'start_time': current_time,
-                    'player_id': self.player.player_id
-                }
-                print(f"AI: Queued Axeman production in Barracks at {barracks.pos} for Player {self.player.player_id} to meet harvesting requirement")
-                return  # Prioritize Axeman production, skip other unit production this cycle
+        # Count current cows and total units
+        cow_count = len([u for u in self.player.units if isinstance(u, Cow)])
+        total_unit_count = self.player.unit_count  # Relies on Player.unit_count being accurate
 
         # Produce cows in barns if under the cow limit and total unit limit
-        if (barns and len([u for u in self.player.units if isinstance(u, Cow)]) < self.max_cows and
-                self.player.unit_count < self.max_units and
+        if (barns and cow_count < self.max_cows and total_unit_count < self.max_units and
                 self.player.milk >= Cow.milk_cost and self.player.wood >= Cow.wood_cost):
             barn = random.choice(barns)
             self.production_queues[barn] = {
@@ -1278,13 +1208,12 @@ class PlayerAI:
                 'start_time': current_time,
                 'player_id': self.player.player_id
             }
-            print(f"AI: Queued Cow production in Barn at {barn.pos} for Player {self.player.player_id} (Cow count: {len([u for u in self.player.units if isinstance(u, Cow)]) + 1}/{self.max_cows})")
-            return  # Prioritize Cow production if Axemen are sufficient
+            print(f"AI: Queued Cow production in Barn at {barn.pos} for Player {self.player.player_id} (Cow count: {cow_count + 1}/{self.max_cows})")
 
         # Produce units in barracks if under total unit limit
-        if barracks and self.player.unit_count < self.max_units:
+        if barracks and total_unit_count < self.max_units:
             barracks = random.choice(barracks)
-            # Produce Axemen if wood is low
+            # Prioritize axemen if wood is low
             if self.player.wood < 500 and self.player.milk >= Axeman.milk_cost and self.player.wood >= Axeman.wood_cost:
                 self.production_queues[barracks] = {
                     'unit_type': Axeman,
@@ -1457,7 +1386,6 @@ while running:
 
     # Spawn completed units
     for unit, player in units_to_spawn:
-        # Removed unit_limit check to allow spawning beyond limit
         player.add_unit(unit)
         all_units.add(unit)
         spatial_grid.add_unit(unit)
@@ -2112,18 +2040,40 @@ while running:
     icon_x = VIEW_MARGIN_LEFT + 10
     icon_y = PANEL_Y + 10
     if current_player:
-        for unit in current_player.units:
-            if unit.selected and unit.player_id == current_player.player_id:
-                # Only show grid buttons for fully constructed buildings
-                if isinstance(unit, Building) and unit.alpha < 255:
-                    continue
-                cls_name = unit.__class__.__name__
-                unit_icon_img = Unit._unit_icons.get(cls_name)
-                if unit_icon_img:
-                    screen.blit(unit_icon_img, (icon_x, icon_y))
-                else:
-                    pygame.draw.rect(screen, WHITE, (icon_x, icon_y, ICON_SIZE, ICON_SIZE))
-                icon_x += ICON_SIZE + ICON_MARGIN
+        selected_units = [unit for unit in current_player.units if unit.selected and unit.player_id == current_player.player_id]
+        for unit in selected_units:
+            # Only show grid buttons for fully constructed buildings
+            if isinstance(unit, Building) and unit.alpha < 255:
+                continue
+            cls_name = unit.__class__.__name__
+            unit_icon_img = Unit._unit_icons.get(cls_name)
+            if unit_icon_img:
+                screen.blit(unit_icon_img, (icon_x, icon_y))
+            else:
+                pygame.draw.rect(screen, WHITE, (icon_x, icon_y, ICON_SIZE, ICON_SIZE))
+            # If exactly one unit is selected, display name and stats
+            if len(selected_units) == 1:
+                # Display "Name - Class"
+                display_text = f"{unit.name or cls_name} - {cls_name}"
+                text_surface = small_font.render(display_text, True, current_player.color)
+                screen.blit(text_surface, (icon_x, icon_y + ICON_SIZE + 5))
+                # Display HP
+                hp_text = f"HP: {int(unit.hp)}/{int(unit.max_hp)}"
+                hp_surface = small_font.render(hp_text, True, current_player.color)
+                screen.blit(hp_surface, (icon_x, icon_y + ICON_SIZE + 20))
+                # Display Attack
+                attack_text = f"Attack: {unit.attack_damage}"
+                attack_surface = small_font.render(attack_text, True, current_player.color)
+                screen.blit(attack_surface, (icon_x, icon_y + ICON_SIZE + 35))
+                # Display Armor
+                armor_text = f"Armor: {unit.armor}"
+                armor_surface = small_font.render(armor_text, True, current_player.color)
+                screen.blit(armor_surface, (icon_x, icon_y + ICON_SIZE + 50))
+                # Display Speed
+                speed_text = f"Speed: {unit.speed}"
+                speed_surface = small_font.render(speed_text, True, current_player.color)
+                screen.blit(speed_surface, (icon_x, icon_y + ICON_SIZE + 65))
+            icon_x += ICON_SIZE + ICON_MARGIN
 
     # Draw additional info
     if current_player:

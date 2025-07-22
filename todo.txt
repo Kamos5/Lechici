@@ -29,10 +29,14 @@ done:
 
 todo:
 
+- names to units (+ ui general info)
 - fullscreen
 - fog of war
 - sounds?
 - /defending - stances?
+- pathfinding
+- start screen
+- end screen (objectives)
 - a-move
 - control groups
 - fix: without selected player selection boarders clicks are remember
