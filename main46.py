@@ -357,7 +357,7 @@ class Unit:
             bar_y = y - self.size / 2 - bar_height - bar_offset
             pygame.draw.rect(screen, BLACK, (bar_x, bar_y, bar_width, bar_height))
             fill_width = (self.hp / self.max_hp) * bar_width
-            pygame.draw.rect(screen, RED, (bar_x, bar_y, fill_width, bar_height))
+            pygame.draw.rect(screen, self.player_color, (bar_x, bar_y, fill_width, bar_height))
 
     def move(self, units):
         self.velocity = Vector2(0, 0)
@@ -784,7 +784,7 @@ class Cow(Unit):
         bar_y = y - self.size / 2 - bar_height - bar_offset
         pygame.draw.rect(screen, BLACK, (bar_x, bar_y, bar_width, bar_height))
         fill_width = (self.hp / self.max_hp) * bar_width
-        pygame.draw.rect(screen, RED, (bar_x, bar_y, fill_width, bar_height))
+        pygame.draw.rect(screen, self.player_color, (bar_x, bar_y, fill_width, bar_height))
         fill_width = (self.special / 100) * bar_width
         pygame.draw.rect(screen, WHITE, (bar_x, bar_y + bar_height + 1, fill_width, bar_height))
 
