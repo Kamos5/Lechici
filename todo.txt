@@ -26,19 +26,20 @@ done:
 + spawning delay (production time)
 + punkt zbiorczy dla budynkow
 + admin point (max budynki) + max supply - przekroczenie powoduje zmniejszenie ekstraktowanych surowcow
++ names to units (+ ui general info)
++ pathfinding
 
 todo:
 
-- names to units (+ ui general info)
-- fullscreen
-- fog of war
-- sounds?
 - /defending - stances?
-- pathfinding
 - start screen
 - end screen (objectives)
 - a-move
 - control groups
+- fullscreen
+- fog of war
+- sounds?
 - fix: without selected player selection boarders clicks are remember
 - fix: with multiple things being selected dont show spawning button options unless they are the same type
 - self learning AI?
+- idle units?
