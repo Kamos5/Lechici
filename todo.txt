@@ -28,6 +28,7 @@ done:
 + admin point (max budynki) + max supply - przekroczenie powoduje zmniejszenie ekstraktowanych surowcow
 + names to units (+ ui general info)
 + pathfinding
++ attacks waves
 
 todo:
 
