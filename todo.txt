@@ -44,3 +44,6 @@ todo:
 - fix: with multiple things being selected dont show spawning button options unless they are the same type
 - self learning AI?
 - idle units?
+- fix: when axeman returns he is losing wood if ordered to move
+- fix: when selected with building wrong order (first unit then building)
+- fix: units get stuck on corners
