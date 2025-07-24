@@ -29,10 +29,10 @@ done:
 + names to units (+ ui general info)
 + pathfinding
 + attacks waves
++ defending - stances?
 
 todo:
 
-- /defending - stances?
 - start screen
 - end screen (objectives)
 - a-move
