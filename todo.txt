@@ -30,6 +30,8 @@ done:
 + pathfinding
 + attacks waves
 + defending - stances?
++ rivers
++ bridges
 
 todo:
 
@@ -52,8 +54,6 @@ todo:
 - fix: units get stuck on corners
 - dirt != used grass
 - dirt roads
-- rivers
-- bridges
 - walls
 - different wood types
 - different grass types (season based?)
