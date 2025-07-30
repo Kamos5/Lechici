@@ -57,3 +57,4 @@ todo:
 - walls
 - different wood types
 - different grass types (season based?)
+- units should have level (militia, professional, veteran)
