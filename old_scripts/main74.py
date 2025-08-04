@@ -7,7 +7,6 @@ from heapq import heappush, heappop
 import time
 # Add game state enum for managing screens
 from enum import Enum
-from perlin_noise import PerlinNoise
 
 # Initialize Pygame
 pygame.init()
@@ -107,7 +106,7 @@ grid_buttons = []
 for row in range(GRID_BUTTON_ROWS):
     row_buttons = []
     for col in range(GRID_BUTTON_COLS):
-        x = GRID_BUTTON_START_X - col * (GRID_BUTTON_WIDTH + GRID_BUTTON_MARGIN)
+        x = GRID_BUTTON_START_X + col * (GRID_BUTTON_WIDTH + GRID_BUTTON_MARGIN)
         y = GRID_BUTTON_START_Y + row * (GRID_BUTTON_HEIGHT + GRID_BUTTON_MARGIN)
         row_buttons.append(pygame.Rect(x, y, GRID_BUTTON_WIDTH, GRID_BUTTON_HEIGHT))
     grid_buttons.append(row_buttons)
@@ -124,10 +123,10 @@ ICON_MARGIN = 5
 
 # Load icons with error handling
 try:
-    wood_icon = pygame.image.load("wood_icon.png").convert_alpha()
-    milk_icon = pygame.image.load("milk_icon.png").convert_alpha()
-    unit_icon = pygame.image.load("unit_icon.png").convert_alpha() if pygame.image.get_extended() else pygame.Surface((20, 20))
-    building_icon = pygame.image.load("building_icon.png").convert_alpha() if pygame.image.get_extended() else pygame.Surface((20, 20))
+    wood_icon = pygame.image.load("../wood_icon.png").convert_alpha()
+    milk_icon = pygame.image.load("../milk_icon.png").convert_alpha()
+    unit_icon = pygame.image.load("../unit_icon.png").convert_alpha() if pygame.image.get_extended() else pygame.Surface((20, 20))
+    building_icon = pygame.image.load("../building_icon.png").convert_alpha() if pygame.image.get_extended() else pygame.Surface((20, 20))
     wood_icon = pygame.transform.scale(wood_icon, (20, 20))
     milk_icon = pygame.transform.scale(milk_icon, (20, 20))
     unit_icon = pygame.transform.scale(unit_icon, (20, 20))
@@ -199,7 +198,7 @@ class WaypointGraph:
             return self.frame_walkable_cache[cache_key]
 
         # Check tile type
-        if not isinstance(self.grass_tiles[tile_y][tile_x], (GrassTile, Dirt, Bridge)):
+        if not isinstance(self.grass_tiles[tile_y][tile_x], (GrassTile, Dirt)):
             self.frame_walkable_cache[cache_key] = False
             return False
 
@@ -475,9 +474,9 @@ class GrassTile(SimpleTile):
     @classmethod
     def load_images(cls):
         try:
-            cls._grass_image = pygame.image.load("grass.png").convert_alpha()
+            cls._grass_image = pygame.image.load("../grass.png").convert_alpha()
             cls._grass_image = pygame.transform.scale(cls._grass_image, (TILE_SIZE, TILE_SIZE))
-            cls._dirt_image = pygame.image.load("dirt.png").convert_alpha()
+            cls._dirt_image = pygame.image.load("../dirt.png").convert_alpha()
             cls._dirt_image = pygame.transform.scale(cls._dirt_image, (TILE_SIZE, TILE_SIZE))
         except (pygame.error, FileNotFoundError) as e:
             print(f"Failed to load grass.png or dirt.png: {e}")
@@ -534,24 +533,6 @@ class Dirt(SimpleTile):
         except (pygame.error, FileNotFoundError) as e:
             print(f"Failed to load {cls.__name__.lower()}.png: {e}")
             cls._image = None
-
-class Bridge(SimpleTile):
-    _image = None
-
-    def __init__(self, x, y):
-        super().__init__(x, y)
-        self.grass_level = 0.0  # No grass, like Dirt
-        Bridge.load_image()
-    @classmethod
-    def load_image(cls):
-        try:
-            cls._image = pygame.image.load("bridge_hor.png").convert_alpha()
-            cls._image = pygame.transform.scale(cls._image, (TILE_SIZE, TILE_SIZE))
-        except (pygame.error, FileNotFoundError) as e:
-            print(f"Failed to load bridge_hor.png: {e}")
-            cls._image = None
-    def regrow(self, rate):
-        pass  # Bridges don't regrow grass
 
 class River(SimpleTile):
     _image = None
@@ -946,7 +927,7 @@ class Tree(Unit):
     @classmethod
     def load_image(cls):
         try:
-            cls._image = pygame.image.load("tree.png").convert_alpha()
+            cls._image = pygame.image.load("../tree.png").convert_alpha()
             scale_factor = min(TILE_SIZE / cls._image.get_width(), TILE_SIZE / cls._image.get_height())
             new_size = (int(cls._image.get_width() * scale_factor), int(cls._image.get_height() * scale_factor))
             cls._image = pygame.transform.scale(cls._image, new_size)
@@ -1887,331 +1868,120 @@ class PlayerAI:
                     print(f"AI: Queued Knight production in Barracks at {barracks.pos} (Deficit: Axeman={axeman_deficit}, Archer={archer_deficit}, Knight={knight_deficit})")
 
 
-def generate_river(grass_tiles, tile_size, rows, cols, num_bridges=2):
+def generate_river(grass_tiles, tile_size, rows, cols):
     """
-    Generate a 3-tile-wide continuous river from bottom-left to top-right, staying within 20 tiles
-    of the straight line, ensuring it reaches (cols-1, 0), with 3-tile-wide bridges that extend at
-    least one tile over grass or dirt on both ends, sharing x or y values. Place up to num_bridges,
-    ensuring at least one by increasing bridge length, preferring shorter bridges.
+    Generate a 3-tile-wide squiggly river from bottom-left to top-right with a 2-tile-wide dirt bridge.
+    No island is included.
     Args:
         grass_tiles: 2D list of tile objects
         tile_size: Size of each tile (20 pixels)
         rows: Number of rows (60)
         cols: Number of columns (60)
-        num_bridges: Desired number of bridges to place (default 2)
     Returns:
         Set of (row, col) tuples representing river tiles for obstacle tracking
     """
-    print(f"Starting river generation with {num_bridges} bridges requested...")
+    print("Starting river generation...")
     river_tiles = set()
-    bridge_locations = []  # Store bridge locations
 
-    # Define exact start and end points
-    start_x = 0
-    start_y = rows - 1  # Bottom-left (col=0, row=59)
-    end_x = cols - 1
-    end_y = 0  # Top-right (col=59, row=0)
+    # Generate dense base path with sinusoidal offset
+    start = (0, rows - 1)  # Bottom-left (col=0, row=59)
+    end = (cols - 1, 0)  # Top-right (col=59, row=0)
+    num_points = 200  # Dense path for continuity
+    path = []
+    for i in range(num_points + 1):
+        t = i / num_points
+        col = start[0] + t * (end[0] - start[0])
+        row = start[1] + t * (end[1] - start[1])
+        amplitude = 4
+        frequency = 0.12
+        offset_col = amplitude * math.sin(frequency * i + random.uniform(-0.5, 0.5))
+        offset_row = amplitude * math.cos(frequency * i + random.uniform(-0.5, 0.5))
+        col = max(0, min(cols - 1, col + offset_col))
+        row = max(0, min(rows - 1, row + offset_row))
+        tile_col = int(col)
+        tile_row = int(row)
+        if 0 <= tile_row < rows and 0 <= tile_col < cols:
+            path.append((tile_col, tile_row))
 
-    # Explicitly set start and end tiles as River
-    grass_tiles[rows - 1][0] = River(0, (rows - 1) * tile_size)
-    river_tiles.add((rows - 1, 0))
-    grass_tiles[0][cols - 1] = River((cols - 1) * tile_size, 0)
-    river_tiles.add((0, cols - 1))
+    path = list(dict.fromkeys(path))  # Remove duplicates
+    print(f"Generated {len(path)} unique path points")
 
-    # Generate river using Perlin noise
-    noise = PerlinNoise(octaves=1, seed=random.randint(0, 1000000))  # Smoother path
-    river_width = 3  # River width in tiles
-    river_path = [(int(start_x), int(start_y))]  # Start point
+    # Widen the path to 3 tiles
+    for idx, (col, row) in enumerate(path):
+        for dr in [-1, 0, 1]:
+            for dc in [-1, 0, 1]:
+                tile_row = row + dr
+                tile_col = col + dc
+                if 0 <= tile_row < rows and 0 <= tile_col < cols:
+                    river_tiles.add((tile_row, tile_col))
+        if idx < len(path) - 1:
+            next_col, next_row = path[idx + 1]
+            steps = max(abs(next_col - col), abs(next_row - row))
+            if steps > 0:
+                for step in range(1, steps + 1):
+                    interp_t = step / steps
+                    interp_col = int(col + interp_t * (next_col - col))
+                    interp_row = int(row + interp_t * (next_row - row))
+                    for dr in [-1, 0, 1]:
+                        for dc in [-1, 0, 1]:
+                            tile_row = interp_row + dr
+                            tile_col = interp_col + dc
+                            if 0 <= tile_row < rows and 0 <= tile_col < cols:
+                                river_tiles.add((tile_row, tile_col))
 
-    # Calculate steps based on diagonal distance
-    diagonal_distance = math.sqrt((end_x - start_x) ** 2 + (end_y - start_y) ** 2)
-    steps = int(diagonal_distance * 3)  # Sufficient sampling
-    x_step = (end_x - start_x) / steps
-    y_step = (end_y - start_y) / steps
-    current_x = start_x
-    current_y = start_y
+    # Find a straight river section for the bridge
+    bridge_tiles = set()
+    bridge_width = 2
+    bridge_length = 4  # Spans 3-tile river + 1 tile on each side
+    target_idx = len(path) // 3  # Place bridge ~1/3 along path
+    min_straightness = float('inf')
+    bridge_center = None
+    bridge_is_horizontal = True
 
-    # Generate initial path
-    for step in range(steps):
-        # Reduce noise influence near the end to ensure reaching (cols-1, 0)
-        noise_scale = min(cols, rows) / 75 * (1 - step / steps)  # Reduced noise
-        noise_value = noise([current_x / cols, current_y / rows])
-        current_x += x_step + noise_value * noise_scale
-        current_y += y_step + noise_value * noise_scale
-        current_x = max(0, min(cols - 1, current_x))
-        current_y = max(0, min(rows - 1, current_y))
-        tile_x = int(current_x)
-        tile_y = int(current_y)
-        if 0 <= tile_y < rows and 0 <= tile_x < cols:
-            if (tile_x, tile_y) not in river_path:
-                river_path.append((tile_x, tile_y))
+    for idx in range(len(path) // 4, len(path) // 2):  # Search between 1/4 and 1/2 of path
+        if idx < len(path) - 2:
+            p1, p2, p3 = path[idx - 1], path[idx], path[idx + 1]
+            dx1 = p2[0] - p1[0]
+            dy1 = p2[1] - p1[1]
+            dx2 = p3[0] - p2[0]
+            dy2 = p3[1] - p2[1]
+            angle = abs(math.atan2(dy2, dx2) - math.atan2(dy1, dx1))
+            if angle < min_straightness:
+                min_straightness = angle
+                bridge_center = p2
+                river_dx = p3[0] - p1[0]
+                river_dy = p3[1] - p1[1]
+                bridge_is_horizontal = abs(river_dx) > abs(river_dy)
 
-    # Ensure end point is included
-    if (int(end_x), int(end_y)) not in river_path:
-        river_path.append((int(end_x), int(end_y)))
-
-    # Constrain river path to within 20 tiles of the straight line
-    max_deviation = 20
-    constrained_path = [river_path[0]]  # Keep start point
-    for x, y in river_path[1:-1]:  # Skip start and end
-        # Parametric line: x = t * (cols-1), y = (1-t) * (rows-1), t in [0,1]
-        t = ((x - start_x) * (end_x - start_x) + (y - start_y) * (end_y - start_y)) / (diagonal_distance ** 2)
-        t = max(0, min(1, t))  # Clamp t to [0,1]
-        closest_x = start_x + t * (end_x - start_x)
-        closest_y = start_y + t * (end_y - start_y)
-        # Compute perpendicular distance
-        dist = math.sqrt((x - closest_x) ** 2 + (y - closest_y) ** 2)
-        if dist > max_deviation:
-            # Project point to within 20 tiles
-            factor = max_deviation / dist
-            new_x = closest_x + factor * (x - closest_x)
-            new_y = closest_y + factor * (y - closest_y)
-            tile_x = int(max(0, min(cols - 1, new_x)))
-            tile_y = int(max(0, min(rows - 1, new_y)))
-            print(f"Adjusted point ({x}, {y}) to ({tile_x}, {tile_y}), dist was {dist:.2f}")
+    if bridge_center:
+        col, row = bridge_center
+        print(f"Placing bridge at ({row}, {col}), horizontal={bridge_is_horizontal}")
+        if bridge_is_horizontal:
+            for dr in [-bridge_width // 2, bridge_width // 2 - 1]:
+                for dc in range(-bridge_length // 2, bridge_length // 2 + 1):
+                    tile_row = row + dr
+                    tile_col = col + dc
+                    if 0 <= tile_row < rows and 0 <= tile_col < cols:
+                        bridge_tiles.add((tile_row, tile_col))
         else:
-            tile_x = x
-            tile_y = y
-        if (tile_x, tile_y) not in constrained_path:
-            constrained_path.append((tile_x, tile_y))
-    constrained_path.append((int(end_x), int(end_y)))  # Ensure end point
+            for dc in [-bridge_width // 2, bridge_width // 2 - 1]:
+                for dr in range(-bridge_length // 2, bridge_length // 2 + 1):
+                    tile_row = row + dr
+                    tile_col = col + dc
+                    if 0 <= tile_row < rows and 0 <= tile_col < cols:
+                        bridge_tiles.add((tile_row, tile_col))
 
-    # Interpolate to ensure continuous river path
-    interpolated_path = []
-    for i in range(len(constrained_path) - 1):
-        x1, y1 = constrained_path[i]
-        x2, y2 = constrained_path[i + 1]
-        interpolated_path.append((x1, y1))
-        # Use Bresenham's line algorithm for integer grid points
-        dx = x2 - x1
-        dy = y2 - y1
-        steps = max(abs(dx), abs(dy))
-        if steps > 1:
-            x_step = dx / steps
-            y_step = dy / steps
-            for t in range(1, int(steps)):
-                tile_x = int(x1 + t * x_step)
-                tile_y = int(y1 + t * y_step)
-                if 0 <= tile_x < cols and 0 <= tile_y < rows and (tile_x, tile_y) not in interpolated_path:
-                    interpolated_path.append((tile_x, tile_y))
-                    print(f"Interpolated point ({tile_x}, {tile_y}) between ({x1}, {y1}) and ({x2}, {y2})")
-    interpolated_path.append(constrained_path[-1])  # Ensure end point
-
-    # Place River tiles along the interpolated path
-    for x, y in interpolated_path:
-        for dy in range(-river_width // 2, river_width // 2 + 1):
-            for dx in range(-river_width // 2, river_width // 2 + 1):
-                tile_x = x + dx
-                tile_y = y + dy
-                if 0 <= tile_x < cols and 0 <= tile_y < rows:  # Strict bounds check
-                    river_tiles.add((tile_y, tile_x))
-                else:
-                    print(f"Skipped out-of-bounds River tile at ({tile_x}, {tile_y})")
-
-    # Ensure 3-tile-wide region around end point
-    for dy in range(-river_width // 2, river_width // 2 + 1):
-        for dx in range(-river_width // 2, river_width // 2 + 1):
-            tile_x = end_x + dx
-            tile_y = end_y + dy
-            if 0 <= tile_x < cols and 0 <= tile_y < rows:
-                river_tiles.add((tile_y, tile_x))
-
-    # Update grass_tiles with River tiles
+    # Update grass_tiles: river tiles first, then bridge tiles
     for row, col in river_tiles:
         grass_tiles[row][col] = River(col * tile_size, row * tile_size)
+    for row, col in bridge_tiles:
+        grass_tiles[row][col] = Dirt(col * tile_size, row * tile_size)
+        if (row, col) in river_tiles:
+            river_tiles.remove((row, col))  # Remove bridge tiles from river_tiles
 
-    # Find valid bridge spans (3 tiles wide, at least 3 River tiles, land on both ends)
-    valid_spans = []
-    bridge_min_length = 5  # Start with minimum length
-    bridge_max_length = 10  # Maximum length to try
-    min_bridge_distance = 5  # Minimum distance between bridge centers
-
-    # Try increasing bridge lengths until at least one span is selected
-    for length in range(bridge_min_length, bridge_max_length + 1):
-        print(f"Trying bridge length {length}...")
-        valid_spans = []  # Reset spans for each length
-        for row in range(1, rows - 1):  # Avoid edges for 3-row width
-            for col in range(cols):
-                if isinstance(grass_tiles[row][col], River):
-                    # Check horizontal spans (3 rows wide)
-                    if col + length - 1 < cols:  # Ensure within bounds
-                        # Check if span starts and ends on land for all 3 rows
-                        valid = True
-                        for dr in [-1, 0, 1]:  # Check row-1, row, row+1
-                            if not (0 <= row + dr < rows):
-                                valid = False
-                                break
-                            start_tile = grass_tiles[row + dr][col - 1] if col > 0 else None
-                            end_tile = grass_tiles[row + dr][col + length - 1]
-                            if not (start_tile and isinstance(start_tile, (GrassTile, Dirt)) and
-                                    isinstance(end_tile, (GrassTile, Dirt))):
-                                valid = False
-                                break
-                        # Check at least 3 River tiles in the central row
-                        if valid:
-                            river_count = sum(1 for i in range(col, col + length - 1)
-                                             if isinstance(grass_tiles[row][i], River))
-                            if river_count >= 3:
-                                span_tiles = [(col + i, row + dr) for dr in [-1, 0, 1] for i in range(-1, length)
-                                             if 0 <= row + dr < rows and 0 <= col + i < cols]
-                                span_center = (col + (length - 1) // 2, row)
-                                valid_spans.append({
-                                    'center': span_center,
-                                    'tiles': span_tiles,
-                                    'direction': 'horizontal',
-                                    'score': abs(col + (length - 1) // 2 - cols / 2) + abs(row - rows / 2),
-                                    'length': length
-                                })
-                                print(f"Found horizontal span at ({col}, {row}), length={length}, river_count={river_count}")
-        for col in range(1, cols - 1):  # Avoid edges for 3-column width
-            for row in range(rows):
-                if isinstance(grass_tiles[row][col], River):
-                    # Check vertical spans (3 columns wide)
-                    if row + length - 1 < rows:  # Ensure within bounds
-                        # Check if span starts and ends on land for all 3 columns
-                        valid = True
-                        for dc in [-1, 0, 1]:  # Check col-1, col, col+1
-                            if not (0 <= col + dc < cols):
-                                valid = False
-                                break
-                            start_tile = grass_tiles[row - 1][col + dc] if row > 0 else None
-                            end_tile = grass_tiles[row + length - 1][col + dc]
-                            if not (start_tile and isinstance(start_tile, (GrassTile, Dirt)) and
-                                    isinstance(end_tile, (GrassTile, Dirt))):
-                                valid = False
-                                break
-                        # Check at least 3 River tiles in the central column
-                        if valid:
-                            river_count = sum(1 for i in range(row, row + length - 1)
-                                             if isinstance(grass_tiles[i][col], River))
-                            if river_count >= 3:
-                                span_tiles = [(col + dc, row + i) for dc in [-1, 0, 1] for i in range(-1, length)
-                                             if 0 <= col + dc < cols and 0 <= row + i < rows]
-                                span_center = (col, row + (length - 1) // 2)
-                                valid_spans.append({
-                                    'center': span_center,
-                                    'tiles': span_tiles,
-                                    'direction': 'vertical',
-                                    'score': abs(col - cols / 2) + abs(row + (length - 1) // 2 - rows / 2),
-                                    'length': length
-                                })
-                                print(f"Found vertical span at ({col}, {row}), length={length}, river_count={river_count}")
-        # Select spans for this length, check if at least one is selected
-        selected_spans = []
-        if valid_spans:
-            # Sort by length first (shorter preferred), then by centrality score
-            valid_spans.sort(key=lambda x: (x['length'], x['score']))
-            selected_spans.append(valid_spans[0])  # Take the best span
-            # Add additional spans up to num_bridges, respecting min distance
-            for span in valid_spans[1:]:
-                if len(selected_spans) >= num_bridges:
-                    break
-                # Check distance from all selected spans
-                valid = True
-                for selected in selected_spans:
-                    dist = min(abs(span['center'][0] - selected['center'][0]),
-                               abs(span['center'][1] - selected['center'][1]))
-                    if dist < min_bridge_distance:
-                        valid = False
-                        break
-                if valid:
-                    selected_spans.append(span)
-        print(f"For length {length}: Found {len(valid_spans)} valid spans, selected {len(selected_spans)}")
-        if selected_spans:  # Stop if at least one span is selected
-            break
-    # Fallback with relaxed constraints if no spans selected
-    if not selected_spans:
-        print("No bridges placed after all lengths, trying relaxed constraints...")
-        for length in range(bridge_min_length, bridge_max_length + 1):
-            valid_spans = []
-            for row in range(1, rows - 1):
-                for col in range(cols):
-                    if isinstance(grass_tiles[row][col], River):
-                        if col + length - 1 < cols:
-                            valid = True
-                            for dr in [-1, 0, 1]:
-                                if not (0 <= row + dr < rows):
-                                    valid = False
-                                    break
-                                start_tile = grass_tiles[row + dr][col - 1] if col > 0 else None
-                                end_tile = grass_tiles[row + dr][col + length - 1]
-                                if not (start_tile and isinstance(start_tile, (GrassTile, Dirt)) and
-                                        isinstance(end_tile, (GrassTile, Dirt))):
-                                    valid = False
-                                    break
-                            if valid:
-                                river_count = sum(1 for i in range(col, col + length - 1)
-                                                 if isinstance(grass_tiles[row][i], River))
-                                if river_count >= 2:  # Relaxed to 2 River tiles
-                                    span_tiles = [(col + i, row + dr) for dr in [-1, 0, 1] for i in range(-1, length)
-                                                 if 0 <= row + dr < rows and 0 <= col + i < cols]
-                                    span_center = (col + (length - 1) // 2, row)
-                                    valid_spans.append({
-                                        'center': span_center,
-                                        'tiles': span_tiles,
-                                        'direction': 'horizontal',
-                                        'score': abs(col + (length - 1) // 2 - cols / 2) + abs(row - rows / 2),
-                                        'length': length
-                                    })
-                                    print(f"Relaxed: Found horizontal span at ({col}, {row}), length={length}, river_count={river_count}")
-            for col in range(1, cols - 1):
-                for row in range(rows):
-                    if isinstance(grass_tiles[row][col], River):
-                        if row + length - 1 < rows:
-                            valid = True
-                            for dc in [-1, 0, 1]:
-                                if not (0 <= col + dc < cols):
-                                    valid = False
-                                    break
-                                start_tile = grass_tiles[row - 1][col + dc] if row > 0 else None
-                                end_tile = grass_tiles[row + length - 1][col + dc]
-                                if not (start_tile and isinstance(start_tile, (GrassTile, Dirt)) and
-                                        isinstance(end_tile, (GrassTile, Dirt))):
-                                    valid = False
-                                    break
-                            if valid:
-                                river_count = sum(1 for i in range(row, row + length - 1)
-                                                 if isinstance(grass_tiles[i][col], River))
-                                if river_count >= 2:  # Relaxed to 2 River tiles
-                                    span_tiles = [(col + dc, row + i) for dc in [-1, 0, 1] for i in range(-1, length)
-                                                 if 0 <= col + dc < cols and 0 <= row + i < rows]
-                                    span_center = (col, row + (length - 1) // 2)
-                                    valid_spans.append({
-                                        'center': span_center,
-                                        'tiles': span_tiles,
-                                        'direction': 'vertical',
-                                        'score': abs(col - cols / 2) + abs(row + (length - 1) // 2 - rows / 2),
-                                        'length': length
-                                    })
-                                    print(f"Relaxed: Found vertical span at ({col}, {row}), length={length}, river_count={river_count}")
-            if valid_spans:
-                valid_spans.sort(key=lambda x: (x['length'], x['score']))
-                selected_spans.append(valid_spans[0])  # Take the shortest, most central span
-                break
-        print(f"Relaxed pass: Selected {len(selected_spans)} spans")
-
-    # Place Bridge tiles
-    for span in selected_spans:
-        span_tiles = span['tiles']
-        bridge_locations.append(span['center'])
-        for tile_x, tile_y in span_tiles:
-            if 0 <= tile_y < rows and 0 <= tile_x < cols:
-                grass_tiles[tile_y][tile_x] = Bridge(tile_x * tile_size, tile_y * tile_size)
-                print(f"Placed Bridge tile at ({tile_x}, {tile_y})")
-
-    # Re-apply River tiles to avoid overwrites
-    for row, col in river_tiles:
-        if not isinstance(grass_tiles[row][col], Bridge):
-            grass_tiles[row][col] = River(col * tile_size, row * tile_size)
-
-    # Debug: Print sample river tiles, verify start/end points, and bridge details
-    sample_river = list(river_tiles)[:5]
-    print(f"Sample river tiles: {sample_river}")
-    print(f"Start point in river_tiles: {(rows-1, 0) in river_tiles}")
-    print(f"End point in river_tiles: {(0, cols-1) in river_tiles}")
-    print(f"Selected bridge locations (centers): {bridge_locations}")
-    for span in selected_spans:
-        print(f"Bridge {span['direction']} at {span['center']}: length={span['length']}, tiles={span['tiles']}")
+    print(f"Generated {len(river_tiles)} river tiles")
+    print(f"Added {len(bridge_tiles)} bridge tiles")
+    print(f"Sample bridge tiles: {list(bridge_tiles)[:5]}")
 
     return river_tiles
 
@@ -2244,14 +2014,6 @@ for unit in all_units:
             for col in buildings_cols:
                 if 0 <= row < GRASS_ROWS and 0 <= col < GRASS_COLS:
                     grass_tiles[row][col] = Dirt(col * TILE_SIZE, row * TILE_SIZE)
-
-def is_position_valid_for_tree(row, col, buildings, min_distance):
-    """Check if a tile position is at least min_distance away from all buildings."""
-    tile_center = Vector2(col * TILE_SIZE + TILE_HALF, row * TILE_SIZE + TILE_HALF)
-    for building in buildings:
-        if tile_center.distance_to(building.pos) < min_distance:
-            return False
-    return True
 
 def is_tile_occupied(row, col, all_units):
     if not (0 <= row < GRASS_ROWS and 0 <= col < GRASS_COLS):
@@ -2303,7 +2065,7 @@ def find_valid_spawn_tiles(building, units, grass_tiles, tile_size, radius=2):
 # Create tree objects
 tree_objects = []
 total_tiles = GRASS_ROWS * GRASS_COLS
-target_tree_count = int(total_tiles * 0.3)
+target_tree_count = int(total_tiles * 0.25)
 eligible_tiles = []
 for row in range(GRASS_ROWS):
     for col in range(GRASS_COLS):

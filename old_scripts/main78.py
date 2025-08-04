@@ -107,7 +107,7 @@ grid_buttons = []
 for row in range(GRID_BUTTON_ROWS):
     row_buttons = []
     for col in range(GRID_BUTTON_COLS):
-        x = GRID_BUTTON_START_X - col * (GRID_BUTTON_WIDTH + GRID_BUTTON_MARGIN)
+        x = GRID_BUTTON_START_X + col * (GRID_BUTTON_WIDTH + GRID_BUTTON_MARGIN)
         y = GRID_BUTTON_START_Y + row * (GRID_BUTTON_HEIGHT + GRID_BUTTON_MARGIN)
         row_buttons.append(pygame.Rect(x, y, GRID_BUTTON_WIDTH, GRID_BUTTON_HEIGHT))
     grid_buttons.append(row_buttons)
@@ -124,10 +124,10 @@ ICON_MARGIN = 5
 
 # Load icons with error handling
 try:
-    wood_icon = pygame.image.load("wood_icon.png").convert_alpha()
-    milk_icon = pygame.image.load("milk_icon.png").convert_alpha()
-    unit_icon = pygame.image.load("unit_icon.png").convert_alpha() if pygame.image.get_extended() else pygame.Surface((20, 20))
-    building_icon = pygame.image.load("building_icon.png").convert_alpha() if pygame.image.get_extended() else pygame.Surface((20, 20))
+    wood_icon = pygame.image.load("../wood_icon.png").convert_alpha()
+    milk_icon = pygame.image.load("../milk_icon.png").convert_alpha()
+    unit_icon = pygame.image.load("../unit_icon.png").convert_alpha() if pygame.image.get_extended() else pygame.Surface((20, 20))
+    building_icon = pygame.image.load("../building_icon.png").convert_alpha() if pygame.image.get_extended() else pygame.Surface((20, 20))
     wood_icon = pygame.transform.scale(wood_icon, (20, 20))
     milk_icon = pygame.transform.scale(milk_icon, (20, 20))
     unit_icon = pygame.transform.scale(unit_icon, (20, 20))
@@ -475,9 +475,9 @@ class GrassTile(SimpleTile):
     @classmethod
     def load_images(cls):
         try:
-            cls._grass_image = pygame.image.load("grass.png").convert_alpha()
+            cls._grass_image = pygame.image.load("../grass.png").convert_alpha()
             cls._grass_image = pygame.transform.scale(cls._grass_image, (TILE_SIZE, TILE_SIZE))
-            cls._dirt_image = pygame.image.load("dirt.png").convert_alpha()
+            cls._dirt_image = pygame.image.load("../dirt.png").convert_alpha()
             cls._dirt_image = pygame.transform.scale(cls._dirt_image, (TILE_SIZE, TILE_SIZE))
         except (pygame.error, FileNotFoundError) as e:
             print(f"Failed to load grass.png or dirt.png: {e}")
@@ -545,7 +545,7 @@ class Bridge(SimpleTile):
     @classmethod
     def load_image(cls):
         try:
-            cls._image = pygame.image.load("bridge_hor.png").convert_alpha()
+            cls._image = pygame.image.load("../bridge_hor.png").convert_alpha()
             cls._image = pygame.transform.scale(cls._image, (TILE_SIZE, TILE_SIZE))
         except (pygame.error, FileNotFoundError) as e:
             print(f"Failed to load bridge_hor.png: {e}")
@@ -946,7 +946,7 @@ class Tree(Unit):
     @classmethod
     def load_image(cls):
         try:
-            cls._image = pygame.image.load("tree.png").convert_alpha()
+            cls._image = pygame.image.load("../tree.png").convert_alpha()
             scale_factor = min(TILE_SIZE / cls._image.get_width(), TILE_SIZE / cls._image.get_height())
             new_size = (int(cls._image.get_width() * scale_factor), int(cls._image.get_height() * scale_factor))
             cls._image = pygame.transform.scale(cls._image, new_size)
@@ -2245,14 +2245,6 @@ for unit in all_units:
                 if 0 <= row < GRASS_ROWS and 0 <= col < GRASS_COLS:
                     grass_tiles[row][col] = Dirt(col * TILE_SIZE, row * TILE_SIZE)
 
-def is_position_valid_for_tree(row, col, buildings, min_distance):
-    """Check if a tile position is at least min_distance away from all buildings."""
-    tile_center = Vector2(col * TILE_SIZE + TILE_HALF, row * TILE_SIZE + TILE_HALF)
-    for building in buildings:
-        if tile_center.distance_to(building.pos) < min_distance:
-            return False
-    return True
-
 def is_tile_occupied(row, col, all_units):
     if not (0 <= row < GRASS_ROWS and 0 <= col < GRASS_COLS):
         return True
@@ -2303,7 +2295,7 @@ def find_valid_spawn_tiles(building, units, grass_tiles, tile_size, radius=2):
 # Create tree objects
 tree_objects = []
 total_tiles = GRASS_ROWS * GRASS_COLS
-target_tree_count = int(total_tiles * 0.3)
+target_tree_count = int(total_tiles * 0.25)
 eligible_tiles = []
 for row in range(GRASS_ROWS):
     for col in range(GRASS_COLS):
