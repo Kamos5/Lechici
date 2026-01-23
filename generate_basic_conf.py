@@ -128,7 +128,7 @@ def main():
         map_h=300,
         width=800,
         height=600,
-        background_path="background.png",
+        background_path="assets/background.png",
         tile_alpha=128,   # 50% opacity
         none_alpha=204,   # 80% opacity
     )

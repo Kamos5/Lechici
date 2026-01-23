@@ -138,9 +138,9 @@ class GrassTile(SimpleTile):
     @classmethod
     def load_images(cls):
         try:
-            cls._grass_image = pygame.image.load("../grass.png").convert_alpha()
+            cls._grass_image = pygame.image.load("../assets/grass.png").convert_alpha()
             cls._grass_image = pygame.transform.scale(cls._grass_image, (TILE_SIZE, TILE_SIZE))
-            cls._dirt_image = pygame.image.load("../dirt.png").convert_alpha()
+            cls._dirt_image = pygame.image.load("../assets/dirt.png").convert_alpha()
             cls._dirt_image = pygame.transform.scale(cls._dirt_image, (TILE_SIZE, TILE_SIZE))
         except (pygame.error, FileNotFoundError) as e:
             print(f"Failed to load grass.png or dirt.png: {e}")
@@ -347,7 +347,7 @@ class Tree(Unit):
     @classmethod
     def load_image(cls):
         try:
-            cls._image = pygame.image.load("../tree.png").convert_alpha()
+            cls._image = pygame.image.load("../assets/tree.png").convert_alpha()
             scale_factor = min(TILE_SIZE / cls._image.get_width(), TILE_SIZE / cls._image.get_height())
             new_size = (int(cls._image.get_width() * scale_factor), int(cls._image.get_height() * scale_factor))
             cls._image = pygame.transform.scale(cls._image, new_size)

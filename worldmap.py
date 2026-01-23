@@ -56,7 +56,7 @@ pygame.display.flip()
 
 # --- background image (only under the map area) ---
 try:
-    bg_raw = pygame.image.load("background.png").convert()
+    bg_raw = pygame.image.load("assets/background.png").convert()
     background_surf = pygame.transform.smoothscale(bg_raw, (MAP_DISP_W, MAP_DISP_H))
 except Exception as e:
     print("Could not load background.png:", e)

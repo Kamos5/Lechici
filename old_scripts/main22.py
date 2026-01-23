@@ -75,8 +75,8 @@ SCROLL_MARGIN = 20
 ICON_SIZE = 32
 ICON_MARGIN = 5
 
-wood_icon = pygame.image.load("../wood_icon.png").convert_alpha()
-milk_icon = pygame.image.load("../milk_icon.png").convert_alpha()
+wood_icon = pygame.image.load("../assets/wood_icon.png").convert_alpha()
+milk_icon = pygame.image.load("../assets/milk_icon.png").convert_alpha()
 
 # Optional: Scale icons if they're too big
 wood_icon = pygame.transform.scale(wood_icon, (ICON_SIZE * 3 // 4, ICON_SIZE * 3 // 4))
@@ -177,9 +177,9 @@ class GrassTile(SimpleTile):
     @classmethod
     def load_images(cls):
         try:
-            cls._grass_image = pygame.image.load("../grass.png").convert_alpha()
+            cls._grass_image = pygame.image.load("../assets/grass.png").convert_alpha()
             cls._grass_image = pygame.transform.scale(cls._grass_image, (TILE_SIZE, TILE_SIZE))
-            cls._dirt_image = pygame.image.load("../dirt.png").convert_alpha()
+            cls._dirt_image = pygame.image.load("../assets/dirt.png").convert_alpha()
             cls._dirt_image = pygame.transform.scale(cls._dirt_image, (TILE_SIZE, TILE_SIZE))
         except (pygame.error, FileNotFoundError) as e:
             print(f"Failed to load grass.png or dirt.png: {e}")
@@ -395,7 +395,7 @@ class Tree(Unit):
     @classmethod
     def load_image(cls):
         try:
-            cls._image = pygame.image.load("../tree.png").convert_alpha()
+            cls._image = pygame.image.load("../assets/tree.png").convert_alpha()
             scale_factor = min(TILE_SIZE / cls._image.get_width(), TILE_SIZE / cls._image.get_height())
             new_size = (int(cls._image.get_width() * scale_factor), int(cls._image.get_height() * scale_factor))
             cls._image = pygame.transform.scale(cls._image, new_size)

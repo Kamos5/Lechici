@@ -317,7 +317,7 @@ class Archer(Unit):
 # Cow class
 class Cow(Unit):
     def __init__(self, x, y, player_id, player_color):
-        super().__init__(x, y, size=16, speed=4, color=BROWN, player_id=player_id, player_color=player_color, image = pygame.image.load("../cow.png"))
+        super().__init__(x, y, size=16, speed=4, color=BROWN, player_id=player_id, player_color=player_color, image = pygame.image.load("../assets/cow.png"))
         self.harvest_rate = 0.01
         self.assigned_corner = None
 

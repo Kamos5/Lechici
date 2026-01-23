@@ -116,10 +116,10 @@ ICON_MARGIN = 5
 
 # Load icons with error handling
 try:
-    wood_icon = pygame.image.load("../wood_icon.png").convert_alpha()
-    milk_icon = pygame.image.load("../milk_icon.png").convert_alpha()
-    unit_icon = pygame.image.load("../unit_icon.png").convert_alpha() if pygame.image.get_extended() else pygame.Surface((20, 20))
-    building_icon = pygame.image.load("../building_icon.png").convert_alpha() if pygame.image.get_extended() else pygame.Surface((20, 20))
+    wood_icon = pygame.image.load("../assets/wood_icon.png").convert_alpha()
+    milk_icon = pygame.image.load("../assets/milk_icon.png").convert_alpha()
+    unit_icon = pygame.image.load("../assets/unit_icon.png").convert_alpha() if pygame.image.get_extended() else pygame.Surface((20, 20))
+    building_icon = pygame.image.load("../assets/building_icon.png").convert_alpha() if pygame.image.get_extended() else pygame.Surface((20, 20))
     wood_icon = pygame.transform.scale(wood_icon, (20, 20))
     milk_icon = pygame.transform.scale(milk_icon, (20, 20))
     unit_icon = pygame.transform.scale(unit_icon, (20, 20))
@@ -435,9 +435,9 @@ class GrassTile(SimpleTile):
     @classmethod
     def load_images(cls):
         try:
-            cls._grass_image = pygame.image.load("../grass.png").convert_alpha()
+            cls._grass_image = pygame.image.load("../assets/grass.png").convert_alpha()
             cls._grass_image = pygame.transform.scale(cls._grass_image, (TILE_SIZE, TILE_SIZE))
-            cls._dirt_image = pygame.image.load("../dirt.png").convert_alpha()
+            cls._dirt_image = pygame.image.load("../assets/dirt.png").convert_alpha()
             cls._dirt_image = pygame.transform.scale(cls._dirt_image, (TILE_SIZE, TILE_SIZE))
         except (pygame.error, FileNotFoundError) as e:
             print(f"Failed to load grass.png or dirt.png: {e}")
@@ -813,7 +813,7 @@ class Tree(Unit):
     @classmethod
     def load_image(cls):
         try:
-            cls._image = pygame.image.load("../tree.png").convert_alpha()
+            cls._image = pygame.image.load("../assets/tree.png").convert_alpha()
             scale_factor = min(TILE_SIZE / cls._image.get_width(), TILE_SIZE / cls._image.get_height())
             new_size = (int(cls._image.get_width() * scale_factor), int(cls._image.get_height() * scale_factor))
             cls._image = pygame.transform.scale(cls._image, new_size)

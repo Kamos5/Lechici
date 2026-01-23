@@ -281,7 +281,7 @@ class Cow(Unit):
         self.harvest_rate = 0.01
         self.assigned_corner = None
         try:
-            self.image = pygame.image.load("../cow.png")
+            self.image = pygame.image.load("../assets/cow.png")
             self.image = pygame.transform.scale(self.image, (int(self.size), int(self.size)))
         except pygame.error as e:
             print(f"Failed to load cow.png: {e}")
