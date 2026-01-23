@@ -1,19 +1,28 @@
 """
 worldmap_module.py
 
-Changes requested:
-1) dummy_method now always returns True:
-    def dummy_method(attacker: int, region_idx: int) -> bool:
-        return random.random() < 1
+Clickable-region map (importable) with:
+- Background image under translucent tiles (tiles 50% alpha, black/None 80% alpha)
+- Cached borders for stable FPS
+- Hover highlight on region under cursor (OK/Bad)
+- Click allowed only if clicked region borders at least one region of selected player
+- Curved arrows (shown only for selected player): from selected player's borders to adjacent different-owner tiles
+  (one arrow per target tile)
+- Battle flow + click lock:
+    1) On click (IDLE only): immediately color clicked tile to attacker (owner update) + battle flicker
+    2) After flicker ends + delay: call dummy_method(attacker, region) -> bool
+       - If lose: revert clicked tile (with revert flicker)
+       - If win: keep clicked tile + reward attacker with 1 extra tile from pre-click border candidates (animated)
+    3) Automated other players: deferred per-player grants (tile chosen at execution time),
+       only if they have >0 tiles at that time, and only adjacent to their own tiles.
+    4) Block clicking until all animations complete
+- HUD at top:
+    * Round counter (increments after full resolution)
+    * Selected player info (label + color swatch)
 
-2) Defend message is shown AFTER the animation of changing tile colour:
-   - When a deferred grant targets a tile owned by the selected player:
-       a) first play an "attack preview" animation (tile flickers to attacker)
-       b) after the preview ends, show defend prompt
-       c) YES => revert tile to selected player (revert flicker)
-          NO  => confirm tile to attacker (confirm flicker)
-
-Other behavior preserved.
+Usage:
+    from worldmap_module import run_map
+    final_owner, meta = run_map(player_count=4, num_regions=25, background_path="background.jpg")
 """
 
 from __future__ import annotations
@@ -40,38 +49,47 @@ DEFAULT_PLAYERS: List[Tuple[str, Color]] = [
 
 @dataclass
 class MapConfig:
+    # Window / layout
     width: int = 800
     height: int = 600
     bar_h: int = 80
 
+    # Low-res generation for speed
     map_w: int = 400
     map_h: int = 300
     num_regions: Optional[int] = None
     num_regions_range: Tuple[int, int] = (12, 24)
 
+    # Equal-area tuning knobs
     iterations: int = 35
     weight_lr: float = 0.25
     centroid_pull: float = 0.35
     do_centroids: bool = True
 
+    # Rendering
     border_color: Color = (255, 255, 255)
-    tile_alpha: int = 128
-    none_alpha: int = 204
+    tile_alpha: int = 128  # 50%
+    none_alpha: int = 204  # 80%
     background_path: Optional[str] = "background.jpg"
     background_fallback_color: Color = (30, 30, 30)
 
+    # Hover highlight
     hover_alpha_ok: int = 90
     hover_alpha_bad: int = 110
 
+    # Flicker
     flicker_duration_ms: int = 2000
     flicker_hz: int = 60
 
+    # Players / UI
     players: Optional[List[Tuple[str, Color]]] = None
     player_count: Optional[int] = None
     show_buttons: bool = True
 
+    # Optional initial ownership by region
     initial_owner: Optional[Sequence[int]] = None
 
+    # Arrows (curved)
     show_arrows: bool = True
     arrow_alpha: int = 210
     arrow_width: int = 2
@@ -80,21 +98,15 @@ class MapConfig:
     arrow_head_angle_deg: float = 28.0
     arrow_segments: int = 22
 
+    # Battle system
     battle_delay_ms: int = 1000
     reward_extra_tiles: int = 1
     between_anims_delay_ms: int = 150
     revert_flicker_ms: int = 900
 
+    # HUD
     hud_h: int = 28
     hud_bg_alpha: int = 140
-
-    defend_box_alpha: int = 210
-    defend_box_w: int = 560
-    defend_box_h: int = 160
-
-    # NEW: attack preview duration before showing defend prompt
-    defend_preview_ms: int = 900
-    defend_confirm_ms: int = 900
 
 
 def _build_players(cfg: MapConfig) -> List[Tuple[str, Color]]:
@@ -354,7 +366,7 @@ def run_map(**kwargs):
     pygame.init()
     disp_w, disp_h = cfg.width, cfg.height - cfg.bar_h
     screen = pygame.display.set_mode((cfg.width, cfg.height))
-    pygame.display.set_caption("Clickable Map (defend after anim)")
+    pygame.display.set_caption("Clickable Map (round + selected HUD)")
 
     players = _build_players(cfg)
     player_count = len(players)
@@ -416,8 +428,6 @@ def run_map(**kwargs):
     PHASE_BATTLE_FLICKER = "BATTLE_FLICKER"
     PHASE_BATTLE_WAIT = "BATTLE_WAIT"
     PHASE_PLAY_QUEUE = "PLAY_QUEUE"
-    PHASE_DEFEND_PROMPT = "DEFEND_PROMPT"
-    PHASE_DEFEND_PREVIEW = "DEFEND_PREVIEW"
     phase = PHASE_IDLE
 
     battle_ctx: Dict[str, Any] = {}
@@ -429,16 +439,12 @@ def run_map(**kwargs):
     current_anim: Optional[Dict[str, Any]] = None
     between_anim_wait_until: int = 0
 
-    # Defend context
-    defend_ctx: Optional[Dict[str, Any]] = None  # attacker, target, dur, prev_owner
-
     # Round counter
     round_no = 1
 
     # Selected player
     selected_player = 0
 
-    # (1) requested dummy_method
     def dummy_method(attacker: int, region_idx: int) -> bool:
         """Replace with your real game logic."""
         return random.random() < 1
@@ -622,6 +628,10 @@ def run_map(**kwargs):
         return list(c)
 
     def pick_adjacent_tile_for_player(player: int) -> Optional[int]:
+        """
+        Pick one tile adjacent to player's current territory.
+        Prefer black/None adjacent tiles first; else any adjacent tile.
+        """
         candidates = eligible_adjacent_tiles(player)
         if not candidates:
             return None
@@ -630,81 +640,81 @@ def run_map(**kwargs):
             return random.choice(blacks)
         return random.choice(candidates)
 
-    # ---------- Queue helpers ----------
+    # ---------- Queue + deferred grant helpers (your requested refactor) ----------
     def enqueue_anim(region: int, to_owner: int, duration_ms: int):
         anim_queue.append({"kind": "region", "region": int(region), "to": int(to_owner), "dur": int(duration_ms)})
 
     def enqueue_deferred_grant(for_player: int, duration_ms: int):
+        """
+        Enqueue a grant to be resolved later (at execution time), so adjacency uses current state.
+        """
         anim_queue.append({"kind": "deferred_grant", "player": int(for_player), "dur": int(duration_ms)})
 
     def schedule_automated_player_grants(attacker: int, none_player: int):
+        """
+        For every other player (excluding attacker and None/black):
+          - attempt to grant exactly 1 tile
+          - only if that player has >0 tiles at *their* turn
+          - only adjacent to their own tiles at *their* turn
+        IMPORTANT: tile selection is deferred to execution time.
+        """
         for p in range(player_count):
             if p == attacker or p == none_player:
                 continue
             enqueue_deferred_grant(p, int(cfg.flicker_duration_ms))
 
-    def _start_region_anim(now_ms: int, ridx: int, to_owner: int, dur: int):
-        nonlocal current_anim
-        current_anim = {"kind": "region", "region": int(ridx), "to": int(to_owner), "dur": int(dur), "start_ms": int(now_ms)}
-        old_o = owner[ridx]
-        flickers[ridx] = {
-            "start_ms": int(now_ms),
-            "duration_ms": int(dur),
-            "old_owner": int(old_o),
-            "new_owner": int(to_owner),
-        }
-
     def start_next_anim(now_ms: int):
         """
-        Deferred grants are resolved now.
-        If target is owned by selected player:
-          - run DEFEND_PREVIEW (tile flickers to attacker)
-          - AFTER preview ends -> show defend prompt
+        Starts the next runnable animation. Deferred grants are resolved *now*,
+        based on current ownership (which may have changed due to earlier anims).
         """
-        nonlocal current_anim, phase, defend_ctx
+        nonlocal current_anim, between_anim_wait_until
 
-        if current_anim is not None or phase in (PHASE_DEFEND_PROMPT, PHASE_DEFEND_PREVIEW):
+        if current_anim is not None:
             return
 
         while anim_queue:
             item = anim_queue.pop(0)
 
+            # Normal (already-decided) region animation
             if item.get("kind") == "region":
-                _start_region_anim(now_ms, int(item["region"]), int(item["to"]), int(item["dur"]))
+                current_anim = item
+                ridx = current_anim["region"]
+                new_o = current_anim["to"]
+                old_o = owner[ridx]
+                flickers[ridx] = {
+                    "start_ms": now_ms,
+                    "duration_ms": current_anim["dur"],
+                    "old_owner": int(old_o),
+                    "new_owner": int(new_o),
+                }
+                current_anim["start_ms"] = now_ms
                 return
 
+            # Deferred grant: decide right now
             if item.get("kind") == "deferred_grant":
-                attacker = int(item["player"])
-                if not player_has_tiles(attacker):
+                p = int(item["player"])
+                dur = int(item["dur"])
+
+                # must still have >0 tiles at their turn
+                if not player_has_tiles(p):
                     continue
 
-                tgt = pick_adjacent_tile_for_player(attacker)
+                tgt = pick_adjacent_tile_for_player(p)
                 if tgt is None:
                     continue
 
-                # If attacking selected player's tile, preview first then prompt
-                if owner[tgt] == selected_player and attacker != selected_player:
-                    defend_ctx = {
-                        "attacker": attacker,
-                        "target": int(tgt),
-                        "prev_owner": int(owner[tgt]),
-                        "preview_start_ms": int(now_ms),
-                    }
-                    # Start preview flicker (without committing owner change)
-                    flickers[tgt] = {
-                        "start_ms": int(now_ms),
-                        "duration_ms": int(cfg.defend_preview_ms),
-                        "old_owner": int(owner[tgt]),
-                        "new_owner": int(attacker),
-                    }
-                    phase = PHASE_DEFEND_PREVIEW
-                    return
-
-                # normal attack
-                _start_region_anim(now_ms, int(tgt), attacker, int(item["dur"]))
+                current_anim = {"kind": "region", "region": int(tgt), "to": int(p), "dur": int(dur), "start_ms": now_ms}
+                old_o = owner[tgt]
+                flickers[tgt] = {
+                    "start_ms": now_ms,
+                    "duration_ms": dur,
+                    "old_owner": int(old_o),
+                    "new_owner": int(p),
+                }
                 return
 
-        # none runnable
+        # nothing runnable
 
     def update_anim(now_ms: int):
         nonlocal current_anim, between_anim_wait_until, needs_redraw
@@ -718,8 +728,8 @@ def run_map(**kwargs):
             current_anim = None
             between_anim_wait_until = now_ms + int(cfg.between_anims_delay_ms)
             needs_redraw = True
+    # ---------------------------------------------------------------------------
 
-    # ---------- HUD + defend prompt ----------
     def draw_hud():
         hud = pygame.Surface((cfg.width, cfg.hud_h), flags=pygame.SRCALPHA)
         hud.fill((0, 0, 0, int(cfg.hud_bg_alpha)))
@@ -734,43 +744,6 @@ def run_map(**kwargs):
         pygame.draw.rect(hud, (255, 255, 255), sw, 1)
 
         screen.blit(hud, (0, 0))
-
-    def draw_defend_prompt():
-        w, h = cfg.defend_box_w, cfg.defend_box_h
-        box = pygame.Surface((w, h), flags=pygame.SRCALPHA)
-        box.fill((0, 0, 0, int(cfg.defend_box_alpha)))
-        pygame.draw.rect(box, (255, 255, 255), pygame.Rect(0, 0, w, h), 2)
-
-        if defend_ctx is None:
-            msg = "Defend this tile?"
-        else:
-            atk_label = players[int(defend_ctx["attacker"])][0]
-            msg = f"{atk_label} attacked your tile. Defend it?"
-
-        title = big_font.render(msg, True, (240, 240, 240))
-        box.blit(title, (w // 2 - title.get_width() // 2, 20))
-
-        btn_w, btn_h = 160, 44
-        yes_local = pygame.Rect(w // 2 - btn_w - 20, h - 70, btn_w, btn_h)
-        no_local = pygame.Rect(w // 2 + 20, h - 70, btn_w, btn_h)
-
-        pygame.draw.rect(box, (30, 160, 30), yes_local)
-        pygame.draw.rect(box, (200, 60, 60), no_local)
-        pygame.draw.rect(box, (255, 255, 255), yes_local, 2)
-        pygame.draw.rect(box, (255, 255, 255), no_local, 2)
-
-        yes_txt = font.render("YES (Y)", True, (255, 255, 255))
-        no_txt = font.render("NO (N)", True, (255, 255, 255))
-        box.blit(yes_txt, (yes_local.centerx - yes_txt.get_width() // 2, yes_local.centery - yes_txt.get_height() // 2))
-        box.blit(no_txt, (no_local.centerx - no_txt.get_width() // 2, no_local.centery - no_txt.get_height() // 2))
-
-        x = cfg.width // 2 - w // 2
-        y = disp_h // 2 - h // 2
-        screen.blit(box, (x, y))
-        return (
-            pygame.Rect(x + yes_local.x, y + yes_local.y, yes_local.w, yes_local.h),
-            pygame.Rect(x + no_local.x, y + no_local.y, no_local.w, no_local.h),
-        )
 
     clock = pygame.time.Clock()
     running = True
@@ -808,94 +781,7 @@ def run_map(**kwargs):
             if event.type == pygame.QUIT:
                 running = False
 
-            # Defend prompt input
-            if phase == PHASE_DEFEND_PROMPT:
-                if event.type == pygame.KEYDOWN:
-                    if event.key in (pygame.K_y, pygame.K_RETURN):
-                        # DEFEND: revert to selected
-                        if defend_ctx is not None:
-                            tgt = int(defend_ctx["target"])
-                            flickers[tgt] = {
-                                "start_ms": int(now_ms),
-                                "duration_ms": int(cfg.defend_confirm_ms),
-                                "old_owner": int(defend_ctx["attacker"]),
-                                "new_owner": int(selected_player),
-                            }
-                            owner[tgt] = int(selected_player)  # keep ownership
-                        defend_ctx = None
-                        phase = PHASE_PLAY_QUEUE
-                        between_anim_wait_until = now_ms + int(cfg.between_anims_delay_ms)
-                        needs_redraw = True
-
-                    elif event.key in (pygame.K_n,):
-                        # ALLOW: commit to attacker
-                        if defend_ctx is not None:
-                            tgt = int(defend_ctx["target"])
-                            attacker = int(defend_ctx["attacker"])
-                            flickers[tgt] = {
-                                "start_ms": int(now_ms),
-                                "duration_ms": int(cfg.defend_confirm_ms),
-                                "old_owner": int(selected_player),
-                                "new_owner": int(attacker),
-                            }
-                            owner[tgt] = int(attacker)
-                        defend_ctx = None
-                        phase = PHASE_PLAY_QUEUE
-                        between_anim_wait_until = now_ms + int(cfg.between_anims_delay_ms)
-                        needs_redraw = True
-
-                    elif event.key in (pygame.K_ESCAPE,):
-                        # default defend
-                        if defend_ctx is not None:
-                            tgt = int(defend_ctx["target"])
-                            flickers[tgt] = {
-                                "start_ms": int(now_ms),
-                                "duration_ms": int(cfg.defend_confirm_ms),
-                                "old_owner": int(defend_ctx["attacker"]),
-                                "new_owner": int(selected_player),
-                            }
-                            owner[tgt] = int(selected_player)
-                        defend_ctx = None
-                        phase = PHASE_PLAY_QUEUE
-                        between_anim_wait_until = now_ms + int(cfg.between_anims_delay_ms)
-                        needs_redraw = True
-
-                elif event.type == pygame.MOUSEBUTTONDOWN and event.button == 1:
-                    # We'll use actual rects from draw step; simplest: decide by x position
-                    if event.pos[0] < cfg.width // 2:
-                        # YES defend
-                        if defend_ctx is not None:
-                            tgt = int(defend_ctx["target"])
-                            flickers[tgt] = {
-                                "start_ms": int(now_ms),
-                                "duration_ms": int(cfg.defend_confirm_ms),
-                                "old_owner": int(defend_ctx["attacker"]),
-                                "new_owner": int(selected_player),
-                            }
-                            owner[tgt] = int(selected_player)
-                        defend_ctx = None
-                    else:
-                        # NO allow
-                        if defend_ctx is not None:
-                            tgt = int(defend_ctx["target"])
-                            attacker = int(defend_ctx["attacker"])
-                            flickers[tgt] = {
-                                "start_ms": int(now_ms),
-                                "duration_ms": int(cfg.defend_confirm_ms),
-                                "old_owner": int(selected_player),
-                                "new_owner": int(attacker),
-                            }
-                            owner[tgt] = int(attacker)
-                        defend_ctx = None
-
-                    phase = PHASE_PLAY_QUEUE
-                    between_anim_wait_until = now_ms + int(cfg.between_anims_delay_ms)
-                    needs_redraw = True
-
-                continue
-
-            # Normal UI
-            if event.type == pygame.MOUSEBUTTONDOWN and event.button == 1:
+            elif event.type == pygame.MOUSEBUTTONDOWN and event.button == 1:
                 pos = event.pos
 
                 # Buttons anytime
@@ -930,10 +816,11 @@ def run_map(**kwargs):
                 snapshot = owner[:]
                 pre_border_cands = compute_border_candidates(snapshot, attacker)
 
+                # Immediately take tile visually + battle flicker
                 owner[region_idx] = attacker
                 flickers[region_idx] = {
-                    "start_ms": int(now_ms),
-                    "duration_ms": int(cfg.flicker_duration_ms),
+                    "start_ms": now_ms,
+                    "duration_ms": cfg.flicker_duration_ms,
                     "old_owner": int(old_owner),
                     "new_owner": int(attacker),
                 }
@@ -950,19 +837,7 @@ def run_map(**kwargs):
                 needs_redraw = True
 
         # Phase machine
-        if phase == PHASE_DEFEND_PREVIEW:
-            # Wait until preview flicker ends, then show prompt
-            if defend_ctx is not None:
-                tgt = int(defend_ctx["target"])
-                age = now_ms - int(defend_ctx["preview_start_ms"])
-                if age >= int(cfg.defend_preview_ms):
-                    flickers.pop(tgt, None)  # stop preview flicker
-                    phase = PHASE_DEFEND_PROMPT
-                    needs_redraw = True
-            else:
-                phase = PHASE_PLAY_QUEUE
-
-        elif phase == PHASE_BATTLE_FLICKER:
+        if phase == PHASE_BATTLE_FLICKER:
             age = now_ms - int(battle_ctx["battle_start_ms"])
             if age >= int(cfg.flicker_duration_ms):
                 ridx = int(battle_ctx["region"])
@@ -984,18 +859,22 @@ def run_map(**kwargs):
                 between_anim_wait_until = now_ms
 
                 if not win:
+                    # revert clicked tile
                     enqueue_anim(ridx, old_owner, int(cfg.revert_flicker_ms))
-                else:
-                    pre = [c for c in battle_ctx["pre_border_cands"] if c != ridx]
-                    pre = [c for c in pre if owner[c] != attacker]
-                    random.shuffle(pre)
-                    for _ in range(int(cfg.reward_extra_tiles)):
-                        if not pre:
-                            break
-                        reward = pre.pop()
-                        enqueue_anim(reward, attacker, int(cfg.flicker_duration_ms))
+                # else:
+                #     # reward attacker from pre-click border set
+                #     pre = [c for c in battle_ctx["pre_border_cands"] if c != ridx]
+                #     pre = [c for c in pre if owner[c] != attacker]
+                #     random.shuffle(pre)
+                #     for _ in range(int(cfg.reward_extra_tiles)):
+                #         if not pre:
+                #             break
+                #         reward = pre.pop()
+                #         enqueue_anim(reward, attacker, int(cfg.flicker_duration_ms))
 
+                # Automated players (refactored): deferred per-player grants
                 schedule_automated_player_grants(attacker, none_idx)
+
                 phase = PHASE_PLAY_QUEUE
                 needs_redraw = True
 
@@ -1005,11 +884,12 @@ def run_map(**kwargs):
 
             update_anim(now_ms)
 
-            if current_anim is None and not anim_queue and phase not in (PHASE_DEFEND_PROMPT, PHASE_DEFEND_PREVIEW):
+            if current_anim is None and not anim_queue:
                 phase = PHASE_IDLE
                 round_no += 1
                 needs_redraw = True
 
+        # Rebuild as needed
         if flickers:
             needs_redraw = True
         if needs_redraw:
@@ -1031,21 +911,8 @@ def run_map(**kwargs):
                 tmp.fill((255, 90, 90, 0), special_flags=pygame.BLEND_RGBA_MULT)
                 screen.blit(tmp, (0, 0))
 
-        # HUD
-        hud = pygame.Surface((cfg.width, cfg.hud_h), flags=pygame.SRCALPHA)
-        hud.fill((0, 0, 0, int(cfg.hud_bg_alpha)))
-        sel_label, sel_col = players[selected_player]
-        txt = font.render(f"Round: {round_no}    Selected: {sel_label}", True, (240, 240, 240))
-        hud.blit(txt, (10, 4))
-        sw = pygame.Rect(10 + txt.get_width() + 12, 6, 16, 16)
-        pygame.draw.rect(hud, sel_col, sw)
-        pygame.draw.rect(hud, (255, 255, 255), sw, 1)
-        screen.blit(hud, (0, 0))
-
+        draw_hud()
         draw_buttons()
-
-        if phase == PHASE_DEFEND_PROMPT:
-            draw_defend_prompt()
 
         pygame.display.flip()
         clock.tick(60)
