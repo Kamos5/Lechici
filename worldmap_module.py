@@ -8,6 +8,9 @@ Importable, parameterized clickable-region map with:
 - Hover highlight on the region under cursor
 - Click rule: you can only change a region if it borders at least one region
   owned by the selected player (territory expansion rule).
+- Curved arrows (shown only when a player is selected):
+    From selected player's bordering regions -> neighboring regions of different owner.
+    For every target (non-selected) bordering region, only 1 arrow is drawn.
 
 Usage:
     from worldmap_module import run_map
@@ -71,8 +74,8 @@ class MapConfig:
     background_fallback_color: Color = (30, 30, 30)
 
     # Hover highlight
-    hover_alpha_ok: int = 90          # highlight opacity when click is allowed
-    hover_alpha_bad: int = 110        # highlight opacity when click is NOT allowed
+    hover_alpha_ok: int = 90
+    hover_alpha_bad: int = 110
 
     # Flicker
     flicker_duration_ms: int = 2000
@@ -80,12 +83,10 @@ class MapConfig:
 
     # Players / UI
     players: Optional[List[Tuple[str, Color]]] = None
-    player_count: Optional[int] = None    # uses first N of DEFAULT_PLAYERS (excluding None) + None
+    player_count: Optional[int] = None
     show_buttons: bool = True
 
     # Coloring mode
-    # "owner"  -> region colors follow current owner (click changes ownership)
-    # "values" -> region colors follow region_values
     color_mode: str = "owner"
     region_values: Optional[Sequence[Any]] = None
     value_to_color: Optional[Callable[[Any], Color]] = None
@@ -94,8 +95,16 @@ class MapConfig:
     initial_owner: Optional[Sequence[int]] = None
 
     # Custom click handler
-    # on_region_click(region_idx, selected_player, state_dict) -> None
     on_region_click: Optional[Callable[[int, int, Dict[str, Any]], None]] = None
+
+    # Arrows (curved)
+    show_arrows: bool = True
+    arrow_alpha: int = 210
+    arrow_width: int = 6
+    arrow_curvature_px: float = 30.0
+    arrow_head_len_px: float = 15.0
+    arrow_head_angle_deg: float = 28.0
+    arrow_segments: int = 22
 
 
 def _build_players(cfg: MapConfig) -> List[Tuple[str, Color]]:
@@ -214,7 +223,6 @@ def _precompute_borders(color_map: pygame.Surface, disp_w: int, disp_h: int, bor
 
 
 def _build_region_adjacency(assign: np.ndarray, num_regions: int) -> List[Set[int]]:
-    """Adjacency based on 4-neighborhood borders in the low-res assign grid."""
     h, w = assign.shape
     adj: List[Set[int]] = [set() for _ in range(num_regions)]
     for y in range(h):
@@ -233,10 +241,52 @@ def _build_region_adjacency(assign: np.ndarray, num_regions: int) -> List[Set[in
     return adj
 
 
+def _compute_centroids(assign: np.ndarray, num_regions: int) -> np.ndarray:
+    """Return (num_regions,2) centroids in low-res pixel coords (x,y)."""
+    h, w = assign.shape
+    ys, xs = np.indices((h, w))
+    flat = assign.ravel()
+    areas = np.bincount(flat, minlength=num_regions).astype(np.float32)
+    sum_x = np.bincount(flat, weights=xs.ravel(), minlength=num_regions).astype(np.float32)
+    sum_y = np.bincount(flat, weights=ys.ravel(), minlength=num_regions).astype(np.float32)
+    safe = np.maximum(areas, 1.0)
+    cx = sum_x / safe
+    cy = sum_y / safe
+    return np.stack([cx, cy], axis=1)
+
+
+def _compute_contact_points(assign: np.ndarray, num_regions: int) -> Dict[Tuple[int, int], Tuple[float, float]]:
+    """
+    For each adjacent region pair (a,b) (a<b), store one representative border point in low-res coords.
+    We record the first encountered midpoint between differing neighbors.
+    """
+    h, w = assign.shape
+    contact: Dict[Tuple[int, int], Tuple[float, float]] = {}
+
+    for y in range(h):
+        for x in range(w):
+            a = int(assign[y, x])
+
+            # right edge
+            if x < w - 1:
+                b = int(assign[y, x + 1])
+                if a != b:
+                    key = (a, b) if a < b else (b, a)
+                    if key not in contact:
+                        contact[key] = (x + 0.5, y + 0.0)
+
+            # down edge
+            if y < h - 1:
+                c = int(assign[y + 1, x])
+                if a != c:
+                    key = (a, c) if a < c else (c, a)
+                    if key not in contact:
+                        contact[key] = (x + 0.0, y + 0.5)
+
+    return contact
+
+
 def _build_region_highlight_surface(assign: np.ndarray, region_idx: int, map_w: int, map_h: int, alpha: int) -> pygame.Surface:
-    """
-    Builds a low-res SRCALPHA surface where the given region is filled with white at given alpha.
-    """
     mask = (assign == region_idx)               # (H, W)
     mask_wh = np.transpose(mask, (1, 0))        # (W, H)
 
@@ -256,15 +306,95 @@ def _build_region_highlight_surface(assign: np.ndarray, region_idx: int, map_w: 
     return surf
 
 
-def run_map(**kwargs):
-    """
-    Run the interactive map.
+def _bezier_points(p0, p1, p2, n: int):
+    """Quadratic Bezier sampling."""
+    pts = []
+    for i in range(n + 1):
+        t = i / n
+        u = 1.0 - t
+        x = u * u * p0[0] + 2 * u * t * p1[0] + t * t * p2[0]
+        y = u * u * p0[1] + 2 * u * t * p1[1] + t * t * p2[1]
+        pts.append((x, y))
+    return pts
 
-    Returns:
-        (owner, meta)
-        owner: List[int] ownership by region (length = num_regions)
-        meta:  dict with useful internals (assign array, region_colors, etc.)
-    """
+
+def _draw_curved_arrow(
+    surf: pygame.Surface,
+    color_rgba: Tuple[int, int, int, int],
+    p0: Tuple[float, float],
+    p2: Tuple[float, float],
+    curvature_px: float,
+    width: int,
+    head_len: float,
+    head_angle_deg: float,
+    segments: int,
+):
+    # Direction
+    dx = p2[0] - p0[0]
+    dy = p2[1] - p0[1]
+    dist = (dx * dx + dy * dy) ** 0.5
+    if dist < 1.0:
+        return
+
+    # Perp for curvature
+    nx = -dy / dist
+    ny = dx / dist
+
+    # Control point at midpoint offset perpendicular
+    mx = (p0[0] + p2[0]) * 0.5
+    my = (p0[1] + p2[1]) * 0.5
+    p1 = (mx + nx * curvature_px, my + ny * curvature_px)
+
+    pts = _bezier_points(p0, p1, p2, max(6, int(segments)))
+
+    # Draw curve
+    pygame.draw.aalines(surf, color_rgba, False, pts)
+
+    # Thicken (simple): draw additional aalines offset along perpendicular
+    if width > 1:
+        # approximate perpendicular at mid
+        mid_i = len(pts) // 2
+        if mid_i >= 2:
+            ddx = pts[mid_i + 1][0] - pts[mid_i - 1][0]
+            ddy = pts[mid_i + 1][1] - pts[mid_i - 1][1]
+            d = (ddx * ddx + ddy * ddy) ** 0.5 or 1.0
+            px = -ddy / d
+            py = ddx / d
+        else:
+            px, py = nx, ny
+
+        for k in range(1, width):
+            off = (k - (width - 1) / 2.0)
+            pts2 = [(x + px * off, y + py * off) for (x, y) in pts]
+            pygame.draw.aalines(surf, color_rgba, False, pts2)
+
+    # Arrow head: use last segment direction
+    ex, ey = pts[-1]
+    px_, py_ = pts[-2]
+    vx = ex - px_
+    vy = ey - py_
+    vd = (vx * vx + vy * vy) ** 0.5 or 1.0
+    vx /= vd
+    vy /= vd
+
+    import math
+    ang = math.radians(head_angle_deg)
+    ca, sa = math.cos(ang), math.sin(ang)
+
+    # Rotate (-ang) and (+ang) around direction vector
+    lx = vx * ca - vy * sa
+    ly = vx * sa + vy * ca
+    rx = vx * ca + vy * sa
+    ry = -vx * sa + vy * ca
+
+    left = (ex - lx * head_len, ey - ly * head_len)
+    right = (ex - rx * head_len, ey - ry * head_len)
+
+    pygame.draw.aaline(surf, color_rgba, (ex, ey), left)
+    pygame.draw.aaline(surf, color_rgba, (ex, ey), right)
+
+
+def run_map(**kwargs):
     cfg = MapConfig(**kwargs)
 
     pygame.init()
@@ -304,8 +434,10 @@ def run_map(**kwargs):
     # Background
     background_surf = _load_background(cfg.background_path, (disp_w, disp_h), cfg.background_fallback_color)
 
-    # Adjacency for click rules
+    # Geometry
     adjacency = _build_region_adjacency(assign, num_regions)
+    centroids = _compute_centroids(assign, num_regions)  # (x,y) in low-res
+    contact_points = _compute_contact_points(assign, num_regions)
 
     # State: owner
     owner: List[int] = [none_idx] * num_regions
@@ -317,7 +449,6 @@ def run_map(**kwargs):
         if bad:
             raise ValueError(f"initial_owner contains out-of-range indices at regions: {bad[:10]}")
     else:
-        # Default: ensure at least one region per player (including None)
         for p in range(player_count):
             owner[p % num_regions] = p
 
@@ -364,7 +495,6 @@ def run_map(**kwargs):
         else:
             idx = int(v)
             r, g, b = players[idx][1]
-
         alpha = cfg.none_alpha if (r, g, b) == (0, 0, 0) else cfg.tile_alpha
         return (int(r), int(g), int(b), int(alpha))
 
@@ -391,10 +521,10 @@ def run_map(**kwargs):
 
         low = pygame.Surface((cfg.map_w, cfg.map_h), flags=pygame.SRCALPHA)
 
-        rgb_bytes = np.transpose(low_rgb, (1, 0, 2)).copy()  # (map_w, map_h, 3)
+        rgb_bytes = np.transpose(low_rgb, (1, 0, 2)).copy()
         pygame.surfarray.blit_array(low, rgb_bytes)
 
-        a_bytes = np.transpose(low_a, (1, 0)).copy()         # (map_w, map_h)
+        a_bytes = np.transpose(low_a, (1, 0)).copy()
         alpha_view = pygame.surfarray.pixels_alpha(low)
         alpha_view[:, :] = a_bytes
         del alpha_view
@@ -451,13 +581,98 @@ def run_map(**kwargs):
 
     def can_click_region(region_idx: int, selected: int) -> bool:
         # Rule: only allow if region borders at least one region owned by selected player.
-        # Also allow clicking your own region (no-op or re-affirm).
         if owner[region_idx] == selected:
             return True
         for nb in adjacency[region_idx]:
             if owner[nb] == selected:
                 return True
         return False
+
+    def to_disp(pt_low: Tuple[float, float]) -> Tuple[float, float]:
+        return (pt_low[0] * (disp_w / cfg.map_w), pt_low[1] * (disp_h / cfg.map_h))
+
+    def draw_arrows(now_ms: int):
+        if not cfg.show_arrows:
+            return
+        if cfg.color_mode != "owner":
+            return  # arrows are defined for owner-colors
+        if selected_player < 0 or selected_player >= player_count:
+            return
+
+        eff_owner = compute_effective_owner(now_ms)
+
+        # Build target -> best source (only 1 arrow per target region)
+        targets: Dict[int, int] = {}
+
+        # Precompute centroid positions in display coords for quick distance checks
+        cent_disp = np.zeros_like(centroids, dtype=np.float32)
+        cent_disp[:, 0] = centroids[:, 0] * (disp_w / cfg.map_w)
+        cent_disp[:, 1] = centroids[:, 1] * (disp_h / cfg.map_h)
+
+        for src in range(num_regions):
+            if eff_owner[src] != selected_player:
+                continue
+
+            for tgt in adjacency[src]:
+                if eff_owner[tgt] == selected_player:
+                    continue
+
+                # Pick a single best src for each target (shortest centroid distance)
+                if tgt not in targets:
+                    targets[tgt] = src
+                else:
+                    prev_src = targets[tgt]
+                    dx1 = cent_disp[src, 0] - cent_disp[tgt, 0]
+                    dy1 = cent_disp[src, 1] - cent_disp[tgt, 1]
+                    dx2 = cent_disp[prev_src, 0] - cent_disp[tgt, 0]
+                    dy2 = cent_disp[prev_src, 1] - cent_disp[tgt, 1]
+                    if (dx1 * dx1 + dy1 * dy1) < (dx2 * dx2 + dy2 * dy2):
+                        targets[tgt] = src
+
+        if not targets:
+            return
+
+        # Draw on an alpha surface for nicer blending
+        arrows_surf = pygame.Surface((disp_w, disp_h), flags=pygame.SRCALPHA)
+        arrows_surf.fill((0, 0, 0, 0))
+
+        base_rgb = players[selected_player][1]
+        arrow_col = (base_rgb[0], base_rgb[1], base_rgb[2], int(cfg.arrow_alpha))
+
+        for tgt, src in targets.items():
+            # Use contact point if available
+            key = (src, tgt) if src < tgt else (tgt, src)
+            if key in contact_points:
+                cx, cy = contact_points[key]
+                contact_disp = to_disp((cx, cy))
+            else:
+                # fallback to midpoint of centroids
+                contact_disp = (
+                    (cent_disp[src, 0] + cent_disp[tgt, 0]) * 0.5,
+                    (cent_disp[src, 1] + cent_disp[tgt, 1]) * 0.5,
+                )
+
+            # Start a bit toward the contact from source centroid
+            sx, sy = float(cent_disp[src, 0]), float(cent_disp[src, 1])
+            tx, ty = float(cent_disp[tgt, 0]), float(cent_disp[tgt, 1])
+
+            # Blend endpoints toward the contact point so arrows feel like they cross the border
+            p0 = (sx * 0.55 + contact_disp[0] * 0.45, sy * 0.55 + contact_disp[1] * 0.45)
+            p2 = (tx * 0.55 + contact_disp[0] * 0.45, ty * 0.55 + contact_disp[1] * 0.45)
+
+            _draw_curved_arrow(
+                arrows_surf,
+                arrow_col,
+                p0,
+                p2,
+                curvature_px=float(cfg.arrow_curvature_px),
+                width=int(cfg.arrow_width),
+                head_len=float(cfg.arrow_head_len_px),
+                head_angle_deg=float(cfg.arrow_head_angle_deg),
+                segments=int(cfg.arrow_segments),
+            )
+
+        screen.blit(arrows_surf, (0, 0))
 
     clock = pygame.time.Clock()
     running = True
@@ -472,7 +687,7 @@ def run_map(**kwargs):
     while running:
         now_ms = pygame.time.get_ticks()
 
-        # --- Hover detection & highlight caching (every frame) ---
+        # --- Hover detection & highlight caching ---
         mx, my = pygame.mouse.get_pos()
         new_hover = None
         new_hover_ok = False
@@ -526,7 +741,7 @@ def run_map(**kwargs):
                             region_idx = None
 
                         if region_idx is not None:
-                            # Click restriction:
+                            # Click restriction
                             if not can_click_region(region_idx, selected_player):
                                 continue
 
@@ -563,13 +778,18 @@ def run_map(**kwargs):
         screen.blit(fill_surf, (0, 0))
         screen.blit(border_surf, (0, 0))
 
-        # Hover highlight (white when OK, red-tinted when blocked)
+        # Arrows ONLY when selected player is selected (always true in this UI),
+        # and only from selected player's regions -> neighboring other-owner regions.
+        # One arrow per target bordering region.
+        if cfg.show_arrows:
+            draw_arrows(now_ms)
+
+        # Hover highlight
         if hover_region is not None:
             if hover_ok and hover_hi_scaled_ok is not None:
                 screen.blit(hover_hi_scaled_ok, (0, 0))
             elif (not hover_ok) and hover_hi_scaled_bad is not None:
                 tmp = hover_hi_scaled_bad.copy()
-                # tint red-ish
                 tmp.fill((255, 90, 90, 0), special_flags=pygame.BLEND_RGBA_MULT)
                 screen.blit(tmp, (0, 0))
 
@@ -580,10 +800,12 @@ def run_map(**kwargs):
     pygame.quit()
 
     meta = {
-        "assign": assign,                # low-res region assignment (map_h, map_w)
+        "assign": assign,
         "num_regions": num_regions,
         "players": players,
-        "region_colors": region_colors,  # hidden colors for click detection
+        "region_colors": region_colors,
         "adjacency": adjacency,
+        "centroids": centroids,
+        "contact_points": contact_points,
     }
     return owner, meta
