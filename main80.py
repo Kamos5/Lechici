@@ -529,10 +529,10 @@ class Dirt(SimpleTile):
     @classmethod
     def load_image(cls):
         try:
-            cls._image = pygame.image.load(f"{cls.__name__.lower()}.png").convert_alpha()
+            cls._image = pygame.image.load(f"assets/{cls.__name__.lower()}.png").convert_alpha()
             cls._image = pygame.transform.scale(cls._image, (TILE_SIZE, TILE_SIZE))
         except (pygame.error, FileNotFoundError) as e:
-            print(f"Failed to load {cls.__name__.lower()}.png: {e}")
+            print(f"Failed to load assets/{cls.__name__.lower()}.png: {e}")
             cls._image = None
 
 class Bridge(SimpleTile):
@@ -566,10 +566,10 @@ class River(SimpleTile):
     @classmethod
     def load_image(cls):
         try:
-            cls._image = pygame.image.load(f"{cls.__name__.lower()}.png").convert_alpha()
+            cls._image = pygame.image.load(f"assets/{cls.__name__.lower()}.png").convert_alpha()
             cls._image = pygame.transform.scale(cls._image, (TILE_SIZE, TILE_SIZE))
         except (pygame.error, FileNotFoundError) as e:
-            print(f"Failed to load {cls.__name__.lower()}.png: {e}")
+            print(f"Failed to load assets/{cls.__name__.lower()}.png: {e}")
             cls._image = None
 
     def regrow(self, rate):
@@ -618,16 +618,16 @@ class Unit:
     @classmethod
     def load_images(cls, cls_name, size):
         try:
-            cls._images[cls_name] = pygame.image.load(f"{cls_name.lower()}.png").convert_alpha()
+            cls._images[cls_name] = pygame.image.load(f"assets/{cls_name.lower()}.png").convert_alpha()
             cls._images[cls_name] = pygame.transform.scale(cls._images[cls_name], (int(size), int(size)))
         except (pygame.error, FileNotFoundError) as e:
-            print(f"Failed to load {cls_name.lower()}.png: {e}")
+            print(f"Failed to load assets/{cls_name.lower()}.png: {e}")
             cls._images[cls_name] = None
         try:
-            cls._unit_icons[cls_name] = pygame.image.load(f"{cls_name.lower()}_icon.png").convert_alpha()
+            cls._unit_icons[cls_name] = pygame.image.load(f"assets/{cls_name.lower()}_icon.png").convert_alpha()
             cls._unit_icons[cls_name] = pygame.transform.scale(cls._unit_icons[cls_name], (ICON_SIZE, ICON_SIZE))
         except (pygame.error, FileNotFoundError) as e:
-            print(f"Failed to load {cls_name.lower()}_icon.png: {e}")
+            print(f"Failed to load assets/{cls_name.lower()}_icon.png: {e}")
             cls._unit_icons[cls_name] = None
 
     def should_highlight(self, current_time):
@@ -957,7 +957,7 @@ class Tree(Unit):
                 tinted_image.blit(mask_surface, (0, 0), special_flags=pygame.BLEND_RGBA_MULT)
                 cls._tinted_images[i] = tinted_image
         except (pygame.error, FileNotFoundError) as e:
-            print(f"Failed to load tree.png: {e}")
+            print(f"Failed to load assets/.png: {e}")
             cls._image = None
 
     def draw(self, screen, camera_x, camera_y, axemen_targets):
@@ -1382,6 +1382,7 @@ class Player:
                 Knight(offset_x + 150 * SCALE, offset_y + 100 * SCALE, player_id, self.color),
                 Archer(offset_x + 200 * SCALE, offset_y + 100 * SCALE, player_id, self.color),
                 Cow(offset_x + 260 * SCALE, offset_y + 100 * SCALE, player_id, self.color),
+                Cow(offset_x + 280 * SCALE, offset_y + 100 * SCALE, player_id, self.color),
                 Barn(offset_x + 230 * SCALE, offset_y + 150 * SCALE, player_id, self.color),
                 TownCenter(offset_x + 150 * SCALE, offset_y + 150 * SCALE, player_id, self.color),
                 Barracks(offset_x + 70 * SCALE, offset_y + 150 * SCALE, player_id, self.color),

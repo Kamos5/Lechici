@@ -21,7 +21,7 @@ from __future__ import annotations
 import random
 from dataclasses import dataclass
 from typing import List, Optional, Sequence, Tuple, Dict, Any, Set
-
+from cards import pick_round_card
 import numpy as np
 import pygame
 
@@ -1006,9 +1006,27 @@ def run_map(**kwargs):
             update_anim(now_ms)
 
             if current_anim is None and not anim_queue and phase not in (PHASE_DEFEND_PROMPT, PHASE_DEFEND_PREVIEW):
-                phase = PHASE_IDLE
+                # next round begins NOW (before re-enabling clicking)
                 round_no += 1
                 needs_redraw = True
+
+                # draw + update once so the map is visible behind the overlay
+                rebuild_fill_surface(now_ms)
+                screen.blit(background_surf, (0, 0))
+                screen.blit(fill_surf, (0, 0))
+                screen.blit(border_surf, (0, 0))
+                if cfg.show_arrows:
+                    draw_arrows(now_ms)
+                draw_buttons()
+                pygame.display.flip()
+
+                # === CARD CHOICE (modal) ===
+                # picked = pick_round_card(screen)
+                # TODO: apply effects later based on picked["id"]
+                # print("Picked card:", picked)
+
+                # finally re-enable play
+                phase = PHASE_IDLE
 
         if flickers:
             needs_redraw = True
