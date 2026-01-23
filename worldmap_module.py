@@ -1,28 +1,9 @@
 """
 worldmap_module.py
 
-Importable, parameterized clickable-region map with:
-- Background image under translucent tiles
-- Cached borders
-- Optional initial ownership injection (initial_owner)
-- Hover highlight on the region under cursor
-- Click rule: you can only change a region if it borders at least one region
-  owned by the selected player (territory expansion rule).
-- Curved arrows (shown only when a player is selected):
-    From selected player's bordering regions -> neighboring regions of different owner.
-    For every target (non-selected) bordering region, only 1 arrow is drawn.
-
-Usage:
-    from worldmap_module import run_map
-
-    final_owner, meta = run_map(
-        player_count=4,
-        num_regions=25,
-        background_path="background.jpg",
-        tile_alpha=128,
-        none_alpha=204,
-        initial_owner=[...],   # optional, length == num_regions
-    )
+Adds:
+- Top HUD counter: each player's tile count (excludes "None")
+- Before giving other players a tile: only if they currently have >0 tiles
 """
 
 from __future__ import annotations
@@ -86,48 +67,46 @@ class MapConfig:
     player_count: Optional[int] = None
     show_buttons: bool = True
 
-    # Coloring mode
-    color_mode: str = "owner"
-    region_values: Optional[Sequence[Any]] = None
-    value_to_color: Optional[Callable[[Any], Color]] = None
-
     # Optional initial ownership by region (length must equal num_regions)
     initial_owner: Optional[Sequence[int]] = None
-
-    # Custom click handler
-    on_region_click: Optional[Callable[[int, int, Dict[str, Any]], None]] = None
 
     # Arrows (curved)
     show_arrows: bool = True
     arrow_alpha: int = 210
-    arrow_width: int = 6
-    arrow_curvature_px: float = 30.0
-    arrow_head_len_px: float = 15.0
+    arrow_width: int = 2
+    arrow_curvature_px: float = 40.0
+    arrow_head_len_px: float = 12.0
     arrow_head_angle_deg: float = 28.0
     arrow_segments: int = 22
+
+    # Battle system
+    battle_delay_ms: int = 1000
+    reward_extra_tiles: int = 1
+    between_anims_delay_ms: int = 150
+    revert_flicker_ms: int = 900
+
+    # HUD
+    hud_h: int = 28
+    hud_bg_alpha: int = 140
 
 
 def _build_players(cfg: MapConfig) -> List[Tuple[str, Color]]:
     if cfg.players is not None:
         return list(cfg.players)
-
     if cfg.player_count is not None:
         base = [p for p in DEFAULT_PLAYERS if p[0] != "None"]
         n = max(1, int(cfg.player_count))
         chosen = base[:n]
         chosen.append(("None", (0, 0, 0)))
         return chosen
-
     return list(DEFAULT_PLAYERS)
 
 
 def _load_background(path: Optional[str], size: Tuple[int, int], fallback: Color) -> pygame.Surface:
     surf = pygame.Surface(size)
     surf.fill(fallback)
-
     if not path:
         return surf
-
     try:
         bg_raw = pygame.image.load(path).convert()
         return pygame.transform.smoothscale(bg_raw, size)
@@ -145,7 +124,7 @@ def _generate_regions(cfg: MapConfig, map_w: int, map_h: int, num_regions: int) 
 
     xs = np.arange(map_w, dtype=np.float32)
     ys = np.arange(map_h, dtype=np.float32)
-    X, Y = np.meshgrid(xs, ys, indexing="xy")  # (map_h, map_w)
+    X, Y = np.meshgrid(xs, ys, indexing="xy")
 
     target_area = (map_w * map_h) / num_regions
     assign: Optional[np.ndarray] = None
@@ -166,9 +145,9 @@ def _generate_regions(cfg: MapConfig, map_w: int, map_h: int, num_regions: int) 
             flat = assign.ravel()
             sum_x = np.bincount(flat, weights=X.ravel(), minlength=num_regions).astype(np.float32)
             sum_y = np.bincount(flat, weights=Y.ravel(), minlength=num_regions).astype(np.float32)
-            safe_areas = np.maximum(areas, 1.0)
-            cx = sum_x / safe_areas
-            cy = sum_y / safe_areas
+            safe = np.maximum(areas, 1.0)
+            cx = sum_x / safe
+            cy = sum_y / safe
             centroids = np.stack([cx, cy], axis=1)
 
             sites = sites + cfg.centroid_pull * (centroids - sites)
@@ -181,7 +160,6 @@ def _generate_regions(cfg: MapConfig, map_w: int, map_h: int, num_regions: int) 
 
 def _build_hidden_color_map(assign: np.ndarray, map_w: int, map_h: int, disp_w: int, disp_h: int):
     num_regions = int(assign.max()) + 1
-
     region_colors: List[Color] = []
     for i in range(num_regions):
         r = 20 + (i * 11) % 236
@@ -190,13 +168,11 @@ def _build_hidden_color_map(assign: np.ndarray, map_w: int, map_h: int, disp_w: 
         region_colors.append((r, g, b))
 
     region_colors_arr = np.array(region_colors, dtype=np.uint8)
-
-    rgb_low = region_colors_arr[assign]                      # (map_h, map_w, 3)
-    rgb_low_bytes = np.transpose(rgb_low, (1, 0, 2)).copy()  # (map_w, map_h, 3)
+    rgb_low = region_colors_arr[assign]
+    rgb_low_bytes = np.transpose(rgb_low, (1, 0, 2)).copy()
 
     color_map_low = pygame.Surface((map_w, map_h))
     pygame.surfarray.blit_array(color_map_low, rgb_low_bytes)
-
     color_map = pygame.transform.smoothscale(color_map_low, (disp_w, disp_h))
     return color_map, region_colors
 
@@ -207,9 +183,7 @@ def _precompute_borders(color_map: pygame.Surface, disp_w: int, disp_h: int, bor
 
     cp = pygame.PixelArray(color_map)
     bp = pygame.PixelArray(border_surf)
-
-    border_rgba = (*border_color, 255)
-    border_px = border_surf.map_rgb(border_rgba)
+    border_px = border_surf.map_rgb((*border_color, 255))
 
     for x in range(disp_w):
         for y in range(disp_h):
@@ -242,7 +216,6 @@ def _build_region_adjacency(assign: np.ndarray, num_regions: int) -> List[Set[in
 
 
 def _compute_centroids(assign: np.ndarray, num_regions: int) -> np.ndarray:
-    """Return (num_regions,2) centroids in low-res pixel coords (x,y)."""
     h, w = assign.shape
     ys, xs = np.indices((h, w))
     flat = assign.ravel()
@@ -256,58 +229,43 @@ def _compute_centroids(assign: np.ndarray, num_regions: int) -> np.ndarray:
 
 
 def _compute_contact_points(assign: np.ndarray, num_regions: int) -> Dict[Tuple[int, int], Tuple[float, float]]:
-    """
-    For each adjacent region pair (a,b) (a<b), store one representative border point in low-res coords.
-    We record the first encountered midpoint between differing neighbors.
-    """
     h, w = assign.shape
     contact: Dict[Tuple[int, int], Tuple[float, float]] = {}
-
     for y in range(h):
         for x in range(w):
             a = int(assign[y, x])
-
-            # right edge
             if x < w - 1:
                 b = int(assign[y, x + 1])
                 if a != b:
                     key = (a, b) if a < b else (b, a)
                     if key not in contact:
                         contact[key] = (x + 0.5, y + 0.0)
-
-            # down edge
             if y < h - 1:
                 c = int(assign[y + 1, x])
                 if a != c:
                     key = (a, c) if a < c else (c, a)
                     if key not in contact:
                         contact[key] = (x + 0.0, y + 0.5)
-
     return contact
 
 
 def _build_region_highlight_surface(assign: np.ndarray, region_idx: int, map_w: int, map_h: int, alpha: int) -> pygame.Surface:
-    mask = (assign == region_idx)               # (H, W)
-    mask_wh = np.transpose(mask, (1, 0))        # (W, H)
-
+    mask = (assign == region_idx)
+    mask_wh = np.transpose(mask, (1, 0))
     surf = pygame.Surface((map_w, map_h), flags=pygame.SRCALPHA)
     surf.fill((0, 0, 0, 0))
-
     rgb = pygame.surfarray.pixels3d(surf)
     a = pygame.surfarray.pixels_alpha(surf)
-
     rgb[:, :, 0] = 255
     rgb[:, :, 1] = 255
     rgb[:, :, 2] = 255
     a[:, :] = (mask_wh.astype(np.uint8) * int(alpha))
-
     del rgb
     del a
     return surf
 
 
 def _bezier_points(p0, p1, p2, n: int):
-    """Quadratic Bezier sampling."""
     pts = []
     for i in range(n + 1):
         t = i / n
@@ -329,30 +287,22 @@ def _draw_curved_arrow(
     head_angle_deg: float,
     segments: int,
 ):
-    # Direction
     dx = p2[0] - p0[0]
     dy = p2[1] - p0[1]
     dist = (dx * dx + dy * dy) ** 0.5
     if dist < 1.0:
         return
 
-    # Perp for curvature
     nx = -dy / dist
     ny = dx / dist
-
-    # Control point at midpoint offset perpendicular
     mx = (p0[0] + p2[0]) * 0.5
     my = (p0[1] + p2[1]) * 0.5
     p1 = (mx + nx * curvature_px, my + ny * curvature_px)
 
     pts = _bezier_points(p0, p1, p2, max(6, int(segments)))
-
-    # Draw curve
     pygame.draw.aalines(surf, color_rgba, False, pts)
 
-    # Thicken (simple): draw additional aalines offset along perpendicular
     if width > 1:
-        # approximate perpendicular at mid
         mid_i = len(pts) // 2
         if mid_i >= 2:
             ddx = pts[mid_i + 1][0] - pts[mid_i - 1][0]
@@ -362,13 +312,11 @@ def _draw_curved_arrow(
             py = ddx / d
         else:
             px, py = nx, ny
-
         for k in range(1, width):
             off = (k - (width - 1) / 2.0)
             pts2 = [(x + px * off, y + py * off) for (x, y) in pts]
             pygame.draw.aalines(surf, color_rgba, False, pts2)
 
-    # Arrow head: use last segment direction
     ex, ey = pts[-1]
     px_, py_ = pts[-2]
     vx = ex - px_
@@ -381,7 +329,6 @@ def _draw_curved_arrow(
     ang = math.radians(head_angle_deg)
     ca, sa = math.cos(ang), math.sin(ang)
 
-    # Rotate (-ang) and (+ang) around direction vector
     lx = vx * ca - vy * sa
     ly = vx * sa + vy * ca
     rx = vx * ca + vy * sa
@@ -398,10 +345,9 @@ def run_map(**kwargs):
     cfg = MapConfig(**kwargs)
 
     pygame.init()
-
     disp_w, disp_h = cfg.width, cfg.height - cfg.bar_h
     screen = pygame.display.set_mode((cfg.width, cfg.height))
-    pygame.display.set_caption("Clickable Map (importable)")
+    pygame.display.set_caption("Clickable Map (HUD + adjacency grants)")
 
     players = _build_players(cfg)
     player_count = len(players)
@@ -410,7 +356,7 @@ def run_map(**kwargs):
     font = pygame.font.SysFont("arial", 20)
     big_font = pygame.font.SysFont("arial", 28)
 
-    # Loading splash
+    # Loading
     loading_text = big_font.render("Generating map... please wait", True, (220, 220, 255))
     screen.fill((10, 10, 30))
     screen.blit(loading_text, (cfg.width // 2 - 210, cfg.height // 2 - 20))
@@ -424,22 +370,15 @@ def run_map(**kwargs):
         num_regions = int(cfg.num_regions)
 
     assign = _generate_regions(cfg, cfg.map_w, cfg.map_h, num_regions)
-
-    # Hidden ID color map for click detection
     color_map, region_colors = _build_hidden_color_map(assign, cfg.map_w, cfg.map_h, disp_w, disp_h)
-
-    # Cached borders
     border_surf = _precompute_borders(color_map, disp_w, disp_h, cfg.border_color)
-
-    # Background
     background_surf = _load_background(cfg.background_path, (disp_w, disp_h), cfg.background_fallback_color)
 
-    # Geometry
     adjacency = _build_region_adjacency(assign, num_regions)
-    centroids = _compute_centroids(assign, num_regions)  # (x,y) in low-res
+    centroids = _compute_centroids(assign, num_regions)
     contact_points = _compute_contact_points(assign, num_regions)
 
-    # State: owner
+    # Ownership
     owner: List[int] = [none_idx] * num_regions
     if cfg.initial_owner is not None:
         if len(cfg.initial_owner) != num_regions:
@@ -452,23 +391,11 @@ def run_map(**kwargs):
         for p in range(player_count):
             owner[p % num_regions] = p
 
-    # Values mode
-    region_values = None
-    if cfg.color_mode == "values":
-        if cfg.region_values is None:
-            region_values = owner[:]
-        else:
-            if len(cfg.region_values) != num_regions:
-                raise ValueError(f"region_values length {len(cfg.region_values)} must equal num_regions {num_regions}")
-            region_values = list(cfg.region_values)
-
-    selected_player = 0
-
-    # Flicker: region_idx -> dict
+    # Flickers
     flickers: Dict[int, Dict[str, int]] = {}
     half_period_ms = max(1, round(1000 / (cfg.flicker_hz * 2)))
 
-    # Rendering surfaces
+    # Render surfaces
     fill_surf = pygame.Surface((disp_w, disp_h), flags=pygame.SRCALPHA)
     needs_redraw = True
 
@@ -478,49 +405,56 @@ def run_map(**kwargs):
     hover_hi_scaled_ok: Optional[pygame.Surface] = None
     hover_hi_scaled_bad: Optional[pygame.Surface] = None
 
+    # Phase machine
+    PHASE_IDLE = "IDLE"
+    PHASE_BATTLE_FLICKER = "BATTLE_FLICKER"
+    PHASE_BATTLE_WAIT = "BATTLE_WAIT"
+    PHASE_PLAY_QUEUE = "PLAY_QUEUE"
+    phase = PHASE_IDLE
+
+    battle_ctx: Dict[str, Any] = {}
+    anim_queue: List[Dict[str, Any]] = []
+    current_anim: Optional[Dict[str, Any]] = None
+    between_anim_wait_until: int = 0
+
+    def dummy_method(attacker: int, region_idx: int) -> bool:
+        return random.random() < 1
+
+    def tile_counts() -> List[int]:
+        counts = [0] * player_count
+        for o in owner:
+            counts[o] += 1
+        return counts
+
+    def player_has_tiles(p: int) -> bool:
+        # >0 tiles excluding None
+        return sum(1 for o in owner if o == p) > 0
+
     def compute_effective_owner(now_ms: int) -> List[int]:
         eff = owner[:]
         for ridx, st in list(flickers.items()):
             age = now_ms - st["start_ms"]
-            if age >= cfg.flicker_duration_ms:
+            if age >= st.get("duration_ms", cfg.flicker_duration_ms):
                 flickers.pop(ridx, None)
                 continue
             show_new = ((age // half_period_ms) % 2 == 0)
             eff[ridx] = st["new_owner"] if show_new else st["old_owner"]
         return eff
 
-    def value_to_rgba(v: Any) -> Tuple[int, int, int, int]:
-        if cfg.value_to_color is not None:
-            r, g, b = cfg.value_to_color(v)
-        else:
-            idx = int(v)
-            r, g, b = players[idx][1]
-        alpha = cfg.none_alpha if (r, g, b) == (0, 0, 0) else cfg.tile_alpha
-        return (int(r), int(g), int(b), int(alpha))
-
     def rebuild_fill_surface(now_ms: int):
         nonlocal fill_surf
+        eff_owner = compute_effective_owner(now_ms)
 
-        if cfg.color_mode == "owner":
-            eff_owner = compute_effective_owner(now_ms)
-            region_to_rgb = np.array([players[eff_owner[i]][1] for i in range(num_regions)], dtype=np.uint8)
-            region_to_a = np.array(
-                [cfg.none_alpha if eff_owner[i] == none_idx else cfg.tile_alpha for i in range(num_regions)],
-                dtype=np.uint8
-            )
-        elif cfg.color_mode == "values":
-            assert region_values is not None
-            rgba = np.array([value_to_rgba(region_values[i]) for i in range(num_regions)], dtype=np.uint8)
-            region_to_rgb = rgba[:, :3]
-            region_to_a = rgba[:, 3]
-        else:
-            raise ValueError("color_mode must be 'owner' or 'values'")
+        region_to_rgb = np.array([players[eff_owner[i]][1] for i in range(num_regions)], dtype=np.uint8)
+        region_to_a = np.array(
+            [cfg.none_alpha if eff_owner[i] == none_idx else cfg.tile_alpha for i in range(num_regions)],
+            dtype=np.uint8
+        )
 
-        low_rgb = region_to_rgb[assign]  # (map_h, map_w, 3)
-        low_a = region_to_a[assign]      # (map_h, map_w)
+        low_rgb = region_to_rgb[assign]
+        low_a = region_to_a[assign]
 
         low = pygame.Surface((cfg.map_w, cfg.map_h), flags=pygame.SRCALPHA)
-
         rgb_bytes = np.transpose(low_rgb, (1, 0, 2)).copy()
         pygame.surfarray.blit_array(low, rgb_bytes)
 
@@ -534,7 +468,6 @@ def run_map(**kwargs):
     def draw_buttons():
         if not cfg.show_buttons:
             return
-
         pygame.draw.rect(screen, (25, 25, 25), pygame.Rect(0, disp_h, cfg.width, cfg.bar_h))
 
         pad = 10
@@ -562,7 +495,6 @@ def run_map(**kwargs):
     def button_index_at(pos):
         if not cfg.show_buttons:
             return None
-
         x, y = pos
         if y < disp_h:
             return None
@@ -580,7 +512,6 @@ def run_map(**kwargs):
         return None
 
     def can_click_region(region_idx: int, selected: int) -> bool:
-        # Rule: only allow if region borders at least one region owned by selected player.
         if owner[region_idx] == selected:
             return True
         for nb in adjacency[region_idx]:
@@ -594,17 +525,9 @@ def run_map(**kwargs):
     def draw_arrows(now_ms: int):
         if not cfg.show_arrows:
             return
-        if cfg.color_mode != "owner":
-            return  # arrows are defined for owner-colors
-        if selected_player < 0 or selected_player >= player_count:
-            return
 
         eff_owner = compute_effective_owner(now_ms)
-
-        # Build target -> best source (only 1 arrow per target region)
         targets: Dict[int, int] = {}
-
-        # Precompute centroid positions in display coords for quick distance checks
         cent_disp = np.zeros_like(centroids, dtype=np.float32)
         cent_disp[:, 0] = centroids[:, 0] * (disp_w / cfg.map_w)
         cent_disp[:, 1] = centroids[:, 1] * (disp_h / cfg.map_h)
@@ -612,12 +535,9 @@ def run_map(**kwargs):
         for src in range(num_regions):
             if eff_owner[src] != selected_player:
                 continue
-
             for tgt in adjacency[src]:
                 if eff_owner[tgt] == selected_player:
                     continue
-
-                # Pick a single best src for each target (shortest centroid distance)
                 if tgt not in targets:
                     targets[tgt] = src
                 else:
@@ -632,33 +552,23 @@ def run_map(**kwargs):
         if not targets:
             return
 
-        # Draw on an alpha surface for nicer blending
         arrows_surf = pygame.Surface((disp_w, disp_h), flags=pygame.SRCALPHA)
         arrows_surf.fill((0, 0, 0, 0))
-
         base_rgb = players[selected_player][1]
         arrow_col = (base_rgb[0], base_rgb[1], base_rgb[2], int(cfg.arrow_alpha))
 
         for tgt, src in targets.items():
-            # Use contact point if available
             key = (src, tgt) if src < tgt else (tgt, src)
             if key in contact_points:
                 cx, cy = contact_points[key]
                 contact_disp = to_disp((cx, cy))
+                sx, sy = float(cent_disp[src, 0]), float(cent_disp[src, 1])
+                tx, ty = float(cent_disp[tgt, 0]), float(cent_disp[tgt, 1])
+                p0 = (sx * 0.55 + contact_disp[0] * 0.45, sy * 0.55 + contact_disp[1] * 0.45)
+                p2 = (tx * 0.55 + contact_disp[0] * 0.45, ty * 0.55 + contact_disp[1] * 0.45)
             else:
-                # fallback to midpoint of centroids
-                contact_disp = (
-                    (cent_disp[src, 0] + cent_disp[tgt, 0]) * 0.5,
-                    (cent_disp[src, 1] + cent_disp[tgt, 1]) * 0.5,
-                )
-
-            # Start a bit toward the contact from source centroid
-            sx, sy = float(cent_disp[src, 0]), float(cent_disp[src, 1])
-            tx, ty = float(cent_disp[tgt, 0]), float(cent_disp[tgt, 1])
-
-            # Blend endpoints toward the contact point so arrows feel like they cross the border
-            p0 = (sx * 0.55 + contact_disp[0] * 0.45, sy * 0.55 + contact_disp[1] * 0.45)
-            p2 = (tx * 0.55 + contact_disp[0] * 0.45, ty * 0.55 + contact_disp[1] * 0.45)
+                p0 = (float(cent_disp[src, 0]), float(cent_disp[src, 1]))
+                p2 = (float(cent_disp[tgt, 0]), float(cent_disp[tgt, 1]))
 
             _draw_curved_arrow(
                 arrows_surf,
@@ -674,52 +584,121 @@ def run_map(**kwargs):
 
         screen.blit(arrows_surf, (0, 0))
 
+    def compute_border_candidates(snapshot_owner: List[int], player: int) -> List[int]:
+        cand: Set[int] = set()
+        for r in range(num_regions):
+            if snapshot_owner[r] != player:
+                continue
+            for nb in adjacency[r]:
+                if snapshot_owner[nb] != player:
+                    cand.add(int(nb))
+        return list(cand)
+
+    def eligible_adjacent_tiles(player: int) -> List[int]:
+        c: Set[int] = set()
+        for r in range(num_regions):
+            if owner[r] != player:
+                continue
+            for nb in adjacency[r]:
+                if owner[nb] != player:
+                    c.add(int(nb))
+        return list(c)
+
+    def pick_adjacent_tile_for_player(player: int) -> Optional[int]:
+        candidates = eligible_adjacent_tiles(player)
+        if not candidates:
+            return None
+        blacks = [i for i in candidates if owner[i] == none_idx]
+        if blacks:
+            return random.choice(blacks)
+        return random.choice(candidates)
+
+    def enqueue_anim(region: int, to_owner: int, duration_ms: int):
+        anim_queue.append({"region": int(region), "to": int(to_owner), "dur": int(duration_ms)})
+
+    def start_next_anim(now_ms: int):
+        nonlocal current_anim
+        if current_anim is not None:
+            return
+        if not anim_queue:
+            return
+        current_anim = anim_queue.pop(0)
+        ridx = current_anim["region"]
+        new_o = current_anim["to"]
+        old_o = owner[ridx]
+        flickers[ridx] = {
+            "start_ms": now_ms,
+            "duration_ms": current_anim["dur"],
+            "old_owner": int(old_o),
+            "new_owner": int(new_o),
+        }
+        current_anim["start_ms"] = now_ms
+
+    def update_anim(now_ms: int):
+        nonlocal current_anim, between_anim_wait_until, needs_redraw
+        if current_anim is None:
+            return
+        ridx = current_anim["region"]
+        age = now_ms - current_anim["start_ms"]
+        if age >= current_anim["dur"]:
+            owner[ridx] = int(current_anim["to"])
+            flickers.pop(ridx, None)
+            current_anim = None
+            between_anim_wait_until = now_ms + int(cfg.between_anims_delay_ms)
+            needs_redraw = True
+
+    def draw_hud():
+        # semi-transparent top bar
+        hud = pygame.Surface((cfg.width, cfg.hud_h), flags=pygame.SRCALPHA)
+        hud.fill((0, 0, 0, int(cfg.hud_bg_alpha)))
+
+        counts = tile_counts()
+        x = 10
+        y = 4
+        for i, (label, col) in enumerate(players):
+            if i == none_idx:
+                continue  # don't show None
+            txt = f"{label}:{counts[i]}"
+            t = font.render(txt, True, col)
+            hud.blit(t, (x, y))
+            x += t.get_width() + 18
+
+        screen.blit(hud, (0, 0))
+
+    selected_player = 0
+
     clock = pygame.time.Clock()
     running = True
-
-    state: Dict[str, Any] = {
-        "owner": owner,
-        "region_values": region_values,
-        "players": players,
-        "num_regions": num_regions,
-    }
 
     while running:
         now_ms = pygame.time.get_ticks()
 
-        # --- Hover detection & highlight caching ---
+        # Hover
         mx, my = pygame.mouse.get_pos()
         new_hover = None
-        new_hover_ok = False
-
         if 0 <= mx < disp_w and 0 <= my < disp_h:
             hidden_color = color_map.get_at((mx, my))[:3]
             try:
                 new_hover = region_colors.index(hidden_color)
-                new_hover_ok = can_click_region(new_hover, selected_player) if new_hover is not None else False
             except ValueError:
                 new_hover = None
-                new_hover_ok = False
+
+        new_hover_ok = (new_hover is not None) and (phase == PHASE_IDLE) and can_click_region(new_hover, selected_player)
 
         if new_hover != hover_region:
             hover_region = new_hover
             hover_ok = new_hover_ok
             hover_hi_scaled_ok = None
             hover_hi_scaled_bad = None
-
             if hover_region is not None:
-                low_ok = _build_region_highlight_surface(
-                    assign, hover_region, cfg.map_w, cfg.map_h, alpha=cfg.hover_alpha_ok
-                )
-                low_bad = _build_region_highlight_surface(
-                    assign, hover_region, cfg.map_w, cfg.map_h, alpha=cfg.hover_alpha_bad
-                )
+                low_ok = _build_region_highlight_surface(assign, hover_region, cfg.map_w, cfg.map_h, cfg.hover_alpha_ok)
+                low_bad = _build_region_highlight_surface(assign, hover_region, cfg.map_w, cfg.map_h, cfg.hover_alpha_bad)
                 hover_hi_scaled_ok = pygame.transform.smoothscale(low_ok, (disp_w, disp_h))
                 hover_hi_scaled_bad = pygame.transform.smoothscale(low_bad, (disp_w, disp_h))
         else:
             hover_ok = new_hover_ok
 
-        # --- Events ---
+        # Events
         for event in pygame.event.get():
             if event.type == pygame.QUIT:
                 running = False
@@ -731,67 +710,134 @@ def run_map(**kwargs):
                 if bi is not None:
                     selected_player = bi
                     needs_redraw = True
+                    continue
+
+                if phase != PHASE_IDLE:
+                    continue
+
+                mx2, my2 = pos
+                if not (0 <= mx2 < disp_w and 0 <= my2 < disp_h):
+                    continue
+
+                hidden_color = color_map.get_at((mx2, my2))[:3]
+                try:
+                    region_idx = region_colors.index(hidden_color)
+                except ValueError:
+                    region_idx = None
+                if region_idx is None:
+                    continue
+
+                if not can_click_region(region_idx, selected_player):
+                    continue
+
+                attacker = selected_player
+                old_owner = owner[region_idx]
+
+                snapshot = owner[:]
+                pre_border_cands = compute_border_candidates(snapshot, attacker)
+
+                # Immediately take the tile (visual), flicker battle
+                owner[region_idx] = attacker
+                flickers[region_idx] = {
+                    "start_ms": now_ms,
+                    "duration_ms": cfg.flicker_duration_ms,
+                    "old_owner": int(old_owner),
+                    "new_owner": int(attacker),
+                }
+
+                battle_ctx = {
+                    "attacker": int(attacker),
+                    "region": int(region_idx),
+                    "old_owner": int(old_owner),
+                    "pre_border_cands": [int(x) for x in pre_border_cands],
+                    "battle_start_ms": int(now_ms),
+                    "wait_until_ms": 0,
+                }
+                phase = PHASE_BATTLE_FLICKER
+                needs_redraw = True
+
+        # Phase machine
+        if phase == PHASE_BATTLE_FLICKER:
+            age = now_ms - int(battle_ctx["battle_start_ms"])
+            if age >= int(cfg.flicker_duration_ms):
+                ridx = int(battle_ctx["region"])
+                flickers.pop(ridx, None)
+                battle_ctx["wait_until_ms"] = now_ms + int(cfg.battle_delay_ms)
+                phase = PHASE_BATTLE_WAIT
+                needs_redraw = True
+
+        elif phase == PHASE_BATTLE_WAIT:
+            if now_ms >= int(battle_ctx["wait_until_ms"]):
+                attacker = int(battle_ctx["attacker"])
+                ridx = int(battle_ctx["region"])
+                old_owner = int(battle_ctx["old_owner"])
+
+                win = bool(dummy_method(attacker, ridx))
+
+                anim_queue.clear()
+                current_anim = None
+                between_anim_wait_until = now_ms
+
+                if not win:
+                    # revert clicked tile
+                    enqueue_anim(ridx, old_owner, int(cfg.revert_flicker_ms))
                 else:
-                    mx2, my2 = pos
-                    if 0 <= mx2 < disp_w and 0 <= my2 < disp_h:
-                        hidden_color = color_map.get_at((mx2, my2))[:3]
-                        try:
-                            region_idx = region_colors.index(hidden_color)
-                        except ValueError:
-                            region_idx = None
+                    # reward attacker from pre-click border set
+                    pre = [c for c in battle_ctx["pre_border_cands"] if c != ridx]
+                    pre = [c for c in pre if owner[c] != attacker]
+                    random.shuffle(pre)
+                    for _ in range(int(cfg.reward_extra_tiles)):
+                        if not pre:
+                            break
+                        reward = pre.pop()
+                        enqueue_anim(reward, attacker, int(cfg.flicker_duration_ms))
 
-                        if region_idx is not None:
-                            # Click restriction
-                            if not can_click_region(region_idx, selected_player):
-                                continue
+                # Other players: only if they currently have >0 tiles, and only adjacent tiles
+                for p in range(player_count):
+                    if p == attacker or p == none_idx:
+                        continue
+                    if not player_has_tiles(p):
+                        continue
+                    tgt = pick_adjacent_tile_for_player(p)
+                    if tgt is not None:
+                        enqueue_anim(tgt, p, int(cfg.flicker_duration_ms))
 
-                            if cfg.on_region_click is not None:
-                                cfg.on_region_click(region_idx, selected_player, state)
-                                needs_redraw = True
-                            else:
-                                if cfg.color_mode == "owner":
-                                    old_owner = owner[region_idx]
-                                    new_owner = selected_player
-                                    if old_owner != new_owner:
-                                        owner[region_idx] = new_owner
-                                        flickers[region_idx] = {
-                                            "start_ms": now_ms,
-                                            "old_owner": old_owner,
-                                            "new_owner": new_owner,
-                                        }
-                                    needs_redraw = True
-                                else:
-                                    assert region_values is not None
-                                    region_values[region_idx] = selected_player
-                                    needs_redraw = True
+                phase = PHASE_PLAY_QUEUE
+                needs_redraw = True
 
-        # Flicker requires redraw each frame while active (owner mode only)
-        if cfg.color_mode == "owner" and flickers:
+        elif phase == PHASE_PLAY_QUEUE:
+            if current_anim is None and anim_queue and now_ms >= between_anim_wait_until:
+                start_next_anim(now_ms)
+            update_anim(now_ms)
+            if current_anim is None and not anim_queue:
+                phase = PHASE_IDLE
+                needs_redraw = True
+
+        if flickers:
             needs_redraw = True
 
         if needs_redraw:
             rebuild_fill_surface(now_ms)
             needs_redraw = False
 
-        # --- Draw ---
+        # Draw
         screen.blit(background_surf, (0, 0))
         screen.blit(fill_surf, (0, 0))
         screen.blit(border_surf, (0, 0))
 
-        # Arrows ONLY when selected player is selected (always true in this UI),
-        # and only from selected player's regions -> neighboring other-owner regions.
-        # One arrow per target bordering region.
-        if cfg.show_arrows:
-            draw_arrows(now_ms)
+        draw_arrows(now_ms)
 
         # Hover highlight
         if hover_region is not None:
             if hover_ok and hover_hi_scaled_ok is not None:
                 screen.blit(hover_hi_scaled_ok, (0, 0))
-            elif (not hover_ok) and hover_hi_scaled_bad is not None:
+            elif hover_hi_scaled_bad is not None:
                 tmp = hover_hi_scaled_bad.copy()
                 tmp.fill((255, 90, 90, 0), special_flags=pygame.BLEND_RGBA_MULT)
                 screen.blit(tmp, (0, 0))
+
+        # HUD at top
+        draw_hud()
 
         draw_buttons()
         pygame.display.flip()

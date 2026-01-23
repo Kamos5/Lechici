@@ -131,7 +131,6 @@ def main():
         background_path="background.png",
         tile_alpha=128,   # 50% opacity
         none_alpha=204,   # 80% opacity
-        color_mode="owner",
     )
 
     max_attempts = 5000
