@@ -9,96 +9,20 @@ import time
 from enum import Enum
 from perlin_noise import PerlinNoise
 
+# 👇 ADD THIS
+from contants import *
+
 # Initialize Pygame
 pygame.init()
 
-# Screen settings
-SCREEN_WIDTH = 1000
-SCREEN_HEIGHT = 1000
 screen = pygame.display.set_mode((SCREEN_WIDTH, SCREEN_HEIGHT))
 pygame.display.set_caption("Lechites")
 clock = pygame.time.Clock()
 
-# Colors
-WHITE = (255, 255, 255)
-BLUE = (0, 0, 255)
-PURPLE = (128, 0, 128)
-RED = (255, 0, 0)
-YELLOW = (255, 255, 0)
-BROWN = (75, 25, 0)
-GREEN = (0, 255, 0)
-GRASS_GREEN = (0, 100, 0)
-GRASS_BROWN = (139, 69, 19)
-TREE_GREEN = (0, 50, 0)
-DARK_GRAY = (50, 50, 50, 128)
-GRAY = (128, 128, 128, 128)
-WHITE_GRAY = (200, 200, 200, 128)
-TOWN_CENTER_GRAY = (100, 100, 100, 128)
-BLACK = (0, 0, 0)
-LIGHT_GRAY = (150, 150, 150)
-HIGHLIGHT_GRAY = (200, 200, 200)
-BORDER_OUTER = (50, 50, 50)
-BORDER_INNER = (200, 200, 200)
-PANEL_COLOR = (100, 100, 100)
-ORANGE = (255, 165, 0)
-
-SCALE = 1
-# Tile settings
-TILE_SIZE = 20 * SCALE
-TILE_HALF = TILE_SIZE // 2
-TILE_QUARTER = TILE_SIZE // 4
-GRASS_ROWS = 60
-GRASS_COLS = 60
-MAP_WIDTH = GRASS_COLS * TILE_SIZE
-MAP_HEIGHT = GRASS_ROWS * TILE_SIZE
-BUILDING_SIZE = 60 * SCALE
-UNIT_SIZE = 16 * SCALE
-
-
-# UI settings
-VIEW_MARGIN_LEFT = 10
-VIEW_MARGIN_RIGHT = 10
-VIEW_MARGIN_TOP = 40
-VIEW_MARGIN_BOTTOM = 0
-PANEL_HEIGHT = 150
-VIEW_WIDTH = SCREEN_WIDTH - (VIEW_MARGIN_LEFT + VIEW_MARGIN_RIGHT)
-VIEW_HEIGHT = SCREEN_HEIGHT - (VIEW_MARGIN_TOP + VIEW_MARGIN_BOTTOM + PANEL_HEIGHT)
-PANEL_Y = SCREEN_HEIGHT - PANEL_HEIGHT - VIEW_MARGIN_BOTTOM
-VIEW_BOUNDS_X = VIEW_MARGIN_LEFT + VIEW_WIDTH
-VIEW_BOUNDS_Y = VIEW_MARGIN_TOP + VIEW_HEIGHT
-
-# Button settings
-BUTTON_WIDTH = 100
-BUTTON_HEIGHT = 30
-BUTTON_MARGIN = 5
 BUTTON_PLAYER0_POS = (VIEW_MARGIN_LEFT + VIEW_WIDTH - BUTTON_WIDTH - 10, VIEW_MARGIN_TOP + 40)
 BUTTON_PLAYER1_POS = (VIEW_MARGIN_LEFT + VIEW_WIDTH - BUTTON_WIDTH - 10, VIEW_MARGIN_TOP + 40 + (BUTTON_HEIGHT + BUTTON_MARGIN))
 BUTTON_PLAYER2_POS = (VIEW_MARGIN_LEFT + VIEW_WIDTH - BUTTON_WIDTH - 10, VIEW_MARGIN_TOP + 40 + 2 * (BUTTON_HEIGHT + BUTTON_MARGIN))
 
-# List of unique names for units
-UNIQUE_MALE_NAMES = [
-    "Bolesław", "Mieszko", "Władysław", "Kazimierz", "Dobrosław", "Mirosław", "Sławomir", "Wojciech",
-    "Stanisław", "Zbigniew", "Bogumił", "Jaromir", "Witosław", "Czesław", "Leszek", "Radosław",
-    "Witold", "Ziemowit", "Przemysław", "Bohusław", "Lubomir", "Wacław", "Zdzisław", "Mieczysław",
-    "Radomił", "Świętosław", "Bronisław", "Gniewomir", "Siemowit", "Bohdan", "Jarosław", "Krzysztof",
-    "Władimir", "Domarad", "Sulimir", "Bezprym", "Sambor", "Rostysław", "Wyszesław", "Bogusław"
-]
-
-FEMALE_NAMES = [
-    "Milena", "Zofia", "Wanda", "Dobrawa", "Ludmiła", "Bronisława", "Jadwiga", "Elżbieta",
-    "Radosława", "Bogumiła", "Stanisława", "Wiesława", "Mirosława", "Sławomira", "Zdzisława",
-    "Czesława", "Jaromira", "Witosława", "Przemysława", "Bohusława", "Lubomira", "Wacława",
-    "Radomiła", "Świętosława", "Dobrosława", "Gosława", "Mieczysława", "Władysława", "Kazimiera",
-    "Ziemowita", "Bogna", "Danuta", "Halina", "Irena", "Krystyna", "Aldona", "Jolanta",
-    "Beata", "Agnieszka", "Ewa", "Moolisa", "Twoolisa"
-]
-
-# 3x1 Grid Button settings
-GRID_BUTTON_ROWS = 3
-GRID_BUTTON_COLS = 2
-GRID_BUTTON_WIDTH = 110
-GRID_BUTTON_HEIGHT = 40
-GRID_BUTTON_MARGIN = 5
 GRID_BUTTON_START_X = VIEW_BOUNDS_X - GRID_BUTTON_WIDTH - BUTTON_MARGIN
 GRID_BUTTON_START_Y = PANEL_Y + (PANEL_HEIGHT - (GRID_BUTTON_ROWS * GRID_BUTTON_HEIGHT + (GRID_BUTTON_ROWS - 1) * GRID_BUTTON_MARGIN)) // 2
 
@@ -115,8 +39,6 @@ for row in range(GRID_BUTTON_ROWS):
 # Camera settings
 camera_x = 0
 camera_y = 0
-SCROLL_SPEED = 10
-SCROLL_MARGIN = 20
 
 # Icon settings
 ICON_SIZE = 32
@@ -142,9 +64,6 @@ except (pygame.error, FileNotFoundError) as e:
     milk_icon.fill(WHITE)
     unit_icon.fill(LIGHT_GRAY)
     building_icon.fill(LIGHT_GRAY)
-
-# Spatial grid settings
-GRID_CELL_SIZE = 60 * SCALE
 
 # Move order and highlight tracking
 move_order_times = {}
@@ -2358,9 +2277,6 @@ button_player0 = pygame.Rect(BUTTON_PLAYER0_POS[0], BUTTON_PLAYER0_POS[1], BUTTO
 button_player1 = pygame.Rect(BUTTON_PLAYER1_POS[0], BUTTON_PLAYER1_POS[1], BUTTON_WIDTH, BUTTON_HEIGHT)
 button_player2 = pygame.Rect(BUTTON_PLAYER2_POS[0], BUTTON_PLAYER2_POS[1], BUTTON_WIDTH, BUTTON_HEIGHT)
 
-# Precompute constants
-regrowth_rate = 0.0001
-
 # Fonts
 font = pygame.font.SysFont(None, 24)
 small_font = pygame.font.SysFont(None, 16)
@@ -2778,7 +2694,7 @@ while running:
         # Update grass regrowth
         for row, col in list(needs_regrowth):
             tile = grass_tiles[row][col]
-            tile.regrow(regrowth_rate)
+            tile.regrow(REGROWTH_RATE)
             if tile.grass_level >= 1.0:
                 needs_regrowth.remove((row, col))
 
