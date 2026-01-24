@@ -32,6 +32,8 @@ done:
 + defending - stances?
 + rivers
 + bridges
++ mapeditor
++ worldmap
 
 todo:
 
