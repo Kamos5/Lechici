@@ -54,7 +54,7 @@ BOTTOM_ROW: List[str] = ["Tree", "Barn", "TownCenter", "Barracks"]
 
 # Editor players (id -> color)
 PLAYERS: List[Tuple[str, Tuple[int, int, int]]] = [
-    ("P0", WHITE_GRAY),
+    ("GAIA", WHITE_GRAY),
     ("P1", BLUE),
     ("P2", PURPLE),
 ]
