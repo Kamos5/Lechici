@@ -180,6 +180,8 @@ def run_game() -> int:
         for event in pygame.event.get():
             if event.type == pygame.QUIT:
                 running = False
+                pygame.quit()
+                sys.exit()
             elif event.type == pygame.MOUSEBUTTONDOWN:
                 if game_state in (GameState.DEFEAT, GameState.VICTORY):
                     # Check if Quit button is clicked

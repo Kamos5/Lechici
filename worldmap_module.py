@@ -25,6 +25,7 @@ from cards import pick_round_card
 import numpy as np
 import pygame
 
+from constants import SCREEN_WIDTH, SCREEN_HEIGHT
 from main import run_game
 
 Color = Tuple[int, int, int]
@@ -66,7 +67,7 @@ class MapConfig:
     hover_alpha_bad: int = 110
 
     flicker_duration_ms: int = 2000
-    flicker_hz: int = 60
+    flicker_hz: int = 3
 
     players: Optional[List[Tuple[str, Color]]] = None
     player_count: Optional[int] = None
@@ -353,9 +354,20 @@ def _draw_curved_arrow(
 def run_map(**kwargs):
     cfg = MapConfig(**kwargs)
 
-    pygame.init()
+    # --- Ensure pygame subsystems are alive ---
+    if not pygame.get_init():
+        pygame.init()
+    else:
+        if not pygame.display.get_init():
+            pygame.display.init()
+        if not pygame.font.get_init():
+            pygame.font.init()
+
+    cfg.width = SCREEN_WIDTH
+    cfg.height = SCREEN_HEIGHT
+
     disp_w, disp_h = cfg.width, cfg.height - cfg.bar_h
-    screen = pygame.display.set_mode((cfg.width, cfg.height))
+    screen = pygame.display.set_mode((SCREEN_WIDTH, SCREEN_HEIGHT))
     pygame.display.set_caption("Clickable Map (defend after anim)")
 
     players = _build_players(cfg)
