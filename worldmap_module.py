@@ -25,6 +25,8 @@ from cards import pick_round_card
 import numpy as np
 import pygame
 
+from main import run_game
+
 Color = Tuple[int, int, int]
 
 DEFAULT_PLAYERS: List[Tuple[str, Color]] = [
@@ -440,8 +442,9 @@ def run_map(**kwargs):
 
     # (1) requested dummy_method
     def dummy_method(attacker: int, region_idx: int) -> bool:
-        """Replace with your real game logic."""
-        return random.random() < 1
+        return run_game() == 1
+        # """Replace with your real game logic."""
+        # return random.random() < 1
 
     def player_has_tiles(p: int) -> bool:
         return sum(1 for o in owner if o == p) > 0
