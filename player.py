@@ -32,23 +32,23 @@ class Player:
         self.used_female_names = set()  # Track used female names for Cow
         offset_x = start_x * SCALE
         offset_y = start_y * SCALE
-        if self.player_id > 0:
-            initial_units = [
-                Axeman(offset_x + 100 * SCALE, offset_y + 100 * SCALE, player_id, self.color),
-                Knight(offset_x + 150 * SCALE, offset_y + 100 * SCALE, player_id, self.color),
-                Archer(offset_x + 200 * SCALE, offset_y + 100 * SCALE, player_id, self.color),
-                Cow(offset_x + 260 * SCALE, offset_y + 100 * SCALE, player_id, self.color),
-                Cow(offset_x + 280 * SCALE, offset_y + 100 * SCALE, player_id, self.color),
-                Barn(offset_x + 230 * SCALE, offset_y + 150 * SCALE, player_id, self.color),
-                TownCenter(offset_x + 150 * SCALE, offset_y + 150 * SCALE, player_id, self.color),
-                Barracks(offset_x + 70 * SCALE, offset_y + 150 * SCALE, player_id, self.color),
-            ]
-            for unit in initial_units:
-                self.add_unit(unit)
-            self.unit_count = len([unit for unit in self.units if not isinstance(unit, Building)])
-            self.building_count = len([unit for unit in self.units if isinstance(unit, Building)])
-            self.barns = [unit for unit in self.units if isinstance(unit, Barn)]
-            print(f"Player {self.player_id} initialized with {self.unit_count}/{self.unit_limit} units and {self.building_count}/{self.building_limit} buildings")
+        # if self.player_id > 0:
+        #     initial_units = [
+        #         Axeman(offset_x + 100 * SCALE, offset_y + 100 * SCALE, player_id, self.color),
+        #         Knight(offset_x + 150 * SCALE, offset_y + 100 * SCALE, player_id, self.color),
+        #         Archer(offset_x + 200 * SCALE, offset_y + 100 * SCALE, player_id, self.color),
+        #         Cow(offset_x + 260 * SCALE, offset_y + 100 * SCALE, player_id, self.color),
+        #         Cow(offset_x + 280 * SCALE, offset_y + 100 * SCALE, player_id, self.color),
+        #         Barn(offset_x + 230 * SCALE, offset_y + 150 * SCALE, player_id, self.color),
+        #         TownCenter(offset_x + 150 * SCALE, offset_y + 150 * SCALE, player_id, self.color),
+        #         Barracks(offset_x + 70 * SCALE, offset_y + 150 * SCALE, player_id, self.color),
+        #     ]
+        #     for unit in initial_units:
+        #         self.add_unit(unit)
+        #     self.unit_count = len([unit for unit in self.units if not isinstance(unit, Building)])
+        #     self.building_count = len([unit for unit in self.units if isinstance(unit, Building)])
+        #     self.barns = [unit for unit in self.units if isinstance(unit, Barn)]
+        #     print(f"Player {self.player_id} initialized with {self.unit_count}/{self.unit_limit} units and {self.building_count}/{self.building_limit} buildings")
 
     def add_unit(self, unit):
         self.units.append(unit)
