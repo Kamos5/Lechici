@@ -400,7 +400,7 @@ def init_game_world(random_world: bool = False):
 
     if not random_world:
         # ---- Load editor map ----
-        grass_tiles, loaded_units, river_tiles = load_editor_map("maps/editor_map.json")
+        grass_tiles, loaded_units, river_tiles = load_editor_map("maps/test_map.json")
 
         # Assign units to players (and rebuild all_units from player lists)
         for u in loaded_units:
