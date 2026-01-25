@@ -32,7 +32,7 @@ done:
 + defending - stances?
 + rivers
 + bridges
-+ mapeditor
++ map editor
 + worldmap
 
 todo:

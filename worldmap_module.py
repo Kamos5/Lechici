@@ -544,7 +544,7 @@ def run_map(**kwargs):
 
     def can_click_region(region_idx: int, selected: int) -> bool:
         if owner[region_idx] == selected:
-            return True
+            return False
         for nb in adjacency[region_idx]:
             if owner[nb] == selected:
                 return True
