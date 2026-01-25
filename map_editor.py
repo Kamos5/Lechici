@@ -1,12 +1,13 @@
 # map_editor.py
 # Map editor: paint tiles + place unit SPRITES for chosen player.
-# Changes requested:
-# - Redo tile display + "black cross sections" (borders): draw clean 1px borders ONLY where tile types differ
-# - View is snapped to tile grid and sized to a whole number of tiles (no half-tile clipping/misalignment)
-# - Camera clamps so the last visible tile is fully on-screen
-# - Move Tree button to the bottom row (with buildings)
-# - Camera scroll ONLY by cursor keys
-# - Add scrollbars (top + right) indicating camera position
+# Features:
+# - Clean borders only where tile types differ
+# - View snapped to tile grid, no half-tile clipping
+# - Camera: arrow keys only
+# - Scrollbars (top + right) show camera position
+# - Buildings occupy multi-tile footprint and block placement
+# - Tree button cycles variants tree0..tree7 on repeated clicks
+# - Tree placements store {"variant": "treeN"} and load/save it
 
 from __future__ import annotations
 
@@ -28,6 +29,11 @@ from units import Unit, Axeman, Knight, Archer, Cow, Tree, Barn, TownCenter, Bar
 # -----------------------------
 DEFAULT_SAVE_PATH = "maps/editor_map.json"
 
+# Tree variants for the editor preview + saved metadata
+TREE_VARIANT_COUNT = 8  # tree0..tree7
+TREE_VARIANT_PREFIX = "tree"  # assets/tree0.png ... assets/tree7.png
+_TREE_EDITOR_IMAGES: Dict[Tuple[str, int], Optional[pygame.Surface]] = {}
+
 # Tiles available to paint
 TILE_TYPES: Dict[str, Type] = {
     "GrassTile": GrassTile,
@@ -48,7 +54,7 @@ UNIT_TYPES: Dict[str, Type] = {
     "Barracks": Barracks,
 }
 
-# UI grouping (Tree moved to bottom row)
+# UI grouping (Tree is in bottom row with buildings)
 UNIT_ROW: List[str] = ["Axeman", "Knight", "Archer", "Cow"]
 BOTTOM_ROW: List[str] = ["Tree", "Barn", "TownCenter", "Barracks"]
 
@@ -78,6 +84,31 @@ def ensure_dirs(path: str) -> None:
     d = os.path.dirname(path)
     if d and not os.path.exists(d):
         os.makedirs(d, exist_ok=True)
+
+
+def load_tree_editor_image(variant: str, desired_px: int) -> Optional[pygame.Surface]:
+    """
+    Loads assets/{variant}.png (e.g. assets/tree0.png), scaled to desired_px.
+    Cached by (variant, desired_px).
+    """
+    key = (variant, desired_px)
+    if key in _TREE_EDITOR_IMAGES:
+        return _TREE_EDITOR_IMAGES[key]
+
+    path = f"assets/{variant}.png"
+    try:
+        img = pygame.image.load(path).convert_alpha()
+        scale = desired_px / max(img.get_width(), img.get_height())
+        img = pygame.transform.smoothscale(
+            img,
+            (max(1, int(img.get_width() * scale)), max(1, int(img.get_height() * scale))),
+        )
+        _TREE_EDITOR_IMAGES[key] = img
+        return img
+    except Exception as e:
+        print(f"[EDITOR] Failed to load {path}: {e}")
+        _TREE_EDITOR_IMAGES[key] = None
+        return None
 
 
 # -----------------------------
@@ -149,6 +180,7 @@ def draw_unit_sprite(
     world_cy: int,
     camera_x: int,
     camera_y: int,
+    tree_variant: Optional[str] = None,
 ) -> None:
     # Buildings bigger
     if unit_type in ("Barn", "TownCenter", "Barracks"):
@@ -158,7 +190,12 @@ def draw_unit_sprite(
     else:
         desired = int(max(UNIT_SIZE, TILE_SIZE))
 
-    img = _ensure_unit_sprite_loaded(unit_type, desired)
+    if unit_type == "Tree":
+        # If not provided, default to tree0
+        tv = tree_variant or f"{TREE_VARIANT_PREFIX}0"
+        img = load_tree_editor_image(tv, desired)
+    else:
+        img = _ensure_unit_sprite_loaded(unit_type, desired)
 
     sx = world_cx - camera_x
     sy = world_cy - camera_y
@@ -166,7 +203,9 @@ def draw_unit_sprite(
     if img is not None:
         rect = img.get_rect(center=(sx, sy))
         surf.blit(img, rect)
-        pygame.draw.rect(surf, player_color, rect, 1)
+        # reduced border as requested earlier
+        if unit_type != "Tree":
+            pygame.draw.rect(surf, player_color, rect.inflate(-2, -2), 1)
     else:
         r = max(6, TILE_SIZE // 3)
         pygame.draw.circle(surf, player_color, (sx, sy), r)
@@ -183,7 +222,7 @@ def save_map(grid: List[List[object]], units_by_cell: Dict[str, Dict[str, Any]],
         "cols": GRASS_COLS,
         "tile_size": TILE_SIZE,
         "tiles": [[grid[r][c].__class__.__name__ for c in range(GRASS_COLS)] for r in range(GRASS_ROWS)],
-        "units": units_by_cell,  # key "r,c" -> {"type": "...", "player": int}
+        "units": units_by_cell,  # key "r,c" -> {"type": "...", "player": int, ...}
     }
     with open(path, "w", encoding="utf-8") as f:
         json.dump(data, f, indent=2)
@@ -217,16 +256,19 @@ def load_map(path: str) -> Tuple[List[List[object]], Dict[str, Dict[str, Any]]]:
         for k, v in units_raw.items():
             if not isinstance(k, str) or "," not in k or not isinstance(v, dict):
                 continue
+
             t = v.get("type")
             p = v.get("player")
             if t not in UNIT_TYPES:
                 continue
+
             try:
                 p = int(p)
             except Exception:
                 continue
             if p < 0 or p >= len(PLAYERS):
                 continue
+
             try:
                 rs, cs = k.split(",")
                 rr, cc = int(rs), int(cs)
@@ -234,7 +276,22 @@ def load_map(path: str) -> Tuple[List[List[object]], Dict[str, Dict[str, Any]]]:
                 continue
             if not (0 <= rr < GRASS_ROWS and 0 <= cc < GRASS_COLS):
                 continue
-            units_by_cell[k] = {"type": t, "player": p}
+
+            entry: Dict[str, Any] = {"type": t, "player": p}
+
+            # Preserve tree variant if present and valid
+            if t == "Tree":
+                var = v.get("variant")
+                if isinstance(var, str) and var.startswith(TREE_VARIANT_PREFIX):
+                    # accept tree0..tree7
+                    try:
+                        idx = int(var[len(TREE_VARIANT_PREFIX):])
+                        if 0 <= idx < TREE_VARIANT_COUNT:
+                            entry["variant"] = var
+                    except Exception:
+                        pass
+
+            units_by_cell[k] = entry
 
     print(f"[EDITOR] Loaded: {path}")
     return grid, units_by_cell
@@ -257,31 +314,25 @@ def draw_tile_type_borders(
     """
     Draw 1px borders ONLY where adjacent tile types differ (cleaner than full grid lines).
     """
-    # Precompute class names for visible region (cheap)
     for r in range(start_row, end_row):
         for c in range(start_col, end_col):
             tname = grid[r][c].__class__.__name__
 
-            # screen-space top-left of this tile in the view surface
             x0 = c * TILE_SIZE - camera_x
             y0 = r * TILE_SIZE - camera_y
             x1 = x0 + TILE_SIZE
             y1 = y0 + TILE_SIZE
 
-            # right boundary
             if c + 1 < GRASS_COLS:
                 rname = grid[r][c + 1].__class__.__name__
                 if rname != tname:
                     pygame.draw.line(surf, border_color, (x1, y0), (x1, y1), 1)
 
-            # bottom boundary
             if r + 1 < GRASS_ROWS:
                 bname = grid[r + 1][c].__class__.__name__
                 if bname != tname:
                     pygame.draw.line(surf, border_color, (x0, y1), (x1, y1), 1)
 
-    # optional outer frame (map boundary if visible)
-    # (Not required, but helps readability)
     pygame.draw.rect(surf, border_color, pygame.Rect(0, 0, surf.get_width(), surf.get_height()), 1)
 
 
@@ -297,7 +348,6 @@ def draw_scrollbars(
     Draw a small horizontal scrollbar at the TOP of the view frame and a vertical one on the RIGHT.
     Shows where the camera is looking within the whole map.
     """
-    # Sizes and colors
     bar_thick = 8
     track_col = (60, 60, 60)
     thumb_col = (200, 200, 200)
@@ -323,8 +373,12 @@ def draw_scrollbars(
     pygame.draw.rect(screen, thumb_col, v_thumb, border_radius=4)
 
 
+# -----------------------------
+# Footprints / occupancy
+# -----------------------------
 def is_building(unit_type: str) -> bool:
     return unit_type in ("Barn", "TownCenter", "Barracks")
+
 
 def footprint_cells(unit_type: str, anchor_row: int, anchor_col: int) -> List[Tuple[int, int]]:
     """
@@ -338,23 +392,20 @@ def footprint_cells(unit_type: str, anchor_row: int, anchor_col: int) -> List[Tu
     n = int(math.ceil(BUILDING_SIZE / float(TILE_SIZE)))
     half = n // 2
 
-    # center footprint around anchor tile
     r0 = anchor_row - half
     c0 = anchor_col - half
 
-    cells = []
+    cells: List[Tuple[int, int]] = []
     for rr in range(r0, r0 + n):
         for cc in range(c0, c0 + n):
             if 0 <= rr < GRASS_ROWS and 0 <= cc < GRASS_COLS:
                 cells.append((rr, cc))
     return cells
 
+
 def build_occupancy(units_by_cell: Dict[str, Dict[str, Any]]) -> Dict[Tuple[int, int], str]:
     """
     Returns mapping: occupied_tile -> anchor_key ("r,c" where the unit was placed).
-    This lets us:
-      - block placement if any footprint cell is occupied
-      - erase a building by clicking any covered tile
     """
     occ: Dict[Tuple[int, int], str] = {}
     for anchor_key, data in units_by_cell.items():
@@ -367,6 +418,7 @@ def build_occupancy(units_by_cell: Dict[str, Dict[str, Any]]) -> Dict[Tuple[int,
         for cell in footprint_cells(ut, ar, ac):
             occ[cell] = anchor_key
     return occ
+
 
 # -----------------------------
 # Main editor
@@ -407,6 +459,9 @@ def main() -> None:
     selected_unit = "Axeman"
     selected_player = 1
 
+    # Tree selection state (cycles on repeated clicks)
+    selected_tree_index = 0  # 0..7
+
     # Camera is always snapped to tile grid
     camera_x = 0
     camera_y = 0
@@ -418,6 +473,9 @@ def main() -> None:
     BTN_H = 32
     BTN_W = 110
     BTN_GAP = 10
+
+    def current_tree_variant() -> str:
+        return f"{TREE_VARIANT_PREFIX}{selected_tree_index}"
 
     def rebuild_ui() -> None:
         buttons.clear()
@@ -465,6 +523,7 @@ def main() -> None:
         for name in BOTTOM_ROW:
             if name not in UNIT_TYPES:
                 continue
+            # NOTE: label for Tree will be drawn dynamically (TreeN)
             buttons.append(Button(pygame.Rect(x3, y3, BTN_W, BTN_H), name, "unit", name))
             x3 += BTN_W + BTN_GAP
 
@@ -504,26 +563,26 @@ def main() -> None:
         clicked_cell = (row, col)
 
         if mode == "tile":
-            # If you want tiles NOT editable under buildings, block it:
             if clicked_cell in occ:
                 return
             set_tile(grid, row, col, selected_tile)
 
         elif mode == "unit":
-            # block if ANY cell in the footprint is occupied
             fp = footprint_cells(selected_unit, row, col)
             if any(cell in occ for cell in fp):
                 return
-            units_by_cell[f"{row},{col}"] = {"type": selected_unit, "player": selected_player}
+
+            entry: Dict[str, Any] = {"type": selected_unit, "player": selected_player}
+            if selected_unit == "Tree":
+                entry["variant"] = current_tree_variant()
+
+            units_by_cell[f"{row},{col}"] = entry
 
         elif mode == "erase":
-            # erase unit/building if you clicked any occupied tile
             if clicked_cell in occ:
                 anchor_key = occ[clicked_cell]
                 units_by_cell.pop(anchor_key, None)
                 return
-
-            # otherwise erase tile back to grass
             set_tile(grid, row, col, "GrassTile")
 
     def draw_button(b: Button) -> None:
@@ -537,6 +596,7 @@ def main() -> None:
         elif b.kind == "player" and int(b.value) == selected_player:
             active = True
 
+        # Player buttons
         if b.kind == "player":
             pid = int(b.value)
             plabel, pcol = PLAYERS[pid]
@@ -547,9 +607,16 @@ def main() -> None:
             screen.blit(t, (b.rect.centerx - t.get_width() // 2, b.rect.centery - t.get_height() // 2))
             return
 
+        # Normal buttons
         pygame.draw.rect(screen, (40, 40, 40), b.rect, border_radius=6)
         pygame.draw.rect(screen, (255, 255, 255) if active else (120, 120, 120), b.rect, 2, border_radius=6)
-        t = font.render(b.label, True, (240, 240, 240))
+
+        label = b.label
+        # Dynamic label for Tree: show current selected variant index
+        if b.kind == "unit" and b.value == "Tree":
+            label = f"Tree{selected_tree_index}"
+
+        t = font.render(label, True, (240, 240, 240))
         screen.blit(t, (b.rect.centerx - t.get_width() // 2, b.rect.centery - t.get_height() // 2))
 
     painting = False
@@ -557,7 +624,7 @@ def main() -> None:
     while running:
         clock.tick(FPS)
 
-        # Camera: ONLY arrow keys (cursor keys)
+        # Camera: ONLY arrow keys
         keys = pygame.key.get_pressed()
         if keys[pygame.K_LEFT]:
             camera_x -= CAM_STEP
@@ -578,16 +645,31 @@ def main() -> None:
                 for b in buttons:
                     if b.hit(event.pos):
                         hit_ui = True
+
                         if b.kind == "mode":
                             mode = b.value
+
                         elif b.kind == "tile":
                             selected_tile = b.value
                             mode = "tile"
+
                         elif b.kind == "unit":
-                            selected_unit = b.value
-                            mode = "unit"
+                            # Special behavior: repeated clicks on Tree cycle tree0..tree7
+                            if b.value == "Tree":
+                                if selected_unit == "Tree":
+                                    selected_tree_index = (selected_tree_index + 1) % TREE_VARIANT_COUNT
+                                else:
+                                    selected_unit = "Tree"
+                                    mode = "unit"
+                                # preload current preview image so it feels instant
+                                _ = load_tree_editor_image(current_tree_variant(), int(TILE_SIZE))
+                            else:
+                                selected_unit = b.value
+                                mode = "unit"
+
                         elif b.kind == "player":
                             selected_player = int(b.value)
+
                         elif b.kind == "action":
                             if b.value == "save":
                                 save_map(grid, units_by_cell, DEFAULT_SAVE_PATH)
@@ -614,8 +696,6 @@ def main() -> None:
 
         # -------- DRAW --------
         screen.fill(BLACK)
-
-        # Draw view
         view_surf.fill((0, 0, 0))
 
         start_col = max(0, camera_x // TILE_SIZE)
@@ -641,7 +721,7 @@ def main() -> None:
             border_color=(0, 0, 0),
         )
 
-        # Units on top
+        # Units on top (use stored tree variant if present)
         for k, v in units_by_cell.items():
             try:
                 rs, cs = k.split(",")
@@ -656,7 +736,14 @@ def main() -> None:
             pid = max(0, min(pid, len(PLAYERS) - 1))
             _, pcol = PLAYERS[pid]
             cx, cy = tile_center(r, c)
-            draw_unit_sprite(view_surf, unit_type, pcol, cx, cy, camera_x, camera_y)
+
+            if unit_type == "Tree":
+                tv = v.get("variant")
+                if not isinstance(tv, str):
+                    tv = None
+                draw_unit_sprite(view_surf, unit_type, pcol, cx, cy, camera_x, camera_y, tree_variant=tv)
+            else:
+                draw_unit_sprite(view_surf, unit_type, pcol, cx, cy, camera_x, camera_y)
 
         # Blit view aligned
         screen.blit(view_surf, (view_frame.x, view_frame.y))
@@ -676,8 +763,8 @@ def main() -> None:
 
         header = (
             f"Mode: {mode.upper()} | Tile: {selected_tile} | Unit: {selected_unit} | "
-            f"Player: {PLAYERS[selected_player][0]} | Camera: Arrow Keys | "
-            f"View: {view_tiles_w}x{view_tiles_h} tiles"
+            f"TreeVar: {current_tree_variant()} | Player: {PLAYERS[selected_player][0]} | "
+            f"Camera: Arrow Keys | View: {view_tiles_w}x{view_tiles_h} tiles"
         )
         screen.blit(font_big.render(header, True, WHITE), (10, PANEL_Y - 26))
 
@@ -687,7 +774,6 @@ def main() -> None:
         pygame.display.flip()
 
     pygame.quit()
-
 
 
 if __name__ == "__main__":

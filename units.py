@@ -360,59 +360,133 @@ class Unit:
 
 # Tree class
 class Tree(Unit):
-    _image = None
-    _tinted_images = {}
+    # per-variant caches
+    _images = {}          # variant -> base image surface
+    _tinted_images = {}   # (variant, color_index) -> tinted image
+
     _selected = False
     _last_color_change_time = 0
     _color_index = 0
     _colors = [RED, GREEN, BLUE, YELLOW]
 
-    def __init__(self, x, y, size, color, player_id, player_color):
+    # define your variants in one place (sprites + stats)
+    VARIANTS = {
+        "tree0": {
+            "sprite": "assets/tree0.png",
+            "hp": 900,
+            "max_hp": 900,
+        },
+        "tree1": {
+            "sprite": "assets/tree1.png",
+            "hp": 900,
+            "max_hp": 900,
+        },
+        "tree2": {
+            "sprite": "assets/tree2.png",
+            "hp": 900,
+            "max_hp": 900,
+        },
+        "tree3": {
+            "sprite": "assets/tree3.png",
+            "hp": 900,
+            "max_hp": 900,
+        },
+        "tree4": {
+            "sprite": "assets/tree4.png",
+            "hp": 900,
+            "max_hp": 900,
+        },
+        "tree5": {
+            "sprite": "assets/tree5.png",
+            "hp": 900,
+            "max_hp": 900,
+        },
+        "tree6": {
+            "sprite": "assets/tree6.png",
+            "hp": 900,
+            "max_hp": 900,
+        },
+        "tree7": {
+            "sprite": "assets/tree7.png",
+            "hp": 900,
+            "max_hp": 900,
+        }
+    }
+
+    def __init__(self, x, y, size, color, player_id, player_color, variant: str = "tree7"):
         super().__init__(x, y, size=TILE_SIZE, speed=0, color=color, player_id=player_id, player_color=player_color)
-        self.hp = 900
-        self.max_hp = 900
-        self.attack_damage = 0  # Trees cannot attack
+
+        # pick variant (fallback to oak if unknown)
+        self.variant = variant if variant in self.VARIANTS else "tree7"
+        cfg = self.VARIANTS[self.variant]
+
+        self.hp = cfg["hp"]
+        self.max_hp = cfg["max_hp"]
+        self.attack_damage = 0
         self.attack_range = 0
-        self.armor = 0  # Trees not affected by combat damage
-        if Tree._image is None:
-            Tree.load_image()
+        self.armor = 0
+
+        # lazy-load sprite for this variant (and tint variants)
+        if self.variant not in Tree._images:
+            Tree.load_image(self.variant)
+
         self.pos.x = x
         self.pos.y = y
 
     @classmethod
-    def load_image(cls):
+    def load_image(cls, variant: str):
+        cfg = cls.VARIANTS.get(variant)
+        if not cfg:
+            return
+
+        path = cfg["sprite"]
         try:
-            cls._image = pygame.image.load("assets/tree.png").convert_alpha()
-            scale_factor = min(TILE_SIZE / cls._image.get_width(), TILE_SIZE / cls._image.get_height())
-            new_size = (int(cls._image.get_width() * scale_factor), int(cls._image.get_height() * scale_factor))
-            cls._image = pygame.transform.scale(cls._image, new_size)
+            img = pygame.image.load(path).convert_alpha()
+            scale_factor = min(TILE_SIZE / img.get_width(), TILE_SIZE / img.get_height())
+            new_size = (int(img.get_width() * scale_factor), int(img.get_height() * scale_factor))
+            img = pygame.transform.scale(img, new_size)
+
+            cls._images[variant] = img
+
+            # build tinted versions for targeting animation
             for i, color in enumerate(cls._colors):
-                tinted_image = cls._image.copy()
-                mask_surface = pygame.Surface(tinted_image.get_size(), pygame.SRCALPHA)
+                tinted = img.copy()
+                mask_surface = pygame.Surface(tinted.get_size(), pygame.SRCALPHA)
                 mask_surface.fill(color + (128,))
-                tinted_image.blit(mask_surface, (0, 0), special_flags=pygame.BLEND_RGBA_MULT)
-                cls._tinted_images[i] = tinted_image
+                tinted.blit(mask_surface, (0, 0), special_flags=pygame.BLEND_RGBA_MULT)
+                cls._tinted_images[(variant, i)] = tinted
+
         except (pygame.error, FileNotFoundError) as e:
-            print(f"Failed to load assets/.png: {e}")
-            cls._image = None
+            print(f"Failed to load {path}: {e}")
+            cls._images[variant] = None
 
     def draw(self, screen, camera_x, camera_y, axemen_targets):
         if (self.pos.x < camera_x - TILE_SIZE or self.pos.x > camera_x + VIEW_WIDTH + TILE_SIZE or
             self.pos.y < camera_y - TILE_SIZE or self.pos.y > camera_y + VIEW_HEIGHT + TILE_SIZE):
             return
+
         x = self.pos.x - camera_x + VIEW_MARGIN_LEFT
         y = self.pos.y - camera_y + VIEW_MARGIN_TOP
-        if self._image:
-            is_targeted = any(self.pos.distance_to(axeman.pos) <= TILE_SIZE and axeman.target == self.pos for axeman in axemen_targets)
+
+        img = self._images.get(self.variant)
+
+        if img:
+            is_targeted = any(
+                self.pos.distance_to(axeman.pos) <= TILE_SIZE and axeman.target == self.pos
+                for axeman in axemen_targets
+            )
+
             if is_targeted:
                 if context.current_time - self._last_color_change_time >= 1:
                     self._color_index = (self._color_index + 1) % len(self._colors)
                     self._last_color_change_time = context.current_time
-                image = self._tinted_images[self._color_index]
+                img_to_draw = self._tinted_images[(self.variant, self._color_index)]
             else:
-                image = self._image
-            image_rect = image.get_rect(center=(int(x), int(y)))
-            screen.blit(image, image_rect)
+                img_to_draw = img
+
+            rect = img_to_draw.get_rect(center=(int(x), int(y)))
+            screen.blit(img_to_draw, rect)
+
             if self.should_highlight(context.current_time):
                 pygame.draw.rect(screen, WHITE, (x - TILE_HALF, y - TILE_HALF, TILE_SIZE, TILE_SIZE), 1)
             if self._selected:
@@ -436,7 +510,7 @@ class Tree(Unit):
         pass
 
     def attack(self, target, current_time):
-        return False  # Trees cannot attack
+        return False
 
 # Building class
 class Building(Unit):

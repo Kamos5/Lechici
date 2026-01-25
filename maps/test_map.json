@@ -3739,23 +3739,28 @@
     },
     "0,9": {
       "type": "Tree",
-      "player": 0
+      "player": 0,
+      "variant": "tree0"
     },
     "2,9": {
       "type": "Tree",
-      "player": 0
+      "player": 0,
+      "variant": "tree0"
     },
     "0,11": {
       "type": "Tree",
-      "player": 0
+      "player": 0,
+      "variant": "tree0"
     },
     "1,11": {
       "type": "Tree",
-      "player": 0
+      "player": 0,
+      "variant": "tree0"
     },
     "2,11": {
       "type": "Tree",
-      "player": 0
+      "player": 0,
+      "variant": "tree0"
     },
     "4,12": {
       "type": "Tree",
