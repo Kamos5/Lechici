@@ -221,6 +221,8 @@ def draw_selected_unit_icons(screen, all_units, current_player, fonts, icon_size
             screen.blit(small_font.render(f"Speed: {unit.speed}", True, unit.player_color), (icon_x, icon_y + icon_size + 65))
             if isinstance(unit, Cow):
                 screen.blit(small_font.render(f"Milk: {int(unit.special)}", True, unit.player_color), (icon_x, icon_y + icon_size + 80))
+            if isinstance(unit, Axeman) and int(unit.special) > 0:
+                screen.blit(small_font.render(f"Wood: {int(unit.special)}", True, unit.player_color), (icon_x, icon_y + icon_size + 80))
 
         icon_x += icon_size + icon_margin
 

@@ -590,7 +590,7 @@ class Axeman(Unit):
                     if player.player_id == self.player_id:
                         over_limit = max(0, player.unit_count - player.unit_limit) if player.unit_limit is not None else 0
                         multiplier = max(0.0, 1.0 - (0.1 * over_limit))
-                        wood_deposited = 25 * multiplier
+                        wood_deposited = self.special * multiplier
                         player.wood = min(player.max_wood, player.wood + wood_deposited)
                         # print(f"Axeman at {self.pos} deposited {wood_deposited:.1f} wood for Player {self.player_id}, player wood now {player.wood}")
                         break
@@ -647,7 +647,7 @@ class Axeman(Unit):
                 context.players[0].remove_unit(target_tree)
                 context.all_units.remove(target_tree)
                 context.spatial_grid.remove_unit(target_tree)
-                self.special += 100
+                self.special = 25
                 print(f"Tree at {target_tree.pos} chopped down by Axeman at {self.pos}, special = {self.special}")
                 # Set TownCenter as target for depositing
                 town_centers = [unit for unit in context.all_units if isinstance(unit, TownCenter) and unit.player_id == self.player_id and unit.alpha == 255]
