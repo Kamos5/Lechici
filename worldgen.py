@@ -418,6 +418,21 @@ def init_game_world(random_world: bool = False):
         for p in players:
             all_units.update(p.units)
 
+        # --- rebuild player state after loading ---
+        for p in players:
+            # recompute barns list (only completed barns if you use alpha==255 in-game)
+            p.barns = [u for u in p.units if u.__class__.__name__ == "Barn" and getattr(u, "alpha", 255) == 255]
+
+            # reset cow-in-barn tracking (or ensure keys exist)
+            if not hasattr(p, "cow_in_barn") or p.cow_in_barn is None:
+                p.cow_in_barn = {}
+            for b in p.barns:
+                p.cow_in_barn.setdefault(b, None)
+
+            # recompute counts/limits bookkeeping
+            p.unit_count = sum(1 for u in p.units if (u.__class__.__name__ != "Tree" and not isinstance(u, Building)) ) # or whatever your rule is
+            p.building_count = sum(1 for u in p.units if isinstance(u, Building) and getattr(u, "alpha", 255) == 255)
+
     else:
         # ---- Existing random generation (as before) ----
         grass_tiles = [[GrassTile(col * TILE_SIZE, row * TILE_SIZE)
