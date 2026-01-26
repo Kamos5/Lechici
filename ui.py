@@ -176,10 +176,22 @@ def draw_grid_buttons(screen, grid_buttons, current_player, all_units, productio
     # Priority rule: if ANY units selected (even with buildings), show unit command buttons
     show_unit_commands = len(selected_units) > 0
 
+    # Unit-action availability rules
+    has_axeman = any(isinstance(u, Axeman) for u in selected_units)
+    has_cow = any(isinstance(u, Cow) for u in selected_units)
+
+    can_harvest = has_axeman or has_cow  # only cows + axemen
+    can_repair = has_axeman  # only axemen
+
     # Helper: draw a labeled button (fast + simple)
-    def draw_label(btn_rect, label, enabled=True):
+    def draw_label(btn_rect, label, enabled=True, hotkey_text= None):
         txt = small_font.render(label, True, BLACK)
         screen.blit(txt, (btn_rect.x + 2, btn_rect.y + 2))
+
+        # hotkey in top-right corner
+        if hotkey_text:
+            hk = small_font.render(hotkey_text.upper(), True, BLACK)
+            screen.blit(hk, (btn_rect.right - hk.get_width() - 2, btn_rect.y + 2))
 
     # Helper: draw a unit/build icon + costs + queue progress
     def draw_costs(btn_rect, unit_cls):
@@ -208,19 +220,32 @@ def draw_grid_buttons(screen, grid_buttons, current_player, all_units, productio
             pygame.draw.rect(screen, LIGHT_GRAY, grid_buttons[row][col])
 
     if show_unit_commands:
-        # Row 0: Patrol, Move, Harvest, Repair
-        # Row 1: Attack, Stop, (empty), (empty)
+        # Grid hotkeys (4x3): q w e r / a s d f / z x c v
+        hotkeys = {
+            (0, 0): "q", (0, 1): "w", (0, 2): "e", (0, 3): "r",
+            (1, 0): "a", (1, 1): "s", (1, 2): "d", (1, 3): "f",
+            (2, 0): "z", (2, 1): "x", (2, 2): "c", (2, 3): "v",
+        }
+
+        # Always visible unit buttons:
+        # - Patrol, Move, Attack, Stop = always enabled
+        # - Harvest only if Cow/Axeman selected
+        # - Repair only if Axeman selected
         mapping = {
             (0, 0): ("Patrol", True),
             (0, 1): ("Move", True),
-            (0, 2): ("Harvest", True),  # only meaningful for Cow/Axeman (handled in main)
-            (0, 3): ("Repair", True),  # only meaningful for Axeman (handled in main)
+            (0, 2): ("Harvest", can_harvest),
+            (0, 3): ("Repair", can_repair),
             (1, 0): ("Attack", True),
             (1, 1): ("Stop", True),
         }
+
         for (r, c), (label, enabled) in mapping.items():
             if r < len(grid_buttons) and c < len(grid_buttons[r]):
-                draw_label(grid_buttons[r][c], label, enabled=enabled)
+                btn = grid_buttons[r][c]
+                # enabled = LIGHT_GRAY, disabled = GRAY
+                pygame.draw.rect(screen, HIGHLIGHT_GRAY if enabled else GRAY, btn)
+                draw_label(btn, label, hotkeys.get((r, c)))
 
     else:
         # Production mode (only buildings selected)
