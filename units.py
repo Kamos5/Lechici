@@ -578,31 +578,37 @@ class Axeman(Unit):
 
         # Depositing state: Move to TownCenter to deposit wood
         if self.depositing and self.target:
-            target_unit = next((unit for unit in units if isinstance(unit, TownCenter) and unit.pos == self.target and unit.player_id == self.player_id), None)
+            target_unit = next(
+                (unit for unit in units
+                 if isinstance(unit, TownCenter)
+                 and unit.player_id == self.player_id
+                 and isinstance(self.target, Vector2)
+                 and unit.pos.distance_to(self.target) < 1.0),  # tolerance avoids float equality issues
+                None
+            )
+
             if not target_unit:
-                # print(f"Axeman at {self.pos} failed to find TownCenter at {self.target}")
-                self.target = None
+                # Player likely issued a new order (target is no longer a TownCenter).
+                # Stop depositing, but keep special (carried wood).
                 self.depositing = False
-                self.special = 0
-                return
-            if self.pos.distance_to(self.target) <= self.size + target_unit.size / 2:
-                for player in context.players:
-                    if player.player_id == self.player_id:
-                        over_limit = max(0, player.unit_count - player.unit_limit) if player.unit_limit is not None else 0
-                        multiplier = max(0.0, 1.0 - (0.1 * over_limit))
-                        wood_deposited = self.special * multiplier
-                        player.wood = min(player.max_wood, player.wood + wood_deposited)
-                        # print(f"Axeman at {self.pos} deposited {wood_deposited:.1f} wood for Player {self.player_id}, player wood now {player.wood}")
-                        break
-                self.special = 0
-                self.depositing = False
-                self.target = self.return_pos
-                # self.return_pos = None  # Clear return_pos to prepare for next cycle
-                # print(f"Axeman at {self.pos} returning to {self.target}")
+                # do NOT clear self.special here
+                # continue executing normal movement to the new target on this frame
+                # (do not return)
             else:
-                # print(f"Axeman at {self.pos} moving to TownCenter at {self.target}, distance: {self.pos.distance_to(self.target):.1f}")
-                super().move(units, context.spatial_grid, context.waypoint_graph)
-            return
+                if self.pos.distance_to(self.target) <= self.size + target_unit.size / 2:
+                    for player in context.players:
+                        if player.player_id == self.player_id:
+                            over_limit = max(0, player.unit_count - player.unit_limit) if player.unit_limit is not None else 0
+                            multiplier = max(0.0, 1.0 - (0.1 * over_limit))
+                            wood_deposited = self.special * multiplier
+                            player.wood = min(player.max_wood, player.wood + wood_deposited)
+                            break
+                    self.special = 0
+                    self.depositing = False
+                    self.target = self.return_pos
+                else:
+                    super().move(units, context.spatial_grid, context.waypoint_graph)
+                return
 
         # Returning state: Move to return_pos and target a new tree when close
         if self.target and self.target == self.return_pos:
