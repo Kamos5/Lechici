@@ -19,6 +19,7 @@ from units import Unit, Tree, Building, Barn, TownCenter, Barracks, Axeman, Knig
 from player import Player, PlayerAI
 from pathfinding import SpatialGrid, WaypointGraph
 import ui
+from camera import Camera
 
 def run_game() -> int:
     """
@@ -43,9 +44,10 @@ def run_game() -> int:
     button_player1 = ui_layout["button_player1"]
     button_player2 = ui_layout["button_player2"]
 
-    # Camera settings
-    camera_x = 0
-    camera_y = 0
+    # Camera
+    camera = Camera(view_width=VIEW_WIDTH, view_height=VIEW_HEIGHT, map_width=MAP_WIDTH, map_height=MAP_HEIGHT,
+                    screen_width=SCREEN_WIDTH, screen_height=SCREEN_HEIGHT,
+                    scroll_margin=SCROLL_MARGIN, scroll_speed=SCROLL_SPEED)
 
     # UI icons + sizes
     ICON_SIZE = ui_layout["icon_size"]
@@ -159,7 +161,7 @@ def run_game() -> int:
                 elif game_state == GameState.RUNNING:
                     if event.button == 1:  # Left click
                         mouse_pos = Vector2(event.pos)
-                        click_pos = Vector2(mouse_pos.x - VIEW_MARGIN_LEFT + camera_x, mouse_pos.y - VIEW_MARGIN_TOP + camera_y)
+                        click_pos = camera.screen_to_world(mouse_pos, view_margin_left=VIEW_MARGIN_LEFT, view_margin_top=VIEW_MARGIN_TOP)
                         clicked_something = False
 
                         # Check grid buttons for spawning units or initiating building placement
@@ -285,7 +287,7 @@ def run_game() -> int:
                             if not grid_button_clicked and VIEW_MARGIN_LEFT <= mouse_pos.x <= VIEW_BOUNDS_X and VIEW_MARGIN_TOP <= mouse_pos.y <= VIEW_BOUNDS_Y:
                                 unit_clicked = None
                                 for unit in all_units:
-                                    if unit.is_clicked(Vector2(mouse_pos.x - VIEW_MARGIN_LEFT, mouse_pos.y - VIEW_MARGIN_TOP), camera_x, camera_y):
+                                    if unit.is_clicked(Vector2(mouse_pos.x - VIEW_MARGIN_LEFT, mouse_pos.y - VIEW_MARGIN_TOP), camera.x, camera.y):
                                         unit_clicked = unit
                                         clicked_something = True
                                         break
@@ -372,13 +374,13 @@ def run_game() -> int:
                             building_to_place = None
                             building_pos = None
                         elif VIEW_MARGIN_LEFT <= mouse_pos.x <= VIEW_BOUNDS_X and VIEW_MARGIN_TOP <= mouse_pos.y <= VIEW_BOUNDS_Y:
-                            click_pos = Vector2(mouse_pos.x - VIEW_MARGIN_LEFT + camera_x, mouse_pos.y - VIEW_MARGIN_TOP + camera_y)
+                            click_pos = camera.screen_to_world(mouse_pos, view_margin_left=VIEW_MARGIN_LEFT, view_margin_top=VIEW_MARGIN_TOP)
                             tile_x = int(click_pos.x // TILE_SIZE)
                             tile_y = int(click_pos.y // TILE_SIZE)
                             snapped_pos = (tile_x * TILE_SIZE + TILE_HALF, tile_y * TILE_SIZE + TILE_HALF)
                             clicked_unit = None
                             for unit in all_units:
-                                if unit.is_clicked(Vector2(mouse_pos.x - VIEW_MARGIN_LEFT, mouse_pos.y - VIEW_MARGIN_TOP), camera_x, camera_y):
+                                if unit.is_clicked(Vector2(mouse_pos.x - VIEW_MARGIN_LEFT, mouse_pos.y - VIEW_MARGIN_TOP), camera.x, camera.y):
                                     clicked_unit = unit
                                     break
                             selected_building = None
@@ -424,7 +426,7 @@ def run_game() -> int:
                 if game_state == GameState.RUNNING and event.button == 1 and selecting and current_player:
                     mouse_pos = Vector2(event.pos)
                     if VIEW_MARGIN_LEFT <= mouse_pos.x <= VIEW_BOUNDS_X and VIEW_MARGIN_TOP <= mouse_pos.y <= VIEW_BOUNDS_Y:
-                        selection_end = Vector2(mouse_pos.x - VIEW_MARGIN_LEFT + camera_x, mouse_pos.y - VIEW_MARGIN_TOP + camera_y)
+                        selection_end = camera.screen_to_world(mouse_pos, view_margin_left=VIEW_MARGIN_LEFT, view_margin_top=VIEW_MARGIN_TOP)
                         selecting = False
                         for player in players:
                             player.deselect_all_units()
@@ -438,11 +440,11 @@ def run_game() -> int:
                     if selecting:
                         mouse_pos = Vector2(event.pos)
                         if VIEW_MARGIN_LEFT <= mouse_pos.x <= VIEW_BOUNDS_X and VIEW_MARGIN_TOP <= mouse_pos.y <= VIEW_BOUNDS_Y:
-                            selection_end = Vector2(mouse_pos.x - VIEW_MARGIN_LEFT + camera_x, mouse_pos.y - VIEW_MARGIN_TOP + camera_y)
+                            selection_end = camera.screen_to_world(mouse_pos, view_margin_left=VIEW_MARGIN_LEFT, view_margin_top=VIEW_MARGIN_TOP)
                     if placing_building:
                         mouse_pos = Vector2(event.pos)
                         if VIEW_MARGIN_LEFT <= mouse_pos.x <= VIEW_BOUNDS_X and VIEW_MARGIN_TOP <= mouse_pos.y <= VIEW_BOUNDS_Y:
-                            click_pos = Vector2(mouse_pos.x - VIEW_MARGIN_LEFT + camera_x, mouse_pos.y - VIEW_MARGIN_TOP + camera_y)
+                            click_pos = camera.screen_to_world(mouse_pos, view_margin_left=VIEW_MARGIN_LEFT, view_margin_top=VIEW_MARGIN_TOP)
                             tile_x = int(click_pos.x // TILE_SIZE)
                             tile_y = int(click_pos.y // TILE_SIZE)
                             building_pos = Vector2(tile_x * TILE_SIZE + TILE_HALF, tile_y * TILE_SIZE + TILE_HALF)
@@ -450,14 +452,7 @@ def run_game() -> int:
         if game_state == GameState.RUNNING:
             # Update camera
             mouse_pos_screen = pygame.mouse.get_pos()
-            if mouse_pos_screen[0] < SCROLL_MARGIN:
-                camera_x = max(0, camera_x - SCROLL_SPEED)
-            if mouse_pos_screen[0] > SCREEN_WIDTH - SCROLL_MARGIN:
-                camera_x = min(MAP_WIDTH - VIEW_WIDTH, camera_x + SCROLL_SPEED)
-            if mouse_pos_screen[1] < SCROLL_MARGIN:
-                camera_y = max(0, camera_y - SCROLL_SPEED)
-            if mouse_pos_screen[1] > SCREEN_HEIGHT - SCROLL_MARGIN:
-                camera_y = min(MAP_HEIGHT - VIEW_HEIGHT, camera_y + SCROLL_SPEED)
+            camera.update(mouse_pos_screen)
 
             # Check for building selection
             barn_selected = any(isinstance(unit, Barn) and unit.selected and unit.alpha == 255 for unit in (current_player.units if current_player else []))
@@ -600,29 +595,29 @@ def run_game() -> int:
         if game_state == GameState.RUNNING:
             # Draw tiles
             tile_surface.fill((0, 0, 0, 0))
-            start_col = max(0, int(camera_x // TILE_SIZE))
-            end_col = min(GRASS_COLS, int((camera_x + VIEW_WIDTH + TILE_SIZE) // TILE_SIZE))
-            start_row = max(0, int(camera_y // TILE_SIZE))
-            end_row = min(GRASS_ROWS, int((camera_y + VIEW_HEIGHT + TILE_SIZE) // TILE_SIZE))
+            start_col = max(0, int(camera.x // TILE_SIZE))
+            end_col = min(GRASS_COLS, int((camera.x + VIEW_WIDTH + TILE_SIZE) // TILE_SIZE))
+            start_row = max(0, int(camera.y // TILE_SIZE))
+            end_row = min(GRASS_ROWS, int((camera.y + VIEW_HEIGHT + TILE_SIZE) // TILE_SIZE))
             for row in range(start_row, end_row):
                 for col in range(start_col, end_col):
-                    grass_tiles[row][col].draw(tile_surface, camera_x, camera_y)
+                    grass_tiles[row][col].draw(tile_surface, camera.x, camera.y)
                     tile_pos = (col * TILE_SIZE + TILE_HALF, row * TILE_SIZE + TILE_HALF)
                     if tile_pos in move_order_times and current_time - move_order_times[tile_pos] <= 0.5:
-                        x1 = tile_pos[0] - TILE_QUARTER // 2 - camera_x
-                        y1 = tile_pos[1] - TILE_QUARTER // 2 - camera_y
-                        x2 = tile_pos[0] + TILE_QUARTER // 2 - camera_x
-                        y2 = tile_pos[1] + TILE_QUARTER // 2 - camera_y
+                        x1 = tile_pos[0] - TILE_QUARTER // 2 - camera.x
+                        y1 = tile_pos[1] - TILE_QUARTER // 2 - camera.y
+                        x2 = tile_pos[0] + TILE_QUARTER // 2 - camera.x
+                        y2 = tile_pos[1] + TILE_QUARTER // 2 - camera.y
                         pygame.draw.line(tile_surface, WHITE, (x1, y1), (x2, y2), 2)
                         pygame.draw.line(tile_surface, WHITE, (x2, y1), (x1, y2), 2)
             if current_player:
                 selected_building = next((unit for unit in current_player.units if isinstance(unit, Building) and unit.selected), None)
                 if selected_building and selected_building.rally_point:
                     rally_pos = (int(selected_building.rally_point.x), int(selected_building.rally_point.y))
-                    x1 = rally_pos[0] - TILE_QUARTER // 2 - camera_x
-                    y1 = rally_pos[1] - TILE_QUARTER // 2 - camera_y
-                    x2 = rally_pos[0] + TILE_QUARTER // 2 - camera_x
-                    y2 = rally_pos[1] + TILE_QUARTER // 2 - camera_y
+                    x1 = rally_pos[0] - TILE_QUARTER // 2 - camera.x
+                    y1 = rally_pos[1] - TILE_QUARTER // 2 - camera.y
+                    x2 = rally_pos[0] + TILE_QUARTER // 2 - camera.x
+                    y2 = rally_pos[1] + TILE_QUARTER // 2 - camera.y
                     pygame.draw.line(tile_surface, ORANGE, (x1, y1), (x2, y2), 2)
                     pygame.draw.line(tile_surface, ORANGE, (x2, y1), (x1, y2), 2)
             screen.blit(tile_surface, (VIEW_MARGIN_LEFT, VIEW_MARGIN_TOP))
@@ -635,20 +630,20 @@ def run_game() -> int:
             # Draw units
             for unit in all_units:
                 if isinstance(unit, Building):
-                    unit.draw(screen, camera_x, camera_y)
+                    unit.draw(screen, camera.x, camera.y)
             for unit in all_units:
                 if not isinstance(unit, Building):
                     if isinstance(unit, Tree):
-                        unit.draw(screen, camera_x, camera_y, axemen)
+                        unit.draw(screen, camera.x, camera.y, axemen)
                     else:
-                        unit.draw(screen, camera_x, camera_y)
+                        unit.draw(screen, camera.x, camera.y)
 
             # Draw attack animations
             for anim in attack_animations:
-                start_x = anim['start_pos'].x - camera_x + VIEW_MARGIN_LEFT
-                start_y = anim['start_pos'].y - camera_y + VIEW_MARGIN_TOP
-                end_x = anim['end_pos'].x - camera_x + VIEW_MARGIN_LEFT
-                end_y = anim['end_pos'].y - camera_y + VIEW_MARGIN_TOP
+                start_x = anim['start_pos'].x - camera.x + VIEW_MARGIN_LEFT
+                start_y = anim['start_pos'].y - camera.y + VIEW_MARGIN_TOP
+                end_x = anim['end_pos'].x - camera.x + VIEW_MARGIN_LEFT
+                end_y = anim['end_pos'].y - camera.y + VIEW_MARGIN_TOP
                 pygame.draw.line(screen, anim['color'], (start_x, start_y), (end_x, end_y), 2)
 
             # Draw building preview during placement
@@ -659,8 +654,8 @@ def run_game() -> int:
                 tile_x = int(building_pos.x // TILE_SIZE)
                 tile_y = int(building_pos.y // TILE_SIZE)
                 snapped_building_pos = Vector2(tile_x * TILE_SIZE + TILE_HALF, tile_y * TILE_SIZE + TILE_HALF)
-                x = snapped_building_pos.x - camera_x + VIEW_MARGIN_LEFT
-                y = snapped_building_pos.y - camera_y + VIEW_MARGIN_TOP
+                x = snapped_building_pos.x - camera.x + VIEW_MARGIN_LEFT
+                y = snapped_building_pos.y - camera.y + VIEW_MARGIN_TOP
                 valid_placement = True
                 building_size_tiles = int(building_size // TILE_SIZE)
                 for row in range(tile_y - building_size_tiles // 2, tile_y + building_size_tiles // 2 + 1):
@@ -680,15 +675,15 @@ def run_game() -> int:
                     preview_surface.fill(temp_building.color[:3] + (128,))
                     screen.blit(preview_surface, (x - building_size / 2, y - building_size / 2))
                 border_color = GREEN if valid_placement else RED
-                snapped_x = snapped_building_pos.x - camera_x + VIEW_MARGIN_LEFT
-                snapped_y = snapped_building_pos.y - camera_y + VIEW_MARGIN_TOP
+                snapped_x = snapped_building_pos.x - camera.x + VIEW_MARGIN_LEFT
+                snapped_y = snapped_building_pos.y - camera.y + VIEW_MARGIN_TOP
                 pygame.draw.rect(screen, border_color, (snapped_x - building_size / 2, snapped_y - building_size / 2, building_size, building_size), 2)
 
             # Draw selection rectangle
             if selecting and selection_start and selection_end and current_player:
                 rect = pygame.Rect(
-                    min(selection_start.x - camera_x + VIEW_MARGIN_LEFT, selection_end.x - camera_x + VIEW_MARGIN_LEFT),
-                    min(selection_start.y - camera_y + VIEW_MARGIN_TOP, selection_end.y - camera_y + VIEW_MARGIN_TOP),
+                    min(selection_start.x - camera.x + VIEW_MARGIN_LEFT, selection_end.x - camera.x + VIEW_MARGIN_LEFT),
+                    min(selection_start.y - camera.y + VIEW_MARGIN_TOP, selection_end.y - camera.y + VIEW_MARGIN_TOP),
                     abs(selection_end.x - selection_start.x),
                     abs(selection_end.y - selection_start.y)
                 )

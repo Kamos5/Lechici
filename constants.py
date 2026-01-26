@@ -4,8 +4,8 @@ import pygame
 # -----------------------------
 # Screen / Window
 # -----------------------------
-SCREEN_WIDTH = 1200
-SCREEN_HEIGHT = 1000
+SCREEN_WIDTH = 1500
+SCREEN_HEIGHT = 1200
 SCREEN_WIDTH_BIG = 1500
 SCREEN_HEIGHT_BIG = 1500
 FPS = 60
