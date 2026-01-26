@@ -32,6 +32,7 @@ class Unit:
         self.velocity = Vector2(0, 0)
         self.damping = 0.95
         self.hp = 50
+        self.view_distance = 50
         self.max_hp = 50
         self.mana = 0
         self.special = 0
@@ -166,7 +167,7 @@ class Unit:
                     if self.path_index >= len(self.path):
                         if isinstance(self, Axeman) and isinstance(self.target, Vector2):
                             self.velocity = Vector2(0, 0)
-                            print(f"Axeman at {self.pos} stopped at path end, distance to {self.target}: {self.pos.distance_to(self.target):.1f}")
+                            # print(f"Axeman at {self.pos} stopped at path end, distance to {self.target}: {self.pos.distance_to(self.target):.1f}")
                         else:
                             self.target = None
                             self.path = []
@@ -178,7 +179,7 @@ class Unit:
                 if self.path_index >= len(self.path):
                     if isinstance(self, Axeman) and isinstance(self.target, Vector2):
                         self.velocity = Vector2(0, 0)
-                        print(f"Axeman at {self.pos} reached path end, distance to {self.target}: {self.pos.distance_to(self.target):.1f}")
+                        # print(f"Axeman at {self.pos} reached path end, distance to {self.target}: {self.pos.distance_to(self.target):.1f}")
                     elif not isinstance(self.target, Unit):  # Only clear non-Unit targets
                         self.target = None
                         self.path = []
