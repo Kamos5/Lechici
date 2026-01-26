@@ -9,6 +9,7 @@ import time
 from enum import Enum
 from perlin_noise import PerlinNoise
 
+import grid_actions
 # 👇 ADD THIS
 from constants import *
 import context
@@ -179,109 +180,21 @@ def run_game() -> int:
                         clicked_something = False
 
                         # Check LEFT grid for either unit commands (priority) or production
+                        # Check LEFT grid for either unit commands (priority) or production
                         grid_button_clicked = False
-                        if current_player and not clicked_something:
-                            selected_barn = next((u for u in current_player.units if isinstance(u, Barn) and u.selected and u.alpha == 255), None)
-                            selected_barracks = next((u for u in current_player.units if isinstance(u, Barracks) and u.selected and u.alpha == 255), None)
-                            selected_town_center = next((u for u in current_player.units if isinstance(u, TownCenter) and u.selected and u.alpha == 255), None)
-
-                            selected_owned = [u for u in current_player.units if u.selected]
-                            selected_units = [u for u in selected_owned if not isinstance(u, Building)]
-                            show_unit_commands = len(selected_units) > 0
-
-                            # Determine which grid cell was clicked (if any)
-                            clicked_cell = None
-                            for r in range(len(grid_buttons)):
-                                for c in range(len(grid_buttons[r])):
-                                    if grid_buttons[r][c].collidepoint(event.pos):
-                                        clicked_cell = (r, c)
-                                        break
-                                if clicked_cell:
-                                    break
-
-                            if clicked_cell:
-                                r, c = clicked_cell
-
-                                # --- Unit command buttons ---
-                                if show_unit_commands:
-                                    if (r, c) == (0, 0):  # Patrol
-                                        print("Patrol pressed (TODO)")
-                                        grid_button_clicked = True
-                                    elif (r, c) == (0, 1):  # Move
-                                        print("Move pressed")
-                                        grid_button_clicked = True
-                                    elif (r, c) == (0, 2):  # Harvest
-                                        has_axeman = any(isinstance(u, Axeman) for u in selected_units)
-                                        has_cow = any(isinstance(u, Cow) for u in selected_units)
-                                        if has_axeman or has_cow:
-                                            print("Harvest pressed (TODO)")
-                                            grid_button_clicked = True
-                                    elif (r, c) == (0, 3):  # Repair
-                                        has_axeman = any(isinstance(u, Axeman) for u in selected_units)
-                                        if has_axeman:
-                                            print("Repair pressed (TODO)")
-                                            grid_button_clicked = True
-                                        grid_button_clicked = True
-                                    elif (r, c) == (1, 0):  # Attack
-                                        print("Attack pressed (TODO)")
-                                        grid_button_clicked = True
-                                    elif (r, c) == (1, 1):  # Stop
-                                        for u in selected_units:
-                                            u.target = None
-                                            u.autonomous_target = False
-                                            if hasattr(u, "path"):
-                                                u.path = []
-                                            if hasattr(u, "path_index"):
-                                                u.path_index = 0
-                                        grid_button_clicked = True
-
-                                # --- Production buttons (packed into grid) ---
-                                else:
-                                    options = []
-                                    if selected_barn:
-                                        options.append((Cow, selected_barn, "unit"))
-                                    if selected_barracks:
-                                        options.extend([
-                                            (Axeman, selected_barracks, "unit"),
-                                            (Archer, selected_barracks, "unit"),
-                                            (Knight, selected_barracks, "unit"),
-                                        ])
-                                    if selected_town_center:
-                                        options.extend([
-                                            (Barn, selected_town_center, "building"),
-                                            (Barracks, selected_town_center, "building"),
-                                            (TownCenter, selected_town_center, "building"),
-                                        ])
-
-                                    idx = r * len(grid_buttons[0]) + c
-                                    if 0 <= idx < len(options):
-                                        cls, owner, kind = options[idx]
-
-                                        if owner in production_queues:
-                                            print(f"{owner.__class__.__name__} at {owner.pos} is already producing")
-                                        else:
-                                            can_afford = (current_player.milk >= cls.milk_cost and current_player.wood >= cls.wood_cost)
-                                            if not can_afford:
-                                                print(f"Cannot queue {cls.__name__}: milk={current_player.milk}/{cls.milk_cost}, wood={current_player.wood}/{cls.wood_cost}")
-                                            else:
-                                                if kind == "building" and issubclass(cls, Building):
-                                                    if current_player.building_limit is not None and current_player.building_count >= current_player.building_limit:
-                                                        print("Cannot place building: building limit reached")
-                                                    else:
-                                                        placing_building = True
-                                                        building_to_place = cls
-                                                        grid_button_clicked = True
-                                                        print(f"Initiated placement of {cls.__name__} for Player {current_player.player_id}")
-                                                else:
-                                                    production_queues[owner] = {
-                                                        "unit_type": cls,
-                                                        "start_time": current_time,
-                                                        "player_id": current_player.player_id
-                                                    }
-                                                    current_player.milk -= cls.milk_cost
-                                                    current_player.wood -= cls.wood_cost
-                                                    grid_button_clicked = True
-                                                    print(f"Started production of {cls.__name__} at {owner.__class__.__name__} {owner.pos} for Player {current_player.player_id}")
+                        cell = grid_actions.cell_from_mouse(grid_buttons, event.pos)
+                        if cell and current_player:
+                            r, c = cell
+                            handled, placing_building, building_to_place = grid_actions.execute_grid_cell(
+                                r, c,
+                                current_player=current_player,
+                                grid_buttons=grid_buttons,
+                                production_queues=production_queues,
+                                current_time=current_time,
+                                placing_building=placing_building,
+                                building_to_place=building_to_place,
+                            )
+                            grid_button_clicked = handled
 
                         # If the click was on the left grid, DO NOT treat it as a map click
                         if grid_button_clicked:
@@ -428,87 +341,18 @@ def run_game() -> int:
                                             move_order_times[snapped_pos] = current_time
                                             print(f"Move order recorded at snapped pos {snapped_pos}")
             elif event.type == pygame.KEYDOWN and game_state == GameState.RUNNING:
-                    # Grid hotkeys trigger the same actions as clicking the left grid buttons
-                    if event.key in GRID_HOTKEYS and current_player:
-                        r, c = GRID_HOTKEYS[event.key]
-
-                        # Only handle if the grid indices exist
-                        if 0 <= r < len(grid_buttons) and 0 <= c < len(grid_buttons[r]):
-                            # Reuse EXACT same logic as your click handler: we execute the action for (r,c)
-                            selected_barn = next((u for u in current_player.units if isinstance(u, Barn) and u.selected and u.alpha == 255), None)
-                            selected_barracks = next((u for u in current_player.units if isinstance(u, Barracks) and u.selected and u.alpha == 255), None)
-                            selected_town_center = next((u for u in current_player.units if isinstance(u, TownCenter) and u.selected and u.alpha == 255), None)
-
-                            selected_owned = [u for u in current_player.units if u.selected]
-                            selected_units = [u for u in selected_owned if not isinstance(u, Building)]
-                            show_unit_commands = len(selected_units) > 0
-
-                            # --- Unit command buttons ---
-                            if show_unit_commands:
-                                if (r, c) == (0, 0):  # Patrol
-                                    print("Patrol pressed (TODO)")
-                                elif (r, c) == (0, 1):  # Move
-                                    print("Move pressed")
-                                elif (r, c) == (0, 2):  # Harvest
-                                    print("Harvest pressed (TODO)")
-                                elif (r, c) == (0, 3):  # Repair
-                                    print("Repair pressed (TODO)")
-                                elif (r, c) == (1, 0):  # Attack
-                                    print("Attack pressed (TODO)")
-                                elif (r, c) == (1, 1):  # Stop
-                                    for u in selected_units:
-                                        u.target = None
-                                        u.autonomous_target = False
-                                        if hasattr(u, "path"):
-                                            u.path = []
-                                        if hasattr(u, "path_index"):
-                                            u.path_index = 0
-
-                            # --- Production buttons (packed into grid) ---
-                            else:
-                                options = []
-                                if selected_barn:
-                                    options.append((Cow, selected_barn, "unit"))
-                                if selected_barracks:
-                                    options.extend([
-                                        (Axeman, selected_barracks, "unit"),
-                                        (Archer, selected_barracks, "unit"),
-                                        (Knight, selected_barracks, "unit"),
-                                    ])
-                                if selected_town_center:
-                                    options.extend([
-                                        (Barn, selected_town_center, "building"),
-                                        (Barracks, selected_town_center, "building"),
-                                        (TownCenter, selected_town_center, "building"),
-                                    ])
-
-                                idx = r * len(grid_buttons[0]) + c
-                                if 0 <= idx < len(options):
-                                    cls, owner, kind = options[idx]
-
-                                    if owner in production_queues:
-                                        print(f"{owner.__class__.__name__} at {owner.pos} is already producing")
-                                    else:
-                                        can_afford = (current_player.milk >= cls.milk_cost and current_player.wood >= cls.wood_cost)
-                                        if not can_afford:
-                                            print(f"Cannot queue {cls.__name__}: milk={current_player.milk}/{cls.milk_cost}, wood={current_player.wood}/{cls.wood_cost}")
-                                        else:
-                                            if kind == "building" and issubclass(cls, Building):
-                                                if current_player.building_limit is not None and current_player.building_count >= current_player.building_limit:
-                                                    print("Cannot place building: building limit reached")
-                                                else:
-                                                    placing_building = True
-                                                    building_to_place = cls
-                                                    print(f"Initiated placement of {cls.__name__} for Player {current_player.player_id} (hotkey)")
-                                            else:
-                                                production_queues[owner] = {
-                                                    "unit_type": cls,
-                                                    "start_time": current_time,
-                                                    "player_id": current_player.player_id
-                                                }
-                                                current_player.milk -= cls.milk_cost
-                                                current_player.wood -= cls.wood_cost
-                                                print(f"Started production of {cls.__name__} at {owner.__class__.__name__} {owner.pos} for Player {current_player.player_id} (hotkey)")
+                cell = grid_actions.cell_from_key(event.key)
+                if cell and current_player:
+                    r, c = cell
+                    handled, placing_building, building_to_place = grid_actions.execute_grid_cell(
+                        r, c,
+                        current_player=current_player,
+                        grid_buttons=grid_buttons,
+                        production_queues=production_queues,
+                        current_time=current_time,
+                        placing_building=placing_building,
+                        building_to_place=building_to_place,
+                    )
 
             elif event.type == pygame.MOUSEBUTTONUP:
                 if game_state == GameState.RUNNING and event.button == 1:
