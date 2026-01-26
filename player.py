@@ -345,7 +345,7 @@ class PlayerAI:
                         cow.is_tile_walkable(adj_x, adj_y, self.context.spatial_grid)):
                         cow.target = self.context.grass_tiles[adj_y][adj_x].center
                         cow.autonomous_target = True
-                        print(f"AI: Cow at {cow.pos} assigned to grass tile at {cow.target}")
+                        # print(f"AI: Cow at {cow.pos} assigned to grass tile at {cow.target}")
                         break
             elif cow.special >= 100 and not cow.target:
                 barns = [u for u in self.player.units if isinstance(u, Barn) and u.alpha == 255 and u not in self.player.cow_in_barn]
@@ -357,7 +357,7 @@ class PlayerAI:
                     cow.return_pos = Vector2(cow.pos)
                     cow.assigned_corner = cow.target
                     cow.autonomous_target = True
-                    print(f"AI: Cow at {cow.pos} assigned to barn at {cow.target} for milk deposit")
+                    # print(f"AI: Cow at {cow.pos} assigned to barn at {cow.target} for milk deposit")
 
     def manage_axemen(self):
         # Existing method unchanged

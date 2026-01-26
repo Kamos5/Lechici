@@ -171,126 +171,165 @@ def run_game() -> int:
                         click_pos = camera.screen_to_world(mouse_pos, view_margin_left=VIEW_MARGIN_LEFT, view_margin_top=VIEW_MARGIN_TOP)
                         clicked_something = False
 
-                        # Check grid buttons for spawning units or initiating building placement
+                        # Check LEFT grid for either unit commands (priority) or production
+                        grid_button_clicked = False
                         if current_player and not clicked_something:
-                            grid_button_clicked = False
-                            selected_barn = next((unit for unit in current_player.units if isinstance(unit, Barn) and unit.selected and unit.alpha == 255), None)
-                            selected_barracks = next((unit for unit in current_player.units if isinstance(unit, Barracks) and unit.selected and unit.alpha == 255), None)
-                            selected_town_center = next((unit for unit in current_player.units if isinstance(unit, TownCenter) and unit.selected and unit.alpha == 255), None)
-                            if selected_barn and grid_buttons[0][0].collidepoint(event.pos):
-                                if selected_barn in production_queues:
-                                    print(f"Barn at {selected_barn.pos} is already producing")
-                                elif (current_player.milk >= Cow.milk_cost and current_player.wood >= Cow.wood_cost):
-                                    production_queues[selected_barn] = {
-                                        'unit_type': Cow,
-                                        'start_time': current_time,
-                                        'player_id': current_player.player_id
-                                    }
-                                    current_player.milk -= Cow.milk_cost
-                                    current_player.wood -= Cow.wood_cost
-                                    grid_button_clicked = True
-                                    print(f"Started production of Cow at Barn {selected_barn.pos} for Player {current_player.player_id}")
-                                else:
-                                    print(f"Cannot queue Cow: milk={current_player.milk}/{Cow.milk_cost}, wood={current_player.wood}/{Cow.wood_cost}, units={current_player.unit_count}/{current_player.unit_limit}")
-                            elif selected_barracks and not grid_button_clicked:
-                                if selected_barracks in production_queues:
-                                    print(f"Barracks at {selected_barracks.pos} is already producing")
-                                elif grid_buttons[0][0].collidepoint(event.pos):
-                                    if (current_player.milk >= Axeman.milk_cost and current_player.wood >= Axeman.wood_cost):
-                                        production_queues[selected_barracks] = {
-                                            'unit_type': Axeman,
-                                            'start_time': current_time,
-                                            'player_id': current_player.player_id
-                                        }
-                                        current_player.milk -= Axeman.milk_cost
-                                        current_player.wood -= Axeman.wood_cost
-                                        grid_button_clicked = True
-                                        print(f"Started production of Axeman at Barracks {selected_barracks.pos} for Player {current_player.player_id}")
-                                    else:
-                                        print(f"Cannot queue Axeman: milk={current_player.milk}/{Axeman.milk_cost}, wood={current_player.wood}/{Axeman.wood_cost}, units={current_player.unit_count}/{current_player.unit_limit}")
-                                elif grid_buttons[1][0].collidepoint(event.pos):
-                                    if (current_player.milk >= Archer.milk_cost and current_player.wood >= Archer.wood_cost):
-                                        production_queues[selected_barracks] = {
-                                            'unit_type': Archer,
-                                            'start_time': current_time,
-                                            'player_id': current_player.player_id
-                                        }
-                                        current_player.milk -= Archer.milk_cost
-                                        current_player.wood -= Archer.wood_cost
-                                        grid_button_clicked = True
-                                        print(f"Started production of Archer at Barracks {selected_barracks.pos} for Player {current_player.player_id}")
-                                    else:
-                                        print(f"Cannot queue Archer: milk={current_player.milk}/{Archer.milk_cost}, wood={current_player.wood}/{Archer.wood_cost}, units={current_player.unit_count}/{current_player.unit_limit}")
-                                elif grid_buttons[2][0].collidepoint(event.pos):
-                                    if (current_player.milk >= Knight.milk_cost and current_player.wood >= Knight.wood_cost):
-                                        production_queues[selected_barracks] = {
-                                            'unit_type': Knight,
-                                            'start_time': current_time,
-                                            'player_id': current_player.player_id
-                                        }
-                                        current_player.milk -= Knight.milk_cost
-                                        current_player.wood -= Knight.wood_cost
-                                        grid_button_clicked = True
-                                        print(f"Started production of Knight at Barracks {selected_barracks.pos} for Player {current_player.player_id}")
-                                    else:
-                                        print(f"Cannot queue Knight: milk={current_player.milk}/{Knight.milk_cost}, wood={current_player.wood}/{Knight.wood_cost}, units={current_player.unit_count}/{current_player.unit_limit}")
-                            elif selected_town_center and not grid_button_clicked:
-                                if grid_buttons[0][0].collidepoint(event.pos):
-                                    if (current_player.milk >= Barn.milk_cost and current_player.wood >= Barn.wood_cost and
-                                            (current_player.building_limit is None or current_player.building_count < current_player.building_limit) and
-                                            selected_town_center not in production_queues):
-                                        placing_building = True
-                                        building_to_place = Barn
-                                        current_player.milk -= Barn.milk_cost
-                                        current_player.wood -= Barn.wood_cost
-                                        grid_button_clicked = True
-                                        print(f"Initiated placement of Barn for Player {current_player.player_id}")
-                                    else:
-                                        print(f"Cannot place Barn: milk={current_player.milk}/{Barn.milk_cost}, wood={current_player.wood}/{Barn.wood_cost}, buildings={current_player.building_count}/{current_player.building_limit}, producing={selected_town_center in production_queues}")
-                                elif grid_buttons[1][0].collidepoint(event.pos):
-                                    if (current_player.milk >= Barracks.milk_cost and current_player.wood >= Barracks.wood_cost and
-                                            (current_player.building_limit is None or current_player.building_count < current_player.building_limit) and
-                                            selected_town_center not in production_queues):
-                                        placing_building = True
-                                        building_to_place = Barracks
-                                        grid_button_clicked = True
-                                        current_player.milk -= Barracks.milk_cost
-                                        current_player.wood -= Barracks.wood_cost
-                                        print(f"Initiated placement of Barracks for Player {current_player.player_id}")
-                                    else:
-                                        print(f"Cannot place Barracks: milk={current_player.milk}/{Barracks.milk_cost}, wood={current_player.wood}/{Barracks.wood_cost}, buildings={current_player.building_count}/{current_player.building_limit}, producing={selected_town_center in production_queues}")
-                                elif grid_buttons[2][0].collidepoint(event.pos):
-                                    if (current_player.milk >= TownCenter.milk_cost and current_player.wood >= TownCenter.wood_cost and
-                                            (current_player.building_limit is None or current_player.building_count < current_player.building_limit) and
-                                            selected_town_center not in production_queues):
-                                        placing_building = True
-                                        building_to_place = TownCenter
-                                        current_player.milk -= TownCenter.milk_cost
-                                        current_player.wood -= TownCenter.wood_cost
-                                        grid_button_clicked = True
-                                        print(f"Initiated placement of TownCenter for Player {current_player.player_id}")
-                                    else:
-                                        print(f"Cannot place TownCenter: milk={current_player.milk}/{TownCenter.milk_cost}, wood={current_player.wood}/{TownCenter.wood_cost}, buildings={current_player.building_count}/{current_player.building_limit}, producing={selected_town_center in production_queues}")
+                            selected_barn = next((u for u in current_player.units if isinstance(u, Barn) and u.selected and u.alpha == 255), None)
+                            selected_barracks = next((u for u in current_player.units if isinstance(u, Barracks) and u.selected and u.alpha == 255), None)
+                            selected_town_center = next((u for u in current_player.units if isinstance(u, TownCenter) and u.selected and u.alpha == 255), None)
 
-                            # Check unit icon clicks
-                            if not grid_button_clicked and PANEL_Y <= mouse_pos.y <= PANEL_Y + ICON_SIZE + 10:
-                                selected_units = [unit for unit in current_player.units if unit.selected]
-                                icon_x = VIEW_MARGIN_LEFT + 10
-                                icon_y = PANEL_Y + 10
-                                for i, unit in enumerate(selected_units):
-                                    icon_rect = pygame.Rect(icon_x + i * (ICON_SIZE + ICON_MARGIN), icon_y, ICON_SIZE, ICON_SIZE)
-                                    if icon_rect.collidepoint(mouse_pos):
-                                        for player in players:
-                                            player.deselect_all_units()
-                                        unit.selected = True
-                                        selecting = False
-                                        selection_start = None
-                                        selection_end = None
-                                        print(f"Selected unit {unit.__class__.__name__} at {unit.pos} via icon click")
-                                        clicked_something = True
+                            selected_owned = [u for u in current_player.units if u.selected]
+                            selected_units = [u for u in selected_owned if not isinstance(u, Building)]
+                            show_unit_commands = len(selected_units) > 0
+
+                            # Determine which grid cell was clicked (if any)
+                            clicked_cell = None
+                            for r in range(len(grid_buttons)):
+                                for c in range(len(grid_buttons[r])):
+                                    if grid_buttons[r][c].collidepoint(event.pos):
+                                        clicked_cell = (r, c)
                                         break
+                                if clicked_cell:
+                                    break
 
-                            # Handle game view clicks for unit selection or building placement
+                            if clicked_cell:
+                                r, c = clicked_cell
+
+                                # --- Unit command buttons ---
+                                if show_unit_commands:
+                                    if (r, c) == (0, 0):  # Patrol
+                                        print("Patrol pressed (TODO)")
+                                        grid_button_clicked = True
+                                    elif (r, c) == (0, 1):  # Move
+                                        print("Move pressed")
+                                        grid_button_clicked = True
+                                    elif (r, c) == (0, 2):  # Harvest
+                                        print("Harvest pressed (TODO)")
+                                        grid_button_clicked = True
+                                    elif (r, c) == (0, 3):  # Repair
+                                        print("Repair pressed (TODO)")
+                                        grid_button_clicked = True
+                                    elif (r, c) == (1, 0):  # Attack
+                                        print("Attack pressed (TODO)")
+                                        grid_button_clicked = True
+                                    elif (r, c) == (1, 1):  # Stop
+                                        for u in selected_units:
+                                            u.target = None
+                                            u.autonomous_target = False
+                                            if hasattr(u, "path"):
+                                                u.path = []
+                                            if hasattr(u, "path_index"):
+                                                u.path_index = 0
+                                        grid_button_clicked = True
+
+                                # --- Production buttons (packed into grid) ---
+                                else:
+                                    options = []
+                                    if selected_barn:
+                                        options.append((Cow, selected_barn, "unit"))
+                                    if selected_barracks:
+                                        options.extend([
+                                            (Axeman, selected_barracks, "unit"),
+                                            (Archer, selected_barracks, "unit"),
+                                            (Knight, selected_barracks, "unit"),
+                                        ])
+                                    if selected_town_center:
+                                        options.extend([
+                                            (Barn, selected_town_center, "building"),
+                                            (Barracks, selected_town_center, "building"),
+                                            (TownCenter, selected_town_center, "building"),
+                                        ])
+
+                                    idx = r * len(grid_buttons[0]) + c
+                                    if 0 <= idx < len(options):
+                                        cls, owner, kind = options[idx]
+
+                                        if owner in production_queues:
+                                            print(f"{owner.__class__.__name__} at {owner.pos} is already producing")
+                                        else:
+                                            can_afford = (current_player.milk >= cls.milk_cost and current_player.wood >= cls.wood_cost)
+                                            if not can_afford:
+                                                print(f"Cannot queue {cls.__name__}: milk={current_player.milk}/{cls.milk_cost}, wood={current_player.wood}/{cls.wood_cost}")
+                                            else:
+                                                if kind == "building" and issubclass(cls, Building):
+                                                    if current_player.building_limit is not None and current_player.building_count >= current_player.building_limit:
+                                                        print("Cannot place building: building limit reached")
+                                                    else:
+                                                        placing_building = True
+                                                        building_to_place = cls
+                                                        grid_button_clicked = True
+                                                        print(f"Initiated placement of {cls.__name__} for Player {current_player.player_id}")
+                                                else:
+                                                    production_queues[owner] = {
+                                                        "unit_type": cls,
+                                                        "start_time": current_time,
+                                                        "player_id": current_player.player_id
+                                                    }
+                                                    current_player.milk -= cls.milk_cost
+                                                    current_player.wood -= cls.wood_cost
+                                                    grid_button_clicked = True
+                                                    print(f"Started production of {cls.__name__} at {owner.__class__.__name__} {owner.pos} for Player {current_player.player_id}")
+
+                        # If the click was on the left grid, DO NOT treat it as a map click
+                        if grid_button_clicked:
+                            clicked_something = True
+
+                        # --- Confirm building placement on LEFT CLICK in the world ---
+                        if placing_building and (not grid_button_clicked) and VIEW_MARGIN_LEFT <= mouse_pos.x <= VIEW_BOUNDS_X and VIEW_MARGIN_TOP <= mouse_pos.y <= VIEW_BOUNDS_Y:
+                            tile_x = int(click_pos.x // TILE_SIZE)
+                            tile_y = int(click_pos.y // TILE_SIZE)
+                            building_pos = Vector2(tile_x * TILE_SIZE + TILE_HALF, tile_y * TILE_SIZE + TILE_HALF)
+
+                            building_size_tiles = int(building_size // TILE_SIZE)
+                            valid_placement = True
+                            for row in range(tile_y - building_size_tiles // 2, tile_y + building_size_tiles // 2 + 1):
+                                for col in range(tile_x - building_size_tiles // 2, tile_x + building_size_tiles // 2 + 1):
+                                    if not (0 <= row < GRASS_ROWS and 0 <= col < GRASS_COLS) or is_tile_occupied(row, col, all_units, context.grass_tiles):
+                                        valid_placement = False
+                                        break
+                                if not valid_placement:
+                                    break
+
+                            if valid_placement and building_to_place:
+                                # Deduct NOW (only on successful placement)
+                                if current_player.milk < building_to_place.milk_cost or current_player.wood < building_to_place.wood_cost:
+                                    print("Not enough resources to place building.")
+                                else:
+                                    current_player.milk -= building_to_place.milk_cost
+                                    current_player.wood -= building_to_place.wood_cost
+
+                                    new_building = building_to_place(building_pos.x, building_pos.y, current_player.player_id, current_player.color)
+                                    new_building.alpha = 0
+                                    current_player.add_unit(new_building)
+                                    all_units.add(new_building)
+                                    spatial_grid.add_unit(new_building)
+
+                                    # Paint area to dirt (same as your old placement code)
+                                    for row in range(tile_y - building_size_tiles // 2, tile_y + building_size_tiles // 2 + 1):
+                                        for col in range(tile_x - building_size_tiles // 2, tile_x + building_size_tiles // 2 + 1):
+                                            if 0 <= row < GRASS_ROWS and 0 <= col < GRASS_COLS:
+                                                grass_tiles[row][col] = Dirt(col * TILE_SIZE, row * TILE_SIZE)
+
+                                    highlight_times[new_building] = current_time
+                                    building_animations[new_building] = {
+                                        'start_time': current_time,
+                                        'alpha': 0,
+                                        'town_center': None
+                                    }
+
+                                    print(f"Placed {building_to_place.__name__} at {building_pos} for Player {current_player.player_id}")
+
+                                    # Reset placement state
+                                    placing_building = False
+                                    building_to_place = None
+                                    building_pos = None
+                            else:
+                                print("Invalid placement position: occupied or out of bounds")
+
+                            clicked_something = True  # consume click; don't select units
+
+                        else:
+                            # Otherwise continue with normal map selection / pending click
                             if not grid_button_clicked and VIEW_MARGIN_LEFT <= mouse_pos.x <= VIEW_BOUNDS_X and VIEW_MARGIN_TOP <= mouse_pos.y <= VIEW_BOUNDS_Y:
                                 unit_clicked = None
                                 for unit in all_units:
@@ -299,10 +338,9 @@ def run_game() -> int:
                                         clicked_something = True
                                         break
 
-                                # SHIFT+click keeps old toggle behavior immediately (no pending click / drag)
+                                # SHIFT+click keeps toggle behavior
                                 if unit_clicked and (pygame.key.get_mods() & pygame.KMOD_SHIFT):
                                     unit_clicked.selected = not unit_clicked.selected
-                                    print(f"Toggled selection for {unit_clicked.__class__.__name__} at {unit_clicked.pos} (Player {unit_clicked.player_id})")
                                     pending_click = False
                                     pending_click_unit = None
                                     mouse_down_screen = None
@@ -311,9 +349,7 @@ def run_game() -> int:
                                     selection_start = None
                                     selection_end = None
                                 else:
-                                    # Defer single-click selection until mouse-up.
-                                    # If the mouse moves beyond a small threshold, treat it as a box select
-                                    # even if the drag starts on top of a unit/building.
+                                    # Defer single-click selection until mouse-up (keeps your drag-box behavior)
                                     if not placing_building:
                                         pending_click = True
                                         pending_click_unit = unit_clicked
@@ -322,46 +358,6 @@ def run_game() -> int:
                                         selection_start = click_pos
                                         selection_end = click_pos
                                         selecting = False
-                                    elif placing_building:
-                                        tile_x = int(click_pos.x // TILE_SIZE)
-                                        tile_y = int(click_pos.y // TILE_SIZE)
-                                        building_pos = Vector2(tile_x * TILE_SIZE + TILE_HALF, tile_y * TILE_SIZE + TILE_HALF)
-                                        building_size_tiles = int(building_size // TILE_SIZE)
-                                        valid_placement = True
-                                        for row in range(tile_y - building_size_tiles // 2, tile_y + building_size_tiles // 2 + 1):
-                                            for col in range(tile_x - building_size_tiles // 2, tile_x + building_size_tiles // 2 + 1):
-                                                if not (0 <= row < GRASS_ROWS and 0 <= col < GRASS_COLS) or is_tile_occupied(row, col, all_units, context.grass_tiles):
-                                                    valid_placement = False
-                                                    break
-                                            if not valid_placement:
-                                                break
-                                        if valid_placement:
-                                            new_building = building_to_place(building_pos.x, building_pos.y, current_player.player_id, current_player.color)
-                                            new_building.alpha = 0
-                                            current_player.add_unit(new_building)
-                                            all_units.add(new_building)
-                                            spatial_grid.add_unit(new_building)
-                                            for row in range(tile_y - building_size_tiles // 2, tile_y + building_size_tiles // 2 + 1):
-                                                for col in range(tile_x - building_size_tiles // 2, tile_x + building_size_tiles // 2 + 1):
-                                                    if 0 <= row < GRASS_ROWS and 0 <= col < GRASS_COLS:
-                                                        grass_tiles[row][col] = Dirt(col * TILE_SIZE, row * TILE_SIZE)
-                                            highlight_times[new_building] = current_time
-                                            building_animations[new_building] = {
-                                                'start_time': current_time,
-                                                'alpha': 0,
-                                                'town_center': selected_town_center
-                                            }
-                                            production_queues[selected_town_center] = {
-                                                'unit_type': building_to_place,
-                                                'start_time': current_time,
-                                                'player_id': current_player.player_id
-                                            }
-                                            print(f"Placed {building_to_place.__name__} at {building_pos} for Player {current_player.player_id} with construction fade")
-                                            placing_building = False
-                                            building_to_place = None
-                                            building_pos = None
-                                        else:
-                                            print(f"Invalid placement position at {building_pos}: occupied or out of bounds")
                     elif event.button == 3:  # Right click
                         mouse_pos = Vector2(event.pos)
                         if placing_building:

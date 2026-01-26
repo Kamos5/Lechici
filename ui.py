@@ -68,18 +68,41 @@ def build_ui_layout():
     button_player1 = pygame.Rect(button_player1_pos[0], button_player1_pos[1], BUTTON_WIDTH, BUTTON_HEIGHT)
     button_player2 = pygame.Rect(button_player2_pos[0], button_player2_pos[1], BUTTON_WIDTH, BUTTON_HEIGHT)
 
-    grid_button_start_x = VIEW_BOUNDS_X - GRID_BUTTON_WIDTH - BUTTON_MARGIN
-    grid_button_start_y = PANEL_Y + (
-        PANEL_HEIGHT - (GRID_BUTTON_ROWS * GRID_BUTTON_HEIGHT + (GRID_BUTTON_ROWS - 1) * GRID_BUTTON_MARGIN)
-    ) // 2
+    # Left panel action/production grid: 4 cols x 3 rows
+    GRID_COLS = 4
+    GRID_ROWS = 3
+
+    # Fit inside left panel (0..VIEW_MARGIN_LEFT)
+    left_pad = 10
+    top_pad = 10
+
+    grid_total_w = VIEW_MARGIN_LEFT - 2 * left_pad
+    grid_total_h = 3 * GRID_BUTTON_HEIGHT + 2 * GRID_BUTTON_MARGIN
+
+    grid_button_start_x = left_pad
+    grid_button_start_y = PANEL_Y + top_pad  # inside the bottom panel, but left side
+
+    # Make buttons readable: use a minimum width, then compute margin to fit
+    btn_h = GRID_BUTTON_HEIGHT
+
+    # Choose a good minimum width for text+icons+costs
+    MIN_BTN_W = 70  # tweak: 64–80 usually good
+    btn_w = max(MIN_BTN_W, (grid_total_w - (GRID_COLS - 1) * GRID_BUTTON_MARGIN) // GRID_COLS)
+
+    # If 4*btn_w doesn't fit, reduce effective margin instead of shrinking buttons too much
+    needed_w = GRID_COLS * btn_w
+    remaining = grid_total_w - needed_w
+    eff_margin = GRID_BUTTON_MARGIN
+    if remaining < (GRID_COLS - 1) * eff_margin:
+        eff_margin = max(2, remaining // (GRID_COLS - 1))  # squeeze margins, keep at least 2px
 
     grid_buttons = []
-    for row in range(GRID_BUTTON_ROWS):
+    for row in range(GRID_ROWS):
         row_buttons = []
-        for col in range(GRID_BUTTON_COLS):
-            x = grid_button_start_x - col * (GRID_BUTTON_WIDTH + GRID_BUTTON_MARGIN)
-            y = grid_button_start_y + row * (GRID_BUTTON_HEIGHT + GRID_BUTTON_MARGIN)
-            row_buttons.append(pygame.Rect(x, y, GRID_BUTTON_WIDTH, GRID_BUTTON_HEIGHT))
+        for col in range(GRID_COLS):
+            x = grid_button_start_x + col * (btn_w + eff_margin)
+            y = grid_button_start_y + row * (btn_h + eff_margin)
+            row_buttons.append(pygame.Rect(x, y, btn_w, btn_h))
         grid_buttons.append(row_buttons)
 
     quit_button = pygame.Rect(
@@ -125,69 +148,140 @@ def draw_panels(screen):
     pygame.draw.rect(screen, PANEL_COLOR, (VIEW_MARGIN_LEFT, PANEL_Y, VIEW_WIDTH, PANEL_HEIGHT))
 
 
-def draw_grid_buttons(screen, grid_buttons, current_player, production_queues, current_time, icons, small_font):
+def draw_grid_buttons(screen, grid_buttons, current_player, all_units, production_queues, current_time, icons, small_font):
+
+    # --- cached scaled icons for build grid ---
+    if not hasattr(draw_grid_buttons, "_scaled_cache"):
+        draw_grid_buttons._scaled_cache = {}
+
+    def get_scaled(icon, scale):
+        key = (id(icon), scale)
+        if key not in draw_grid_buttons._scaled_cache:
+            w, h = icon.get_size()
+            draw_grid_buttons._scaled_cache[key] = pygame.transform.smoothscale(
+                icon, (int(w * scale), int(h * scale))
+            )
+        return draw_grid_buttons._scaled_cache[key]
+
+    milk_icon_small = get_scaled(icons["milk"], 0.5)
+    wood_icon_small = get_scaled(icons["wood"], 0.5)
+
     """Draw the 3x1 grid and its contextual contents (unit/building actions)."""
     selected_barn, selected_barracks, selected_town_center = _get_selected_buildings(current_player)
 
-    for row in range(GRID_BUTTON_ROWS):
-        for col in range(GRID_BUTTON_COLS):
-            button_rect = grid_buttons[row][col]
+    selected = [u for u in all_units if u.selected and current_player and u.player_id == current_player.player_id]
+    selected_units = [u for u in selected if not isinstance(u, Building)]
+    selected_buildings = [u for u in selected if isinstance(u, Building) and getattr(u, "alpha", 255) == 255]
 
-            def draw_costs(unit_cls):
-                screen.blit(icons["milk"], (button_rect.x + 44, button_rect.y + 2))
-                screen.blit(small_font.render(f"{unit_cls.milk_cost}", True, BLACK), (button_rect.x + 70, button_rect.y + 6))
-                screen.blit(icons["wood"], (button_rect.x + 44, button_rect.y + 22))
-                screen.blit(small_font.render(f"{unit_cls.wood_cost}", True, BLACK), (button_rect.x + 70, button_rect.y + 26))
+    # Priority rule: if ANY units selected (even with buildings), show unit command buttons
+    show_unit_commands = len(selected_units) > 0
 
-            def draw_progress(queue_owner, unit_cls):
-                if queue_owner in production_queues and production_queues[queue_owner]["unit_type"] == unit_cls:
-                    progress = (current_time - production_queues[queue_owner]["start_time"]) / unit_cls.production_time
-                    progress_width = int(progress * (GRID_BUTTON_WIDTH - 4))
-                    pygame.draw.rect(screen, GREEN, (button_rect.x + 2, button_rect.y + 2, progress_width, 4))
+    # Helper: draw a labeled button (fast + simple)
+    def draw_label(btn_rect, label, enabled=True):
+        txt = small_font.render(label, True, BLACK)
+        screen.blit(txt, (btn_rect.x + 2, btn_rect.y + 2))
 
-            # Barn -> Cow (row 0)
-            if current_player and selected_barn and row == 0 and col == 0:
+    # Helper: draw a unit/build icon + costs + queue progress
+    def draw_costs(btn_rect, unit_cls):
+        screen.blit(milk_icon_small, (btn_rect.x + 2, btn_rect.y + 14))
+        screen.blit(
+            small_font.render(f"{unit_cls.milk_cost}", True, BLACK),
+            (btn_rect.x + 14, btn_rect.y + 16),
+        )
+
+        screen.blit(wood_icon_small, (btn_rect.x + 2, btn_rect.y + 26))
+        screen.blit(
+            small_font.render(f"{unit_cls.wood_cost}", True, BLACK),
+            (btn_rect.x + 14, btn_rect.y + 28),
+        )
+
+    def draw_progress(btn_rect, queue_owner, unit_cls):
+        if queue_owner in production_queues and production_queues[queue_owner]["unit_type"] == unit_cls:
+            progress = (current_time - production_queues[queue_owner]["start_time"]) / unit_cls.production_time
+            progress = max(0.0, min(1.0, progress))
+            w = int(progress * (btn_rect.width - 4))
+            pygame.draw.rect(screen, GREEN, (btn_rect.x + 2, btn_rect.y + 2, w, 4))
+
+    # Fill background for all buttons first
+    for row in range(len(grid_buttons)):
+        for col in range(len(grid_buttons[row])):
+            pygame.draw.rect(screen, LIGHT_GRAY, grid_buttons[row][col])
+
+    if show_unit_commands:
+        # Row 0: Patrol, Move, Harvest, Repair
+        # Row 1: Attack, Stop, (empty), (empty)
+        mapping = {
+            (0, 0): ("Patrol", True),
+            (0, 1): ("Move", True),
+            (0, 2): ("Harvest", True),  # only meaningful for Cow/Axeman (handled in main)
+            (0, 3): ("Repair", True),  # only meaningful for Axeman (handled in main)
+            (1, 0): ("Attack", True),
+            (1, 1): ("Stop", True),
+        }
+        for (r, c), (label, enabled) in mapping.items():
+            if r < len(grid_buttons) and c < len(grid_buttons[r]):
+                draw_label(grid_buttons[r][c], label, enabled=enabled)
+
+    else:
+        # Production mode (only buildings selected)
+        # We pack production options from top-left across 4 columns, then next row.
+        options = []
+
+        if current_player and selected_barn:
+            options.append(("Cow", Cow, selected_barn))
+
+        if current_player and selected_barracks:
+            options.extend([
+                ("Axeman", Axeman, selected_barracks),
+                ("Archer", Archer, selected_barracks),
+                ("Knight", Knight, selected_barracks),
+            ])
+
+        if current_player and selected_town_center:
+            options.extend([
+                ("Barn", Barn, selected_town_center),
+                ("Barracks", Barracks, selected_town_center),
+                ("TownCenter", TownCenter, selected_town_center),
+            ])
+
+        # Draw options into the 4x3 grid
+        idx = 0
+        for row in range(len(grid_buttons)):
+            for col in range(len(grid_buttons[row])):
+                if idx >= len(options):
+                    continue
+
+                label, cls, owner = options[idx]
+                btn = grid_buttons[row][col]
+
                 enabled = (
-                    current_player.milk >= Cow.milk_cost
-                    and current_player.wood >= Cow.wood_cost
-                    and selected_barn not in production_queues
+                        current_player.milk >= cls.milk_cost
+                        and current_player.wood >= cls.wood_cost
+                        and owner not in production_queues
                 )
-                pygame.draw.rect(screen, HIGHLIGHT_GRAY if enabled else GRAY, button_rect)
-                screen.blit(Unit._unit_icons.get("Cow"), (button_rect.x + 8, button_rect.y + 4))
-                draw_costs(Cow)
-                draw_progress(selected_barn, Cow)
 
-            # Barracks -> Axeman/Archer/Knight (rows 0..2)
-            elif current_player and selected_barracks and col == 0 and row in (0, 1, 2):
-                mapping = {0: Axeman, 1: Archer, 2: Knight}
-                unit_cls = mapping[row]
-                enabled = (
-                    current_player.milk >= unit_cls.milk_cost
-                    and current_player.wood >= unit_cls.wood_cost
-                    and selected_barracks not in production_queues
-                )
-                pygame.draw.rect(screen, HIGHLIGHT_GRAY if enabled else GRAY, button_rect)
-                screen.blit(Unit._unit_icons.get(unit_cls.__name__), (button_rect.x + 8, button_rect.y + 4))
-                draw_costs(unit_cls)
-                draw_progress(selected_barracks, unit_cls)
+                # If placing buildings from TownCenter, also enforce building limit
+                if owner == selected_town_center and issubclass(cls, Building):
+                    enabled = enabled and (
+                            current_player.building_limit is None
+                            or current_player.building_count < current_player.building_limit
+                    )
 
-            # TownCenter -> place Barn/Barracks/TownCenter (rows 0..2)
-            elif current_player and selected_town_center and col == 0 and row in (0, 1, 2):
-                mapping = {0: Barn, 1: Barracks, 2: TownCenter}
-                build_cls = mapping[row]
-                enabled = (
-                    current_player.milk >= build_cls.milk_cost
-                    and current_player.wood >= build_cls.wood_cost
-                    and (current_player.building_limit is None or current_player.building_count < current_player.building_limit)
-                    and selected_town_center not in production_queues
-                )
-                pygame.draw.rect(screen, HIGHLIGHT_GRAY if enabled else GRAY, button_rect)
-                screen.blit(Unit._unit_icons.get(build_cls.__name__), (button_rect.x + 8, button_rect.y + 4))
-                draw_costs(build_cls)
-                draw_progress(selected_town_center, build_cls)
+                pygame.draw.rect(screen, HIGHLIGHT_GRAY if enabled else GRAY, btn)
 
-            else:
-                pygame.draw.rect(screen, LIGHT_GRAY, button_rect)
+                icon = Unit._unit_icons.get(cls.__name__)
+                if icon:
+                    icon_75 = get_scaled(icon, 0.75)
+                    screen.blit(
+                        icon_75,
+                        (btn.x + btn.width - icon_75.get_width() -2, btn.y + 14),
+                    )
+
+                draw_label(btn, label, enabled=True)  # label always visible
+                draw_costs(btn, cls)
+                draw_progress(btn, owner, cls)
+
+                idx += 1
 
 
 def draw_selected_unit_icons(screen, all_units, current_player, fonts, icon_size=32, icon_margin=5):
@@ -196,7 +290,7 @@ def draw_selected_unit_icons(screen, all_units, current_player, fonts, icon_size
         return
 
     small_font = fonts["small_font"]
-    icon_x = VIEW_MARGIN_LEFT + 10
+    icon_x = VIEW_MARGIN_LEFT + 350
     icon_y = PANEL_Y + 10
 
     selected_units = [u for u in all_units if u.selected]
@@ -295,7 +389,7 @@ def draw_end_screen(screen, mode_text, quit_button, fonts):
 
 def draw_game_ui(screen, grid_buttons, current_player, production_queues, current_time, all_units, icons, fonts, fps):
     draw_panels(screen)
-    draw_grid_buttons(screen, grid_buttons, current_player, production_queues, current_time, icons, fonts["small_font"])
+    draw_grid_buttons(screen, grid_buttons, current_player, all_units, production_queues, current_time, icons, fonts["small_font"])
     draw_selected_unit_icons(
         screen,
         all_units,
