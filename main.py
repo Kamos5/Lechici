@@ -18,6 +18,7 @@ from tiles import GrassTile, Dirt, River, Bridge
 from units import Unit, Tree, Building, Barn, TownCenter, Barracks, Axeman, Knight, Archer, Cow
 from player import Player, PlayerAI
 from pathfinding import SpatialGrid, WaypointGraph
+import ui
 
 def run_game() -> int:
     """
@@ -33,51 +34,27 @@ def run_game() -> int:
     pygame.display.set_caption("Lechites")
     clock = pygame.time.Clock()
 
-    BUTTON_PLAYER0_POS = (VIEW_MARGIN_LEFT + VIEW_WIDTH - BUTTON_WIDTH - 10, VIEW_MARGIN_TOP + 40)
-    BUTTON_PLAYER1_POS = (VIEW_MARGIN_LEFT + VIEW_WIDTH - BUTTON_WIDTH - 10, VIEW_MARGIN_TOP + 40 + (BUTTON_HEIGHT + BUTTON_MARGIN))
-    BUTTON_PLAYER2_POS = (VIEW_MARGIN_LEFT + VIEW_WIDTH - BUTTON_WIDTH - 10, VIEW_MARGIN_TOP + 40 + 2 * (BUTTON_HEIGHT + BUTTON_MARGIN))
+    ui_layout = ui.build_ui_layout()
 
-    GRID_BUTTON_START_X = VIEW_BOUNDS_X - GRID_BUTTON_WIDTH - BUTTON_MARGIN
-    GRID_BUTTON_START_Y = PANEL_Y + (PANEL_HEIGHT - (GRID_BUTTON_ROWS * GRID_BUTTON_HEIGHT + (GRID_BUTTON_ROWS - 1) * GRID_BUTTON_MARGIN)) // 2
+    grid_buttons = ui_layout["grid_buttons"]
+    quit_button = ui_layout["quit_button"]
 
-    # Initialize 3x1 grid of button rectangles
-    grid_buttons = []
-    for row in range(GRID_BUTTON_ROWS):
-        row_buttons = []
-        for col in range(GRID_BUTTON_COLS):
-            x = GRID_BUTTON_START_X - col * (GRID_BUTTON_WIDTH + GRID_BUTTON_MARGIN)
-            y = GRID_BUTTON_START_Y + row * (GRID_BUTTON_HEIGHT + GRID_BUTTON_MARGIN)
-            row_buttons.append(pygame.Rect(x, y, GRID_BUTTON_WIDTH, GRID_BUTTON_HEIGHT))
-        grid_buttons.append(row_buttons)
+    button_player0 = ui_layout["button_player0"]
+    button_player1 = ui_layout["button_player1"]
+    button_player2 = ui_layout["button_player2"]
 
     # Camera settings
     camera_x = 0
     camera_y = 0
 
-    # Icon settings
-    ICON_SIZE = 32
-    ICON_MARGIN = 5
-
-    # Load icons with error handling
-    try:
-        wood_icon = pygame.image.load("assets/wood_icon.png").convert_alpha()
-        milk_icon = pygame.image.load("assets/milk_icon.png").convert_alpha()
-        unit_icon = pygame.image.load("assets/unit_icon.png").convert_alpha() if pygame.image.get_extended() else pygame.Surface((20, 20))
-        building_icon = pygame.image.load("assets/building_icon.png").convert_alpha() if pygame.image.get_extended() else pygame.Surface((20, 20))
-        wood_icon = pygame.transform.scale(wood_icon, (20, 20))
-        milk_icon = pygame.transform.scale(milk_icon, (20, 20))
-        unit_icon = pygame.transform.scale(unit_icon, (20, 20))
-        building_icon = pygame.transform.scale(building_icon, (20, 20))
-    except (pygame.error, FileNotFoundError) as e:
-        print(f"Failed to load icons: {e}")
-        wood_icon = pygame.Surface((20, 20))
-        milk_icon = pygame.Surface((20, 20))
-        unit_icon = pygame.Surface((20, 20))
-        building_icon = pygame.Surface((20, 20))
-        wood_icon.fill(BROWN)
-        milk_icon.fill(WHITE)
-        unit_icon.fill(LIGHT_GRAY)
-        building_icon.fill(LIGHT_GRAY)
+    # UI icons + sizes
+    ICON_SIZE = ui_layout["icon_size"]
+    ICON_MARGIN = ui_layout["icon_margin"]
+    icons = ui.load_ui_icons()
+    wood_icon = icons["wood"]
+    milk_icon = icons["milk"]
+    unit_icon = icons["unit"]
+    building_icon = icons["building"]
 
     # Move order and highlight tracking
     move_order_times = {}
@@ -96,16 +73,14 @@ def run_game() -> int:
     # Initialize game state
     game_state = GameState.RUNNING
 
-    # Define button properties for Quit button
-    QUIT_BUTTON_WIDTH = 200
-    QUIT_BUTTON_HEIGHT = 50
-    QUIT_BUTTON_POS = (SCREEN_WIDTH // 2 - QUIT_BUTTON_WIDTH // 2, SCREEN_HEIGHT // 2 + 50)
-    quit_button = pygame.Rect(QUIT_BUTTON_POS[0], QUIT_BUTTON_POS[1], QUIT_BUTTON_WIDTH, QUIT_BUTTON_HEIGHT)
-    button_font = pygame.font.Font(None, 36)
+    # Fonts
+    fonts = ui.create_fonts()
+    font = fonts["font"]
+    small_font = fonts["small_font"]
+    button_font = fonts["button_font"]
+    end_button_font = fonts["end_button_font"]
 
-
-
-    # --- World init (refactored) ---
+    # --- World init (refactored) --- (refactored) ---
     grass_tiles, needs_regrowth, river_tiles, players, all_units, spatial_grid, waypoint_graph, player2_ai = init_game_world()
 
     # Wire up shared mutable state for refactored modules
@@ -128,17 +103,9 @@ def run_game() -> int:
     selecting = False
     current_player = None
 
-    # Button rectangles
-    button_player0 = pygame.Rect(BUTTON_PLAYER0_POS[0], BUTTON_PLAYER0_POS[1], BUTTON_WIDTH, BUTTON_HEIGHT)
-    button_player1 = pygame.Rect(BUTTON_PLAYER1_POS[0], BUTTON_PLAYER1_POS[1], BUTTON_WIDTH, BUTTON_HEIGHT)
-    button_player2 = pygame.Rect(BUTTON_PLAYER2_POS[0], BUTTON_PLAYER2_POS[1], BUTTON_WIDTH, BUTTON_HEIGHT)
+    # UI rectangles/fonts already created via ui.build_ui_layout() and ui.create_fonts()
 
-    # Fonts
-    font = pygame.font.SysFont(None, 24)
-    small_font = pygame.font.SysFont(None, 16)
-    button_font = pygame.font.SysFont(None, 20)
-
-    # --- SPLIT POINT (End of Part 1) ---
+    # --- SPLIT POINT (End of Part 1) --- (End of Part 1) ---
     # The game loop and remaining code will continue in Part 2.
 
     # --- Part 2: Continuation from Part 1 ---
@@ -727,226 +694,38 @@ def run_game() -> int:
                 )
                 pygame.draw.rect(screen, current_player.color, rect, 3)
 
-            # Draw UI
-            pygame.draw.rect(screen, PANEL_COLOR, (0, 0, VIEW_MARGIN_LEFT, SCREEN_HEIGHT))
-            pygame.draw.rect(screen, PANEL_COLOR, (SCREEN_WIDTH - VIEW_MARGIN_RIGHT, 0, VIEW_MARGIN_RIGHT, SCREEN_HEIGHT))
-            pygame.draw.rect(screen, PANEL_COLOR, (0, 0, SCREEN_WIDTH, VIEW_MARGIN_TOP))
-            pygame.draw.rect(screen, PANEL_COLOR, (VIEW_MARGIN_LEFT, PANEL_Y, VIEW_WIDTH, PANEL_HEIGHT))
-
-            # Draw 3x1 grid of buttons with moving line animation
-            for row in range(GRID_BUTTON_ROWS):
-                for col in range(GRID_BUTTON_COLS):
-                    button_rect = grid_buttons[row][col]
-                    selected_barn = next((unit for unit in current_player.units if isinstance(unit, Barn) and unit.selected and unit.alpha == 255), None) if current_player else None
-                    selected_barracks = next((unit for unit in current_player.units if isinstance(unit, Barracks) and unit.selected and unit.alpha == 255), None) if current_player else None
-                    selected_town_center = next((unit for unit in current_player.units if isinstance(unit, TownCenter) and unit.selected and unit.alpha == 255), None) if current_player else None
-
-                    if current_player and selected_barn and row == 0 and col == 0:
-                        spawn_button_color = HIGHLIGHT_GRAY if (current_player.milk >= Cow.milk_cost and current_player.wood >= Cow.wood_cost and
-                                                                selected_barn not in production_queues) else GRAY
-                        pygame.draw.rect(screen, spawn_button_color, button_rect)
-                        screen.blit(Unit._unit_icons.get('Cow'), (button_rect.x + 8, button_rect.y + 4))
-                        screen.blit(milk_icon, (button_rect.x + 44, button_rect.y + 2))
-                        spawn_food_text = small_font.render(f"{Cow.milk_cost}", True, BLACK)
-                        screen.blit(spawn_food_text, (button_rect.x + 70, button_rect.y + 6))
-                        screen.blit(wood_icon, (button_rect.x + 44, button_rect.y + 22))
-                        spawn_wood_text = small_font.render(f"{Cow.wood_cost}", True, BLACK)
-                        screen.blit(spawn_wood_text, (button_rect.x + 70, button_rect.y + 26))
-                        if selected_barn in production_queues and production_queues[selected_barn]['unit_type'] == Cow:
-                            progress = (current_time - production_queues[selected_barn]['start_time']) / Cow.production_time
-                            progress_width = int(progress * (GRID_BUTTON_WIDTH - 4))
-                            pygame.draw.rect(screen, GREEN, (button_rect.x + 2, button_rect.y + 2, progress_width, 4))
-                    elif current_player and selected_barracks and row == 0 and col == 0:
-                            spawn_button_color = HIGHLIGHT_GRAY if (current_player.milk >= Axeman.milk_cost and current_player.wood >= Axeman.wood_cost and
-                                                                    selected_barracks not in production_queues) else GRAY
-                            pygame.draw.rect(screen, spawn_button_color, button_rect)
-                            screen.blit(Unit._unit_icons.get('Axeman'), (button_rect.x + 8, button_rect.y + 4))
-                            screen.blit(milk_icon, (button_rect.x + 44, button_rect.y + 2))
-                            spawn_food_text = small_font.render(f"{Axeman.milk_cost}", True, BLACK)
-                            screen.blit(spawn_food_text, (button_rect.x + 70, button_rect.y + 6))
-                            screen.blit(wood_icon, (button_rect.x + 44, button_rect.y + 22))
-                            spawn_wood_text = small_font.render(f"{Axeman.wood_cost}", True, BLACK)
-                            screen.blit(spawn_wood_text, (button_rect.x + 70, button_rect.y + 26))
-                            if selected_barracks in production_queues and production_queues[selected_barracks]['unit_type'] == Axeman:
-                                progress = (current_time - production_queues[selected_barracks]['start_time']) / Axeman.production_time
-                                progress_width = int(progress * (GRID_BUTTON_WIDTH - 4))
-                                pygame.draw.rect(screen, GREEN, (button_rect.x + 2, button_rect.y + 2, progress_width, 4))
-                    elif current_player and selected_barracks and row == 1 and col == 0:
-                            spawn_button_color = HIGHLIGHT_GRAY if (current_player.milk >= Archer.milk_cost and current_player.wood >= Archer.wood_cost and
-                                                                    selected_barracks not in production_queues) else GRAY
-                            pygame.draw.rect(screen, spawn_button_color, button_rect)
-                            screen.blit(Unit._unit_icons.get('Archer'), (button_rect.x + 8, button_rect.y + 4))
-                            screen.blit(milk_icon, (button_rect.x + 44, button_rect.y + 2))
-                            spawn_food_text = small_font.render(f"{Archer.milk_cost}", True, BLACK)
-                            screen.blit(spawn_food_text, (button_rect.x + 70, button_rect.y + 6))
-                            screen.blit(wood_icon, (button_rect.x + 44, button_rect.y + 22))
-                            spawn_wood_text = small_font.render(f"{Archer.wood_cost}", True, BLACK)
-                            screen.blit(spawn_wood_text, (button_rect.x + 70, button_rect.y + 26))
-                            if selected_barracks in production_queues and production_queues[selected_barracks]['unit_type'] == Archer:
-                                progress = (current_time - production_queues[selected_barracks]['start_time']) / Archer.production_time
-                                progress_width = int(progress * (GRID_BUTTON_WIDTH - 4))
-                                pygame.draw.rect(screen, GREEN, (button_rect.x + 2, button_rect.y + 2, progress_width, 4))
-                    elif current_player and selected_barracks and row == 2 and col == 0:
-                            spawn_button_color = HIGHLIGHT_GRAY if (current_player.milk >= Knight.milk_cost and current_player.wood >= Knight.wood_cost and
-                                                                    selected_barracks not in production_queues) else GRAY
-                            pygame.draw.rect(screen, spawn_button_color, button_rect)
-                            screen.blit(Unit._unit_icons.get('Knight'), (button_rect.x + 8, button_rect.y + 4))
-                            screen.blit(milk_icon, (button_rect.x + 44, button_rect.y + 2))
-                            spawn_food_text = small_font.render(f"{Knight.milk_cost}", True, BLACK)
-                            screen.blit(spawn_food_text, (button_rect.x + 70, button_rect.y + 6))
-                            screen.blit(wood_icon, (button_rect.x + 44, button_rect.y + 22))
-                            spawn_wood_text = small_font.render(f"{Knight.wood_cost}", True, BLACK)
-                            screen.blit(spawn_wood_text, (button_rect.x + 70, button_rect.y + 26))
-                            if selected_barracks in production_queues and production_queues[selected_barracks]['unit_type'] == Knight:
-                                progress = (current_time - production_queues[selected_barracks]['start_time']) / Knight.production_time
-                                progress_width = int(progress * (GRID_BUTTON_WIDTH - 4))
-                                pygame.draw.rect(screen, GREEN, (button_rect.x + 2, button_rect.y + 2, progress_width, 4))
-                    elif current_player and selected_town_center and row == 0 and col == 0:
-                            spawn_button_color = HIGHLIGHT_GRAY if (current_player.milk >= Barn.milk_cost and current_player.wood >= Barn.wood_cost and
-                                                                    (current_player.building_limit is None or current_player.building_count < current_player.building_limit) and
-                                                                    selected_town_center not in production_queues) else GRAY
-                            pygame.draw.rect(screen, spawn_button_color, button_rect)
-                            screen.blit(Unit._unit_icons.get('Barn'), (button_rect.x + 8, button_rect.y + 4))
-                            screen.blit(milk_icon, (button_rect.x + 44, button_rect.y + 2))
-                            spawn_food_text = small_font.render(f"{Barn.milk_cost}", True, BLACK)
-                            screen.blit(spawn_food_text, (button_rect.x + 70, button_rect.y + 6))
-                            screen.blit(wood_icon, (button_rect.x + 44, button_rect.y + 22))
-                            spawn_wood_text = small_font.render(f"{Barn.wood_cost}", True, BLACK)
-                            screen.blit(spawn_wood_text, (button_rect.x + 70, button_rect.y + 26))
-                            if selected_town_center in production_queues and production_queues[selected_town_center]['unit_type'] == Barn:
-                                progress = (current_time - production_queues[selected_town_center]['start_time']) / Barn.production_time
-                                progress_width = int(progress * (GRID_BUTTON_WIDTH - 4))
-                                pygame.draw.rect(screen, GREEN, (button_rect.x + 2, button_rect.y + 2, progress_width, 4))
-                    elif current_player and selected_town_center and row == 1 and col == 0:
-                            spawn_button_color = HIGHLIGHT_GRAY if (current_player.milk >= Barracks.milk_cost and current_player.wood >= Barracks.wood_cost and
-                                                                    (current_player.building_limit is None or current_player.building_count < current_player.building_limit) and
-                                                                    selected_town_center not in production_queues) else GRAY
-                            pygame.draw.rect(screen, spawn_button_color, button_rect)
-                            screen.blit(Unit._unit_icons.get('Barracks'), (button_rect.x + 8, button_rect.y + 4))
-                            screen.blit(milk_icon, (button_rect.x + 44, button_rect.y + 2))
-                            spawn_food_text = small_font.render(f"{Barracks.milk_cost}", True, BLACK)
-                            screen.blit(spawn_food_text, (button_rect.x + 70, button_rect.y + 6))
-                            screen.blit(wood_icon, (button_rect.x + 44, button_rect.y + 22))
-                            spawn_wood_text = small_font.render(f"{Barracks.wood_cost}", True, BLACK)
-                            screen.blit(spawn_wood_text, (button_rect.x + 70, button_rect.y + 26))
-                            if selected_town_center in production_queues and production_queues[selected_town_center]['unit_type'] == Barracks:
-                                progress = (current_time - production_queues[selected_town_center]['start_time']) / Barracks.production_time
-                                progress_width = int(progress * (GRID_BUTTON_WIDTH - 4))
-                                pygame.draw.rect(screen, GREEN, (button_rect.x + 2, button_rect.y + 2, progress_width, 4))
-                    elif current_player and selected_town_center and row == 2 and col == 0:
-                            spawn_button_color = HIGHLIGHT_GRAY if (current_player.milk >= TownCenter.milk_cost and current_player.wood >= TownCenter.wood_cost and
-                                                                    (current_player.building_limit is None or current_player.building_count < current_player.building_limit) and
-                                                                    selected_town_center not in production_queues) else GRAY
-                            pygame.draw.rect(screen, spawn_button_color, button_rect)
-                            screen.blit(Unit._unit_icons.get('TownCenter'), (button_rect.x + 8, button_rect.y + 4))
-                            screen.blit(milk_icon, (button_rect.x + 44, button_rect.y + 2))
-                            spawn_food_text = small_font.render(f"{TownCenter.milk_cost}", True, BLACK)
-                            screen.blit(spawn_food_text, (button_rect.x + 70, button_rect.y + 6))
-                            screen.blit(wood_icon, (button_rect.x + 44, button_rect.y + 22))
-                            spawn_wood_text = small_font.render(f"{TownCenter.wood_cost}", True, BLACK)
-                            screen.blit(spawn_wood_text, (button_rect.x + 70, button_rect.y + 26))
-                            if selected_town_center in production_queues and production_queues[selected_town_center]['unit_type'] == TownCenter:
-                                progress = (current_time - production_queues[selected_town_center]['start_time']) / TownCenter.production_time
-                                progress_width = int(progress * (GRID_BUTTON_WIDTH - 4))
-                                pygame.draw.rect(screen, GREEN, (button_rect.x + 2, button_rect.y + 2, progress_width, 4))
-                    else:
-                        pygame.draw.rect(screen, LIGHT_GRAY, button_rect)
-
-            # Draw unit icons for selected units
-            icon_x = VIEW_MARGIN_LEFT + 10
-            icon_y = PANEL_Y + 10
-            if current_player:
-                selected_units = [unit for unit in all_units if unit.selected]
-                for unit in selected_units:
-                    if isinstance(unit, Building) and unit.alpha < 255:
-                        continue
-                    cls_name = unit.__class__.__name__
-                    unit_icon_img = Unit._unit_icons.get(cls_name)
-                    if unit_icon_img:
-                        screen.blit(unit_icon_img, (icon_x, icon_y))
-                    else:
-                        pygame.draw.rect(screen, WHITE, (icon_x, icon_y, ICON_SIZE, ICON_SIZE))
-                    if len(selected_units) == 1:
-                        display_text = f"{unit.name or cls_name} - {cls_name}"
-                        text_surface = small_font.render(display_text, True, unit.player_color)
-                        screen.blit(text_surface, (icon_x, icon_y + ICON_SIZE + 5))
-                        hp_text = f"HP: {int(unit.hp)}/{int(unit.max_hp)}"
-                        hp_surface = small_font.render(hp_text, True, unit.player_color)
-                        screen.blit(hp_surface, (icon_x, icon_y + ICON_SIZE + 20))
-                        attack_text = f"Attack: {unit.attack_damage}"
-                        attack_surface = small_font.render(attack_text, True, unit.player_color)
-                        screen.blit(attack_surface, (icon_x, icon_y + ICON_SIZE + 35))
-                        armor_text = f"Armor: {unit.armor}"
-                        armor_surface = small_font.render(armor_text, True, unit.player_color)
-                        screen.blit(armor_surface, (icon_x, icon_y + ICON_SIZE + 50))
-                        speed_text = f"Speed: {unit.speed}"
-                        speed_surface = small_font.render(speed_text, True, unit.player_color)
-                        screen.blit(speed_surface, (icon_x, icon_y + ICON_SIZE + 65))
-                        if isinstance(unit, Cow):
-                            speed_text = f"Milk: {int(unit.special)}"
-                            speed_surface = small_font.render(speed_text, True, unit.player_color)
-                            screen.blit(speed_surface, (icon_x, icon_y + ICON_SIZE + 80))
-                    icon_x += ICON_SIZE + ICON_MARGIN
-
-            # Draw additional info
-            if current_player:
-                screen.blit(milk_icon, (VIEW_MARGIN_LEFT + 10, 10))
-                resources_text = font.render(
-                    f": {current_player.milk:.0f}/{current_player.max_milk}",
-                    True, current_player.color
-                )
-                screen.blit(resources_text, (VIEW_MARGIN_LEFT + 30, 15))
-                screen.blit(wood_icon, (VIEW_MARGIN_LEFT + 120, 10))
-                wood_text = f": {current_player.wood:.0f}/{current_player.max_wood}"
-                resources_text = font.render(wood_text, True, current_player.color)
-                screen.blit(resources_text, (VIEW_MARGIN_LEFT + 140, 15))
-                if current_player.unit_limit is not None:
-                    screen.blit(unit_icon, (VIEW_MARGIN_LEFT + 230, 10))
-                    unit_text = f": {current_player.unit_count}/{current_player.unit_limit}"
-                    text_color = ORANGE if current_player.unit_count > current_player.unit_limit else current_player.color
-                    unit_text_surface = font.render(unit_text, True, text_color)
-                    screen.blit(unit_text_surface, (VIEW_MARGIN_LEFT + 250, 15))
-                if current_player.building_limit is not None:
-                    screen.blit(building_icon, (VIEW_MARGIN_LEFT + 320, 10))
-                    building_text = f": {current_player.building_count}/{current_player.building_limit}"
-                    text_color = ORANGE if current_player.building_count > current_player.building_limit else current_player.color
-                    building_text_surface = font.render(building_text, True, text_color)
-                    screen.blit(building_text_surface, (VIEW_MARGIN_LEFT + 340, 15))
-
+            # Draw UI (refactored)
             fps = clock.get_fps()
-            fps_text = font.render(f"FPS: {int(fps)}", True, WHITE)
-            screen.blit(fps_text, (VIEW_MARGIN_LEFT + VIEW_WIDTH - 80, VIEW_MARGIN_TOP + 10))
-
-            selected_count = sum(1 for unit in all_units if unit.selected and unit.player_id == (current_player.player_id if current_player else -1))
-            selected_text = font.render(f"Selected Units: {selected_count}", True, BLACK)
-            screen.blit(selected_text, (VIEW_MARGIN_LEFT + 10, PANEL_Y + 135))
+            ui.draw_game_ui(
+                screen=screen,
+                grid_buttons=grid_buttons,
+                current_player=current_player,
+                production_queues=production_queues,
+                current_time=current_time,
+                all_units=all_units,
+                icons=icons,
+                fonts=fonts,
+                fps=fps,
+            )
 
         elif game_state == GameState.DEFEAT:
             # Draw Defeat screen
-            screen.fill((100, 0, 0))  # Dark red background
-            defeat_text = font.render("Defeat! Player 1 has lost all units.", True, WHITE)
-            defeat_rect = defeat_text.get_rect(center=(SCREEN_WIDTH // 2, SCREEN_HEIGHT // 2 - 50))
-            screen.blit(defeat_text, defeat_rect)
-
-            # Draw Quit button
-            pygame.draw.rect(screen, GRAY, quit_button)
-            quit_text = button_font.render("Quit", True, BLACK)
-            quit_rect = quit_text.get_rect(center=quit_button.center)
-            screen.blit(quit_text, quit_rect)
+            ui.draw_end_screen(
+                screen,
+                mode_text=("Defeat! Player 1 has lost all units.", (100, 0, 0)),
+                quit_button=quit_button,
+                fonts=fonts,
+            )
             running = False
 
         elif game_state == GameState.VICTORY:
             # Draw Victory screen
-            screen.fill((0, 100, 0))  # Dark green background
-            victory_text = font.render("Victory! Player 2 has been defeated!", True, WHITE)
-            victory_rect = victory_text.get_rect(center=(SCREEN_WIDTH // 2, SCREEN_HEIGHT // 2 - 50))
-            screen.blit(victory_text, victory_rect)
-
-            # Draw Quit button
-            pygame.draw.rect(screen, GRAY, quit_button)
-            quit_text = button_font.render("Quit", True, BLACK)
-            quit_rect = quit_text.get_rect(center=quit_button.center)
-            screen.blit(quit_text, quit_rect)
+            ui.draw_end_screen(
+                screen,
+                mode_text=("Victory! Player 2 has been defeated!", (0, 100, 0)),
+                quit_button=quit_button,
+                fonts=fonts,
+            )
             running = False
 
         pygame.display.flip()
