@@ -105,6 +105,13 @@ def run_game() -> int:
     selecting = False
     current_player = None
 
+    # --- Mouse selection state (click vs box-select) ---
+    pending_click = False
+    pending_click_unit = None
+    mouse_down_screen = None
+    mouse_down_world = None
+    drag_threshold_px = 6  # pixels
+
     # UI rectangles/fonts already created via ui.build_ui_layout() and ui.create_fonts()
 
     # --- SPLIT POINT (End of Part 1) --- (End of Part 1) ---
@@ -291,41 +298,30 @@ def run_game() -> int:
                                         unit_clicked = unit
                                         clicked_something = True
                                         break
-                                if unit_clicked:
-                                    if pygame.key.get_mods() & pygame.KMOD_SHIFT:
-                                        unit_clicked.selected = not unit_clicked.selected
-                                        print(f"Toggled selection for {unit_clicked.__class__.__name__} at {unit_clicked.pos} (Player {unit_clicked.player_id})")
-                                    else:
-                                        for player in players:
-                                            player.deselect_all_units()
-                                        unit_clicked.selected = True
-                                        if unit_clicked.player_id == current_player.player_id:
-                                            selected_barn = unit_clicked if isinstance(unit_clicked, Barn) and unit_clicked.alpha == 255 else None
-                                            selected_barracks = unit_clicked if isinstance(unit_clicked, Barracks) and unit_clicked.alpha == 255 else None
-                                            selected_town_center = unit_clicked if isinstance(unit_clicked, TownCenter) and unit_clicked.alpha == 255 else None
-                                        else:
-                                            selected_barn = None
-                                            selected_barracks = None
-                                            selected_town_center = None
-                                        placing_building = False
-                                        building_to_place = None
-                                        building_pos = None
-                                        print(f"Selected unit {unit_clicked.__class__.__name__} at {unit_clicked.pos} (Player {unit_clicked.player_id}) via map click")
-                                        selected_units = [u for u in current_player.units if u.selected]
-                                        for selected_unit in selected_units:
-                                            if isinstance(selected_unit, (Axeman, Archer, Knight)) and selected_unit != unit_clicked:
-                                                selected_unit.target = unit_clicked
-                                                selected_unit.path = waypoint_graph.get_path(selected_unit.pos, unit_clicked.pos, selected_unit)
-                                                selected_unit.path_index = 0
-                                                selected_unit.autonomous_target = False
-                                                highlight_times[unit_clicked] = current_time
-                                                print(f"Set target to {unit_clicked.__class__.__name__} at {unit_clicked.pos} for {selected_unit.__class__.__name__} at {selected_unit.pos}")
+
+                                # SHIFT+click keeps old toggle behavior immediately (no pending click / drag)
+                                if unit_clicked and (pygame.key.get_mods() & pygame.KMOD_SHIFT):
+                                    unit_clicked.selected = not unit_clicked.selected
+                                    print(f"Toggled selection for {unit_clicked.__class__.__name__} at {unit_clicked.pos} (Player {unit_clicked.player_id})")
+                                    pending_click = False
+                                    pending_click_unit = None
+                                    mouse_down_screen = None
+                                    mouse_down_world = None
+                                    selecting = False
+                                    selection_start = None
+                                    selection_end = None
                                 else:
+                                    # Defer single-click selection until mouse-up.
+                                    # If the mouse moves beyond a small threshold, treat it as a box select
+                                    # even if the drag starts on top of a unit/building.
                                     if not placing_building:
-                                        for player in players:
-                                            player.deselect_all_units()
+                                        pending_click = True
+                                        pending_click_unit = unit_clicked
+                                        mouse_down_screen = Vector2(event.pos)
+                                        mouse_down_world = click_pos
                                         selection_start = click_pos
-                                        selecting = True
+                                        selection_end = click_pos
+                                        selecting = False
                                     elif placing_building:
                                         tile_x = int(click_pos.x // TILE_SIZE)
                                         tile_y = int(click_pos.y // TILE_SIZE)
@@ -423,20 +419,81 @@ def run_game() -> int:
                                             move_order_times[snapped_pos] = current_time
                                             print(f"Move order recorded at snapped pos {snapped_pos}")
             elif event.type == pygame.MOUSEBUTTONUP:
-                if game_state == GameState.RUNNING and event.button == 1 and selecting and current_player:
-                    mouse_pos = Vector2(event.pos)
-                    if VIEW_MARGIN_LEFT <= mouse_pos.x <= VIEW_BOUNDS_X and VIEW_MARGIN_TOP <= mouse_pos.y <= VIEW_BOUNDS_Y:
-                        selection_end = camera.screen_to_world(mouse_pos, view_margin_left=VIEW_MARGIN_LEFT, view_margin_top=VIEW_MARGIN_TOP)
-                        selecting = False
-                        for player in players:
-                            player.deselect_all_units()
-                        for unit in current_player.units:
-                            unit.selected = (min(selection_start.x, selection_end.x) <= unit.pos.x <= max(selection_start.x, selection_end.x) and
-                                             min(selection_start.y, selection_end.y) <= unit.pos.y <= max(selection_start.y, selection_end.y))
-                        selection_start = None
-                        selection_end = None
+                if game_state == GameState.RUNNING and event.button == 1:
+                    # Finish box-select
+                    if selecting and current_player:
+                        mouse_pos = Vector2(event.pos)
+                        if VIEW_MARGIN_LEFT <= mouse_pos.x <= VIEW_BOUNDS_X and VIEW_MARGIN_TOP <= mouse_pos.y <= VIEW_BOUNDS_Y:
+                            selection_end = camera.screen_to_world(mouse_pos, view_margin_left=VIEW_MARGIN_LEFT, view_margin_top=VIEW_MARGIN_TOP)
+                            selecting = False
+                            for player in players:
+                                player.deselect_all_units()
+                            for unit in current_player.units:
+                                unit.selected = (min(selection_start.x, selection_end.x) <= unit.pos.x <= max(selection_start.x, selection_end.x) and
+                                                 min(selection_start.y, selection_end.y) <= unit.pos.y <= max(selection_start.y, selection_end.y))
+                            selection_start = None
+                            selection_end = None
+
+                        pending_click = False
+                        pending_click_unit = None
+                        mouse_down_screen = None
+                        mouse_down_world = None
+
+                    # Resolve pending single-click (only if we never turned it into a drag)
+                    elif pending_click and current_player:
+                        unit_clicked = pending_click_unit
+                        pending_click = False
+                        pending_click_unit = None
+                        mouse_down_screen = None
+                        mouse_down_world = None
+
+                        if unit_clicked:
+                            for player in players:
+                                player.deselect_all_units()
+                            unit_clicked.selected = True
+                            if unit_clicked.player_id == current_player.player_id:
+                                selected_barn = unit_clicked if isinstance(unit_clicked, Barn) and unit_clicked.alpha == 255 else None
+                                selected_barracks = unit_clicked if isinstance(unit_clicked, Barracks) and unit_clicked.alpha == 255 else None
+                                selected_town_center = unit_clicked if isinstance(unit_clicked, TownCenter) and unit_clicked.alpha == 255 else None
+                            else:
+                                selected_barn = None
+                                selected_barracks = None
+                                selected_town_center = None
+                            placing_building = False
+                            building_to_place = None
+                            building_pos = None
+                            print(f"Selected unit {unit_clicked.__class__.__name__} at {unit_clicked.pos} (Player {unit_clicked.player_id}) via map click")
+                            selected_units = [u for u in current_player.units if u.selected]
+                            for selected_unit in selected_units:
+                                if isinstance(selected_unit, (Axeman, Archer, Knight)) and selected_unit != unit_clicked:
+                                    selected_unit.target = unit_clicked
+                                    selected_unit.path = waypoint_graph.get_path(selected_unit.pos, unit_clicked.pos, selected_unit)
+                                    selected_unit.path_index = 0
+                                    selected_unit.autonomous_target = False
+                                    highlight_times[unit_clicked] = current_time
+                                    print(f"Set target to {unit_clicked.__class__.__name__} at {unit_clicked.pos} for {selected_unit.__class__.__name__} at {selected_unit.pos}")
+                        else:
+                            # Clicked empty ground: just clear selection
+                            if not placing_building:
+                                for player in players:
+                                    player.deselect_all_units()
             elif event.type == pygame.MOUSEMOTION:
                 if game_state == GameState.RUNNING:
+                    # If we have a pending click, turn it into a box-select once we move far enough.
+                    if pending_click and not selecting and mouse_down_screen is not None:
+                        delta = Vector2(event.pos) - mouse_down_screen
+                        if delta.length_squared() >= (drag_threshold_px * drag_threshold_px):
+                            # Start box selecting (even if the drag began over a unit/building)
+                            selecting = True
+                            pending_click = False
+                            pending_click_unit = None
+                            for player in players:
+                                player.deselect_all_units()
+                            selection_start = mouse_down_world
+                            mouse_pos = Vector2(event.pos)
+                            if VIEW_MARGIN_LEFT <= mouse_pos.x <= VIEW_BOUNDS_X and VIEW_MARGIN_TOP <= mouse_pos.y <= VIEW_BOUNDS_Y:
+                                selection_end = camera.screen_to_world(mouse_pos, view_margin_left=VIEW_MARGIN_LEFT, view_margin_top=VIEW_MARGIN_TOP)
+
                     if selecting:
                         mouse_pos = Vector2(event.pos)
                         if VIEW_MARGIN_LEFT <= mouse_pos.x <= VIEW_BOUNDS_X and VIEW_MARGIN_TOP <= mouse_pos.y <= VIEW_BOUNDS_Y:
