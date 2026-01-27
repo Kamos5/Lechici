@@ -464,6 +464,17 @@ def run_game() -> int:
             town_center_selected = any(isinstance(unit, TownCenter) and unit.selected and unit.alpha == 255 for unit in (current_player.units if current_player else []))
             town_shamans_hut = any(isinstance(unit, ShamansHut) and unit.selected and unit.alpha == 255 for unit in (current_player.units if current_player else []))
 
+            # --- NEW: arrow-key camera scroll ---
+            keys = pygame.key.get_pressed()
+            CAMERA_KEY_SPEED = 12  # pixels per frame at 60 FPS (tweak)
+
+            dx = (keys[pygame.K_RIGHT] - keys[pygame.K_LEFT]) * CAMERA_KEY_SPEED
+            dy = (keys[pygame.K_DOWN] - keys[pygame.K_UP]) * CAMERA_KEY_SPEED
+
+            if dx or dy:
+                camera.x = max(0, min(camera.x + dx, MAP_WIDTH - VIEW_WIDTH))
+                camera.y = max(0, min(camera.y + dy, MAP_HEIGHT - VIEW_HEIGHT))
+
             # Update production queues
             units_to_spawn = []
             for building, queue in list(production_queues.items()):
@@ -706,6 +717,8 @@ def run_game() -> int:
                 icons=icons,
                 fonts=fonts,
                 fps=fps,
+                grass_tiles=grass_tiles,
+                camera=camera,
             )
 
         elif game_state == GameState.DEFEAT:

@@ -442,14 +442,30 @@ def draw_end_screen(screen, mode_text, quit_button, fonts):
     screen.blit(quit_text, quit_rect)
 
 
-def draw_game_ui(screen, grid_buttons, current_player, production_queues, current_time, all_units, icons, fonts, fps):
+def draw_game_ui(
+    screen,
+    grid_buttons,
+    current_player,
+    production_queues,
+    current_time,
+    all_units,
+    icons,
+    fonts,
+    fps,
+    *,
+    grass_tiles,
+    camera,
+):
     draw_panels(screen)
     draw_grid_buttons(screen, grid_buttons, current_player, all_units, production_queues, current_time, icons, fonts["small_font"])
+
+    # --- NEW: minimap bottom-right (inside right panel) ---
+    draw_minimap(screen, grass_tiles=grass_tiles, all_units=all_units, camera=camera, current_player=current_player)
 
     # Totem separator between the left build grid and the selected-unit info area
     if icons and icons.get("totem"):
         totem = icons["totem"]
-        tx = VIEW_MARGIN_LEFT - (totem.get_width() // 2) + 320  # centered on the boundary
+        tx = VIEW_MARGIN_LEFT - (totem.get_width() // 2) + 320
         ty = PANEL_Y + (PANEL_HEIGHT - totem.get_height()) // 2
         screen.blit(totem, (tx, ty))
 
@@ -464,3 +480,113 @@ def draw_game_ui(screen, grid_buttons, current_player, production_queues, curren
     draw_resources_and_limits(screen, current_player, icons, fonts)
     draw_fps(screen, fps, fonts)
     draw_selected_count(screen, all_units, current_player, fonts)
+
+def _minimap_rect():
+    # Right panel bounds: x in [SCREEN_WIDTH - VIEW_MARGIN_RIGHT, SCREEN_WIDTH)
+    pad = 10
+    panel_x = SCREEN_WIDTH - VIEW_MARGIN_RIGHT
+    panel_w = VIEW_MARGIN_RIGHT
+
+    # Choose a square minimap that fits comfortably
+    size = min(panel_w - 2 * pad, 220)
+    size = max(120, size)  # avoid too tiny
+
+    x = panel_x + panel_w - pad - size
+    y = SCREEN_HEIGHT - pad - size
+    return pygame.Rect(x, y, size, size)
+
+
+def _minimap_base_surface(grass_tiles, size):
+    """
+    Build (and cache) a low-res terrain thumbnail.
+    Rebuilt only if (a) map object changes or (b) size changes.
+    """
+    if not hasattr(_minimap_base_surface, "_cache"):
+        _minimap_base_surface._cache = {}  # (id(grass_tiles), size) -> Surface
+
+    key = (id(grass_tiles), size)
+    if key in _minimap_base_surface._cache:
+        return _minimap_base_surface._cache[key]
+
+    # Build a small surface; we sample the world grid into this thumbnail
+    surf = pygame.Surface((size, size))
+    surf.fill((0, 0, 0))
+
+    rows = len(grass_tiles)
+    cols = len(grass_tiles[0]) if rows else 0
+    if rows == 0 or cols == 0:
+        _minimap_base_surface._cache[key] = surf
+        return surf
+
+    # Map thumbnail pixels -> world tiles (nearest sampling)
+    # This is O(size^2) once, which is cheap at ~200x200.
+    for py in range(size):
+        row = int(py * rows / size)
+        for px in range(size):
+            col = int(px * cols / size)
+            t = grass_tiles[row][col]
+
+            # Try to use tile.color if it exists, else fall back by class name
+            c = getattr(t, "color", None)
+            if c is not None:
+                rgb = c[:3]
+            else:
+                name = t.__class__.__name__
+                if "River" in name:
+                    rgb = (40, 90, 180)
+                elif "Bridge" in name:
+                    rgb = (120, 100, 60)
+                elif "Dirt" in name:
+                    rgb = (110, 80, 40)
+                else:
+                    rgb = (40, 140, 60)  # grass-ish fallback
+
+            surf.set_at((px, py), rgb)
+
+    _minimap_base_surface._cache[key] = surf
+    return surf
+
+
+def draw_minimap(screen, *, grass_tiles, all_units, camera, current_player):
+    mm = _minimap_rect()
+
+    # Base terrain (cached)
+    base = _minimap_base_surface(grass_tiles, mm.w)
+    screen.blit(base, mm.topleft)
+
+    # Border
+    pygame.draw.rect(screen, (240, 240, 240), mm, 2)
+
+    # Camera viewport rectangle (scaled to minimap)
+    # World dimensions come from constants
+    cam_x = max(0, min(camera.x, MAP_WIDTH - VIEW_WIDTH))
+    cam_y = max(0, min(camera.y, MAP_HEIGHT - VIEW_HEIGHT))
+
+    vx = mm.x + int((cam_x / MAP_WIDTH) * mm.w)
+    vy = mm.y + int((cam_y / MAP_HEIGHT) * mm.h)
+    vw = max(2, int((VIEW_WIDTH / MAP_WIDTH) * mm.w))
+    vh = max(2, int((VIEW_HEIGHT / MAP_HEIGHT) * mm.h))
+    pygame.draw.rect(screen, (255, 255, 255), pygame.Rect(vx, vy, vw, vh), 1)
+
+    # Units as tiny dots (cheap: just a few draws)
+    # Only draw "real" units (you can tune filters as needed)
+    for u in all_units:
+        # If you want: skip neutral trees, etc. by class name
+        # if u.__class__.__name__ == "Tree": continue
+
+        ux = mm.x + int((u.pos.x / MAP_WIDTH) * mm.w)
+        uy = mm.y + int((u.pos.y / MAP_HEIGHT) * mm.h)
+
+        # Clamp to minimap
+        if mm.collidepoint(ux, uy):
+            col = getattr(u, "player_color", (255, 255, 255))
+            pygame.draw.circle(screen, col, (ux, uy), 2)
+
+    # Optional: highlight current player's selected units a bit more
+    if current_player:
+        for u in all_units:
+            if getattr(u, "selected", False) and getattr(u, "player_id", None) == current_player.player_id:
+                ux = mm.x + int((u.pos.x / MAP_WIDTH) * mm.w)
+                uy = mm.y + int((u.pos.y / MAP_HEIGHT) * mm.h)
+                if mm.collidepoint(ux, uy):
+                    pygame.draw.circle(screen, (255, 255, 255), (ux, uy), 3, 1)
