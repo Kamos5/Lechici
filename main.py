@@ -120,6 +120,9 @@ def run_game() -> int:
     mouse_down_world = None
     drag_threshold_px = 6  # pixels
 
+    # --- NEW: minimap drag state ---
+    minimap_dragging = False
+
     # UI rectangles/fonts already created via ui.build_ui_layout() and ui.create_fonts()
 
     # --- SPLIT POINT (End of Part 1) --- (End of Part 1) ---
@@ -176,9 +179,30 @@ def run_game() -> int:
                 elif game_state == GameState.RUNNING:
                     if event.button == 1:  # Left click
                         mouse_pos = Vector2(event.pos)
-                        click_pos = camera.screen_to_world(mouse_pos, view_margin_left=VIEW_MARGIN_LEFT, view_margin_top=VIEW_MARGIN_TOP)
                         clicked_something = False
 
+                        # --- NEW: minimap click/drag begins here ---
+                        mm_world = ui.minimap_screen_to_world(mouse_pos)
+                        if mm_world is not None:
+                            minimap_dragging = True
+                            camera.center_on(mm_world)
+
+                            # Cancel selection/drag-box state so minimap drag doesn't turn into box-select
+                            pending_click = False
+                            pending_click_unit = None
+                            mouse_down_screen = None
+                            mouse_down_world = None
+                            selecting = False
+                            selection_start = None
+                            selection_end = None
+
+                            continue  # consume this click entirely
+
+                        click_pos = camera.screen_to_world(
+                            mouse_pos,
+                            view_margin_left=VIEW_MARGIN_LEFT,
+                            view_margin_top=VIEW_MARGIN_TOP,
+                        )
                         # Check LEFT grid for either unit commands (priority) or production
                         # Check LEFT grid for either unit commands (priority) or production
                         grid_button_clicked = False
@@ -366,6 +390,11 @@ def run_game() -> int:
             elif event.type == pygame.MOUSEBUTTONUP:
                 if game_state == GameState.RUNNING and event.button == 1:
                     # Finish box-select
+                    # --- NEW: end minimap drag ---
+                    if minimap_dragging:
+                        minimap_dragging = False
+                        continue
+
                     if selecting and current_player:
                         mouse_pos = Vector2(event.pos)
                         if VIEW_MARGIN_LEFT <= mouse_pos.x <= VIEW_BOUNDS_X and VIEW_MARGIN_TOP <= mouse_pos.y <= VIEW_BOUNDS_Y:
@@ -426,6 +455,14 @@ def run_game() -> int:
                                     player.deselect_all_units()
             elif event.type == pygame.MOUSEMOTION:
                 if game_state == GameState.RUNNING:
+                    # --- NEW: minimap dragging ---
+                    if minimap_dragging:
+                        mouse_pos = Vector2(event.pos)
+                        mm_world = ui.minimap_screen_to_world(mouse_pos)
+                        if mm_world is not None:
+                            camera.center_on(mm_world)
+                        continue  # don't let minimap drag turn into box select / placement updates
+
                     # If we have a pending click, turn it into a box-select once we move far enough.
                     if pending_click and not selecting and mouse_down_screen is not None:
                         delta = Vector2(event.pos) - mouse_down_screen
@@ -456,7 +493,8 @@ def run_game() -> int:
         if game_state == GameState.RUNNING:
             # Update camera
             mouse_pos_screen = pygame.mouse.get_pos()
-            camera.update(mouse_pos_screen)
+            if not minimap_dragging:
+                camera.update(mouse_pos_screen)
 
             # Check for building selection
             barn_selected = any(isinstance(unit, Barn) and unit.selected and unit.alpha == 255 for unit in (current_player.units if current_player else []))

@@ -546,6 +546,29 @@ def _minimap_base_surface(grass_tiles, size):
     _minimap_base_surface._cache[key] = surf
     return surf
 
+def minimap_screen_to_world(pos) -> Vector2 | None:
+    """
+    If `pos` (screen pixels) is inside the minimap, return the corresponding
+    world-space point (pixels). Otherwise return None.
+    """
+    mm = _minimap_rect()
+
+    # Accept either tuple (x,y) or Vector2
+    if hasattr(pos, "x"):
+        sx, sy = int(pos.x), int(pos.y)
+    else:
+        sx, sy = int(pos[0]), int(pos[1])
+
+    if not mm.collidepoint(sx, sy):
+        return None
+
+    nx = (sx - mm.x) / mm.w
+    ny = (sy - mm.y) / mm.h
+
+    # Map normalized minimap coord -> world pixels
+    wx = max(0.0, min(float(MAP_WIDTH), nx * MAP_WIDTH))
+    wy = max(0.0, min(float(MAP_HEIGHT), ny * MAP_HEIGHT))
+    return Vector2(wx, wy)
 
 def draw_minimap(screen, *, grass_tiles, all_units, camera, current_player):
     mm = _minimap_rect()

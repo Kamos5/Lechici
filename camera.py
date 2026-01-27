@@ -62,3 +62,15 @@ class Camera:
     def world_to_screen(self, world_pos: Vector2, *, view_margin_left: int, view_margin_top: int) -> Vector2:
         """Convert world coords (pixels) to screen coords, considering view margins and camera offset."""
         return Vector2(world_pos.x - self.x + view_margin_left, world_pos.y - self.y + view_margin_top)
+
+    def center_on(self, world_pos: Vector2) -> None:
+        """
+        Center the camera on a world-space point.
+        If near the map border, clamp so the view stays in-bounds
+        (i.e. as close to centered as possible).
+        """
+        target_x = float(world_pos.x) - (self.view_width / 2.0)
+        target_y = float(world_pos.y) - (self.view_height / 2.0)
+
+        self.x = self._clamp_axis(target_x, self.view_width, self.map_width)
+        self.y = self._clamp_axis(target_y, self.view_height, self.map_height)
