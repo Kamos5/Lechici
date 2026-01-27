@@ -32,7 +32,7 @@ class Unit:
         self.velocity = Vector2(0, 0)
         self.damping = 0.95
         self.hp = 50
-        self.view_distance = 50
+        self.view_distance = 5
         self.max_hp = 50
         self.mana = 0
         self.special = 0
