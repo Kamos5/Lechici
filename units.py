@@ -11,6 +11,87 @@ from constants import *
 import context
 from tiles import GrassTile, Dirt
 
+# --- Team-color mask swap (shared by game + editor) ---
+
+# Which color(s) in each sprite should be replaced with player_color.
+# Put the "team mask" color(s) used in your PNGs here.
+TEAM_MASKS: Dict[str, List[str]] = {
+    # Buildings
+    "Barracks": ["#6f0000"],
+    "TownCenter": ["#6f0000"],
+    "Barn": ["#6f0000"],
+    # Units (if your unit sprites have a team mask too)
+    "Axeman": ["#6f0000"],
+    "Knight": ["#6b0000"],
+    "Archer": ["#6f0000"],
+    # "Cow": ["#6f0000"],
+    "ShamansHut": ["#6f0000"],
+}
+
+# Cache tinted result per (class_name, desired_px, player_color_rgb)
+_TEAM_SPRITE_CACHE: Dict[Tuple[str, int, Tuple[int, int, int]], pygame.Surface] = {}
+
+
+def remap_red_gradient(
+    src: pygame.Surface,
+    red_min: int,
+    red_max: int,
+    team_color: Tuple[int, int, int],
+) -> pygame.Surface:
+    """
+    Remap pixels whose RED channel is in [red_min, red_max]
+    into a shaded version of team_color.
+    Preserves alpha and shading.
+    """
+    surf = src.copy().convert_alpha()
+    px = pygame.PixelArray(surf)
+
+    tr, tg, tb = team_color
+    span = max(1, red_max - red_min)
+
+    for x in range(surf.get_width()):
+        for y in range(surf.get_height()):
+            c = surf.unmap_rgb(px[x, y])
+            if red_min <= c.r <= red_max and c.g == 0 and c.b == 0:
+                t = (c.r - red_min) / span  # 0..1
+                nr = int(tr * t)
+                ng = int(tg * t)
+                nb = int(tb * t)
+                px[x, y] = (nr, ng, nb, c.a)
+
+    del px
+    return surf
+
+def get_team_sprite(cls_name: str, desired_px: int, player_color: Tuple[int, int, int]) -> Optional[pygame.Surface]:
+    """
+    Return sprite for cls_name scaled to desired_px.
+    If cls_name has TEAM_MASKS, replace those colors with player_color.
+    Works in-game (Unit.draw) and in map_editor (preview sprites).
+    """
+    # Ensure base sprite is loaded at the requested size
+    if cls_name not in Unit._images or Unit._images.get(cls_name) is None:
+        Unit.load_images(cls_name, desired_px)
+
+    base = Unit._images.get(cls_name)
+    if base is None:
+        return None
+
+    if cls_name not in TEAM_MASKS:
+        return base
+
+    key = (cls_name, int(desired_px), tuple(player_color[:3]))
+    if key in _TEAM_SPRITE_CACHE:
+        return _TEAM_SPRITE_CACHE[key]
+
+    tinted = remap_red_gradient(
+        base,
+        red_min=0x20,
+        red_max=0xFF,
+        team_color=key[2],
+    )
+
+    _TEAM_SPRITE_CACHE[key] = tinted
+    return tinted
 
 class Unit:
     _images = {}
@@ -75,7 +156,7 @@ class Unit:
             self.pos.y < camera_y - self.size / 2 or self.pos.y > camera_y + VIEW_HEIGHT + self.size / 2):
             return
         cls_name = self.__class__.__name__
-        image = self._images.get(cls_name)
+        image = get_team_sprite(cls_name, int(self.size), tuple(self.player_color[:3]))
         x = self.pos.x - camera_x + VIEW_MARGIN_LEFT
         y = self.pos.y - camera_y + VIEW_MARGIN_TOP
         if not image:
@@ -726,7 +807,7 @@ class Cow(Unit):
             self.pos.y < camera_y - self.size / 2 or self.pos.y > camera_y + VIEW_HEIGHT + self.size / 2):
             return
         cls_name = self.__class__.__name__
-        image = self._images.get(cls_name)
+        image = get_team_sprite(cls_name, int(self.size), tuple(self.player_color[:3]))
         x = self.pos.x - camera_x + VIEW_MARGIN_LEFT
         y = self.pos.y - camera_y + VIEW_MARGIN_TOP
         if not image:

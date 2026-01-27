@@ -21,7 +21,7 @@ import pygame
 
 from constants import *  # SCREEN_WIDTH/HEIGHT, TILE_SIZE, VIEW_* etc.
 from tiles import GrassTile, Dirt, River, Bridge, Foundation
-from units import Unit, Axeman, Knight, Archer, Cow, Tree, Barn, TownCenter, Barracks, ShamansHut
+from units import Unit, Axeman, Knight, Archer, Cow, Tree, Barn, TownCenter, Barracks, ShamansHut, get_team_sprite
 
 # -----------------------------
 # Config
@@ -145,7 +145,7 @@ def tile_center(row: int, col: int) -> Tuple[int, int]:
 # -----------------------------
 # Sprite loading & drawing
 # -----------------------------
-def _ensure_unit_sprite_loaded(cls_name: str, desired_px: int) -> Optional[pygame.Surface]:
+def _ensure_unit_sprite_loaded(cls_name: str, desired_px: int, player_color: Tuple[int, int, int]) -> Optional[pygame.Surface]:
     """
     Ensure Unit._images contains a sprite for cls_name. We request desired_px.
     If missing, return None.
@@ -170,7 +170,8 @@ def _ensure_unit_sprite_loaded(cls_name: str, desired_px: int) -> Optional[pygam
     except Exception:
         return Unit._images.get(cls_name)
 
-    return img
+    # Return base or tinted version (handled centrally in units.py)
+    return get_team_sprite(cls_name, desired_px, player_color)
 
 
 def draw_unit_sprite(
@@ -196,7 +197,7 @@ def draw_unit_sprite(
         tv = tree_variant or f"{TREE_VARIANT_PREFIX}0"
         img = load_tree_editor_image(tv, desired)
     else:
-        img = _ensure_unit_sprite_loaded(unit_type, desired)
+        img = _ensure_unit_sprite_loaded(unit_type, desired, player_color)
 
     sx = world_cx - camera_x
     sy = world_cy - camera_y
