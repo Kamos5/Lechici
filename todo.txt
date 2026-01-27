@@ -50,6 +50,7 @@ todo:
 - sounds?
 - upgrade units
 - repair
+- fix: issue with pathfinding and shortcutting (like 1 tile gap in river) when clicked like 4-5 tiles ahead
 - fix: without selected player selection boarders clicks are remember
 - self learning AI?
 - idle units?
