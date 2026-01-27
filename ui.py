@@ -20,10 +20,24 @@ def load_ui_icons():
             if pygame.image.get_extended() else pygame.Surface((20, 20))
         )
 
+        totem_icon = (
+            pygame.image.load("assets/totem.png").convert_alpha()
+            if pygame.image.get_extended() else pygame.Surface((20, 20))
+        )
+
         wood_icon = pygame.transform.scale(wood_icon, (20, 20))
         milk_icon = pygame.transform.scale(milk_icon, (20, 20))
         unit_icon = pygame.transform.scale(unit_icon, (20, 20))
         building_icon = pygame.transform.scale(building_icon, (20, 20))
+
+        # Totem separator icon (scaled down, keep aspect ratio)
+        w, h = totem_icon.get_size()
+        target_h = 150
+        scale = (target_h / h) if h else 1
+        totem_icon = pygame.transform.smoothscale(
+            totem_icon, (max(1, int(w * scale)), target_h)
+        )
+
     except (pygame.error, FileNotFoundError):
         wood_icon = pygame.Surface((20, 20))
         milk_icon = pygame.Surface((20, 20))
@@ -34,11 +48,14 @@ def load_ui_icons():
         unit_icon.fill(LIGHT_GRAY)
         building_icon.fill(LIGHT_GRAY)
 
+        totem_icon = pygame.Surface((50, 100), pygame.SRCALPHA)
+        totem_icon.fill(LIGHT_GRAY)
     return {
         "wood": wood_icon,
         "milk": milk_icon,
         "unit": unit_icon,
         "building": building_icon,
+        "totem": totem_icon,
     }
 
 
@@ -428,6 +445,14 @@ def draw_end_screen(screen, mode_text, quit_button, fonts):
 def draw_game_ui(screen, grid_buttons, current_player, production_queues, current_time, all_units, icons, fonts, fps):
     draw_panels(screen)
     draw_grid_buttons(screen, grid_buttons, current_player, all_units, production_queues, current_time, icons, fonts["small_font"])
+
+    # Totem separator between the left build grid and the selected-unit info area
+    if icons and icons.get("totem"):
+        totem = icons["totem"]
+        tx = VIEW_MARGIN_LEFT - (totem.get_width() // 2) + 320  # centered on the boundary
+        ty = PANEL_Y + (PANEL_HEIGHT - totem.get_height()) // 2
+        screen.blit(totem, (tx, ty))
+
     draw_selected_unit_icons(
         screen,
         all_units,
