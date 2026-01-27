@@ -2,7 +2,7 @@ import pygame
 from pygame.math import Vector2
 
 from constants import *
-from units import Unit, Building, Barn, Barracks, TownCenter, Axeman, Archer, Knight, Cow
+from units import Unit, Building, Barn, Barracks, TownCenter, Axeman, Archer, Knight, Cow, ShamansHut
 
 
 def load_ui_icons():
@@ -138,7 +138,11 @@ def _get_selected_buildings(current_player):
         (u for u in current_player.units if isinstance(u, TownCenter) and u.selected and u.alpha == 255),
         None,
     )
-    return selected_barn, selected_barracks, selected_town_center
+    selected_shamans_hut = next(
+        (u for u in current_player.units if isinstance(u, ShamansHut) and u.selected and u.alpha == 255),
+        None,
+    )
+    return selected_barn, selected_barracks, selected_town_center, selected_shamans_hut
 
 
 def draw_panels(screen):
@@ -167,7 +171,7 @@ def draw_grid_buttons(screen, grid_buttons, current_player, all_units, productio
     wood_icon_small = get_scaled(icons["wood"], 0.5)
 
     """Draw the 3x1 grid and its contextual contents (unit/building actions)."""
-    selected_barn, selected_barracks, selected_town_center = _get_selected_buildings(current_player)
+    selected_barn, selected_barracks, selected_town_center, selected_shamans_hut = _get_selected_buildings(current_player)
 
     selected = [u for u in all_units if u.selected and current_player and u.player_id == current_player.player_id]
     selected_units = [u for u in selected if not isinstance(u, Building)]
@@ -267,6 +271,7 @@ def draw_grid_buttons(screen, grid_buttons, current_player, all_units, productio
                 ("Barn", Barn, selected_town_center),
                 ("Barracks", Barracks, selected_town_center),
                 ("TownCenter", TownCenter, selected_town_center),
+                ("ShamansHut", ShamansHut, selected_town_center),
             ])
 
         # Draw options into the 4x3 grid
@@ -294,7 +299,15 @@ def draw_grid_buttons(screen, grid_buttons, current_player, all_units, productio
 
                 pygame.draw.rect(screen, HIGHLIGHT_GRAY if enabled else GRAY, btn)
 
+                # Ensure icon is loaded even if no instance exists yet
+                if cls.__name__ not in Unit._unit_icons or Unit._unit_icons.get(cls.__name__) is None:
+                    Unit.load_images(
+                        cls.__name__,
+                        BUILDING_SIZE if issubclass(cls, Building) else UNIT_SIZE,
+                    )
+
                 icon = Unit._unit_icons.get(cls.__name__)
+
                 if icon:
                     icon_75 = get_scaled(icon, 0.75)
                     screen.blit(

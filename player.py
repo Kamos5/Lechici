@@ -8,7 +8,7 @@ from pygame.math import Vector2
 
 from constants import *
 from tiles import GrassTile, Dirt
-from units import Archer, Axeman, Barn, Barracks, Building, Cow, Knight, TownCenter, Tree, Unit
+from units import Archer, Axeman, Barn, Barracks, Building, Cow, Knight, TownCenter, Tree, Unit, ShamansHut
 import context
 from utils import is_tile_occupied
 
@@ -190,7 +190,7 @@ class PlayerAI:
                 self.target_camp_pos = Vector2(150, 150)
 
         # Get all Player 1 buildings
-        enemy_buildings = [u for u in target_player.units if isinstance(u, (TownCenter, Barn, Barracks)) and u.hp > 0 and u.alpha == 255]
+        enemy_buildings = [u for u in target_player.units if isinstance(u, (TownCenter, Barn, Barracks, ShamansHut)) and u.hp > 0 and u.alpha == 255]
 
         # Wave 1: After 30 seconds, 1 Archer
         if self.wave_number == 0 and elapsed_time >= 150:

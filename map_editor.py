@@ -21,8 +21,7 @@ import pygame
 
 from constants import *  # SCREEN_WIDTH/HEIGHT, TILE_SIZE, VIEW_* etc.
 from tiles import GrassTile, Dirt, River, Bridge
-from units import Unit, Axeman, Knight, Archer, Cow, Tree, Barn, TownCenter, Barracks
-
+from units import Unit, Axeman, Knight, Archer, Cow, Tree, Barn, TownCenter, Barracks, ShamansHut
 
 # -----------------------------
 # Config
@@ -52,11 +51,12 @@ UNIT_TYPES: Dict[str, Type] = {
     "Barn": Barn,
     "TownCenter": TownCenter,
     "Barracks": Barracks,
+    "ShamansHut": ShamansHut,
 }
 
 # UI grouping (Tree is in bottom row with buildings)
 UNIT_ROW: List[str] = ["Axeman", "Knight", "Archer", "Cow"]
-BOTTOM_ROW: List[str] = ["Tree", "Barn", "TownCenter", "Barracks"]
+BOTTOM_ROW: List[str] = ["Tree", "Barn", "TownCenter", "Barracks", "ShamansHut"]
 
 # Editor players (id -> color)
 PLAYERS: List[Tuple[str, Tuple[int, int, int]]] = [
@@ -183,7 +183,7 @@ def draw_unit_sprite(
     tree_variant: Optional[str] = None,
 ) -> None:
     # Buildings bigger
-    if unit_type in ("Barn", "TownCenter", "Barracks"):
+    if unit_type in ("Barn", "TownCenter", "Barracks", "ShamansHut"):
         desired = int(BUILDING_SIZE)
     elif unit_type == "Tree":
         desired = int(TILE_SIZE)
@@ -377,7 +377,7 @@ def draw_scrollbars(
 # Footprints / occupancy
 # -----------------------------
 def is_building(unit_type: str) -> bool:
-    return unit_type in ("Barn", "TownCenter", "Barracks")
+    return unit_type in ("Barn", "TownCenter", "Barracks", "ShamansHut")
 
 
 def footprint_cells(unit_type: str, anchor_row: int, anchor_col: int) -> List[Tuple[int, int]]:

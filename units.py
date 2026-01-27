@@ -537,6 +537,14 @@ class Barn(Building):
         super().__init__(x, y, size=BUILDING_SIZE, color=DARK_GRAY, player_id=player_id, player_color=player_color)
         self.harvest_rate = 60.0
 
+# Barn class
+class ShamansHut(Building):
+    milk_cost = 200
+    wood_cost = 300
+    def __init__(self, x, y, player_id, player_color):
+        super().__init__(x, y, size=BUILDING_SIZE, color=DARK_GRAY, player_id=player_id, player_color=player_color)
+
+
 # TownCenter class
 class TownCenter(Building):
     milk_cost = 0

@@ -16,7 +16,7 @@ import context
 from utils import is_tile_occupied, find_valid_spawn_tiles
 from worldgen import init_game_world
 from tiles import GrassTile, Dirt, River, Bridge
-from units import Unit, Tree, Building, Barn, TownCenter, Barracks, Axeman, Knight, Archer, Cow
+from units import Unit, Tree, Building, Barn, TownCenter, Barracks, Axeman, Knight, Archer, Cow, ShamansHut
 from player import Player, PlayerAI
 from pathfinding import SpatialGrid, WaypointGraph
 import ui
@@ -391,10 +391,12 @@ def run_game() -> int:
                                 selected_barn = unit_clicked if isinstance(unit_clicked, Barn) and unit_clicked.alpha == 255 else None
                                 selected_barracks = unit_clicked if isinstance(unit_clicked, Barracks) and unit_clicked.alpha == 255 else None
                                 selected_town_center = unit_clicked if isinstance(unit_clicked, TownCenter) and unit_clicked.alpha == 255 else None
+                                selected_shamans_hut = unit_clicked if isinstance(unit_clicked, ShamansHut) and unit_clicked.alpha == 255 else None
                             else:
                                 selected_barn = None
                                 selected_barracks = None
                                 selected_town_center = None
+                                selected_shamans_hut = None
                             placing_building = False
                             building_to_place = None
                             building_pos = None
@@ -451,6 +453,7 @@ def run_game() -> int:
             barn_selected = any(isinstance(unit, Barn) and unit.selected and unit.alpha == 255 for unit in (current_player.units if current_player else []))
             barracks_selected = any(isinstance(unit, Barracks) and unit.selected and unit.alpha == 255 for unit in (current_player.units if current_player else []))
             town_center_selected = any(isinstance(unit, TownCenter) and unit.selected and unit.alpha == 255 for unit in (current_player.units if current_player else []))
+            town_shamans_hut = any(isinstance(unit, ShamansHut) and unit.selected and unit.alpha == 255 for unit in (current_player.units if current_player else []))
 
             # Update production queues
             units_to_spawn = []
