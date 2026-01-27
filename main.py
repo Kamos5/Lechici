@@ -324,22 +324,31 @@ def run_game() -> int:
                                         if clicked_tree and isinstance(unit, Axeman) and unit.special == 0 and not unit.depositing:
                                             unit.target = clicked_tree.pos
                                             unit.autonomous_target = False
-                                            print(f"Axeman at {unit.pos} assigned to tree at {unit.target}")
-                                            highlight_times[clicked_tree] = current_time
+
                                         elif clicked_unit and not isinstance(clicked_unit, Tree) and (clicked_unit.player_id != unit.player_id or clicked_unit.player_id == 0):
                                             unit.target = clicked_unit
                                             unit.autonomous_target = False
-                                            if isinstance(unit, Cow):
-                                                unit.returning = False
-                                            highlight_times[clicked_unit] = current_time
-                                            print(f"Unit {unit.__class__.__name__} at {unit.pos} targeting enemy {clicked_unit.__class__.__name__} at {clicked_unit.pos}")
+
+                                        elif (clicked_unit
+                                              and isinstance(clicked_unit, TownCenter)
+                                              and clicked_unit.player_id == unit.player_id
+                                              and isinstance(unit, Axeman)
+                                              and unit.special > 0):
+                                            # Manual deposit order: behave exactly like the automatic deposit
+                                            unit.target = Vector2(clicked_unit.pos)  # IMPORTANT: use TC center, not raw click_pos
+                                            unit.depositing = True
+                                            unit.return_pos = None  # optional; prevents returning-to-old-tree logic
+                                            unit.autonomous_target = False
+                                            unit.path = waypoint_graph.get_path(unit.pos, unit.target, unit) if waypoint_graph else [unit.pos, unit.target]
+                                            unit.path_index = 0
+
                                         else:
+                                            # Normal move order should cancel a deposit run
+                                            if isinstance(unit, Axeman):
+                                                unit.depositing = False
+
                                             unit.target = Vector2(click_pos.x, click_pos.y)
                                             unit.autonomous_target = False
-                                            if isinstance(unit, Cow):
-                                                unit.returning = False
-                                            move_order_times[snapped_pos] = current_time
-                                            print(f"Move order recorded at snapped pos {snapped_pos}")
             elif event.type == pygame.KEYDOWN and game_state == GameState.RUNNING:
                 cell = grid_actions.cell_from_key(event.key)
                 if cell and current_player:
