@@ -13,7 +13,7 @@ from pygame import Vector2
 from constants import *
 import context
 import units as units_mod
-from tiles import GrassTile, Dirt, River, Bridge
+from tiles import GrassTile, Dirt, River, Bridge, Foundation
 from units import Tree, Building
 from player import Player, PlayerAI
 from pathfinding import SpatialGrid, WaypointGraph
@@ -65,6 +65,8 @@ def load_editor_map(path: str) -> Tuple[List[List[Any]], Set[Any], Set[Tuple[int
                 river_tiles.add((r, c))
             elif tname == "Bridge":
                 tile = Bridge(x, y)
+            elif tname == "Foundation":
+                tile = Foundation(x, y)
             else:
                 tile = GrassTile(x, y)
             row_tiles.append(tile)

@@ -105,6 +105,25 @@ class Dirt(SimpleTile):
             print(f"Failed to load assets/{cls.__name__.lower()}.png: {e}")
             cls._image = None
 
+# Foundation class
+class Foundation(SimpleTile):
+    _image = None
+
+    def __init__(self, x, y):
+        self.grass_level = 0.0
+        super().__init__(x, y)
+        if Foundation._image is None:
+            Foundation.load_image()
+
+    @classmethod
+    def load_image(cls):
+        try:
+            cls._image = pygame.image.load(f"assets/{cls.__name__.lower()}.png").convert_alpha()
+            cls._image = pygame.transform.scale(cls._image, (TILE_SIZE, TILE_SIZE))
+        except (pygame.error, FileNotFoundError) as e:
+            print(f"Failed to load assets/{cls.__name__.lower()}.png: {e}")
+            cls._image = None
+
 class Bridge(SimpleTile):
     _image = None
 

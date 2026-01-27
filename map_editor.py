@@ -20,7 +20,7 @@ from typing import Dict, List, Optional, Tuple, Type, Any
 import pygame
 
 from constants import *  # SCREEN_WIDTH/HEIGHT, TILE_SIZE, VIEW_* etc.
-from tiles import GrassTile, Dirt, River, Bridge
+from tiles import GrassTile, Dirt, River, Bridge, Foundation
 from units import Unit, Axeman, Knight, Archer, Cow, Tree, Barn, TownCenter, Barracks, ShamansHut
 
 # -----------------------------
@@ -39,6 +39,7 @@ TILE_TYPES: Dict[str, Type] = {
     "Dirt": Dirt,
     "River": River,
     "Bridge": Bridge,
+    "Foundation": Foundation,
 }
 
 # Units available to place (as sprites)
