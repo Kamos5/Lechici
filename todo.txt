@@ -34,6 +34,10 @@ done:
 + bridges
 + map editor
 + worldmap
++ minimap
++ fix: when axeman returns he is losing wood if ordered to move
++ different wood types
++ fix: with multiple things being selected dont show spawning button options unless they are the same type
 
 todo:
 
@@ -44,19 +48,15 @@ todo:
 - fullscreen
 - fog of war
 - sounds?
-- minimap
 - upgrade units
 - repair
 - fix: without selected player selection boarders clicks are remember
-- fix: with multiple things being selected dont show spawning button options unless they are the same type
 - self learning AI?
 - idle units?
-- fix: when axeman returns he is losing wood if ordered to move
 - fix: when selected with building wrong order (first unit then building)
 - fix: units get stuck on corners
 - dirt != used grass
 - dirt roads
 - walls
-- different wood types
 - different grass types (season based?)
 - units should have level (militia, professional, veteran)
