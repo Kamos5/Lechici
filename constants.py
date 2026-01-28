@@ -132,3 +132,5 @@ FEMALE_NAMES = [
     "Ziemowita", "Bogna", "Danuta", "Halina", "Irena", "Krystyna", "Aldona", "Jolanta",
     "Beata", "Agnieszka", "Ewa", "Moolisa", "Twoolisa"
 ]
+
+CAMERA_KEY_SPEED = 30  # pixels per frame at 60 FPS (tweak)

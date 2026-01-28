@@ -21,9 +21,9 @@ TEAM_MASKS: Dict[str, List[str]] = {
     "TownCenter": ["#6f0000"],
     "Barn": ["#6f0000"],
     # Units (if your unit sprites have a team mask too)
-    "Axeman": ["#6f0000"],
+    # "Axeman": ["#6f0000"],
     "Knight": ["#6b0000"],
-    "Archer": ["#6f0000"],
+    # "Archer": ["#6f0000"],
     # "Cow": ["#6f0000"],
     "ShamansHut": ["#6f0000"],
 }
@@ -103,7 +103,8 @@ class Unit:
     def __init__(self, x, y, size, speed, color, player_id, player_color):
         self.pos = Vector2(x, y)
         self.target = None
-        self.speed = speed
+        self.base_speed = speed
+        self.speed = speed * SCALE
         self.selected = False
         self.size = size
         self.min_distance = self.size

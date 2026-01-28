@@ -504,7 +504,6 @@ def run_game() -> int:
 
             # --- NEW: arrow-key camera scroll ---
             keys = pygame.key.get_pressed()
-            CAMERA_KEY_SPEED = 12  # pixels per frame at 60 FPS (tweak)
 
             dx = (keys[pygame.K_RIGHT] - keys[pygame.K_LEFT]) * CAMERA_KEY_SPEED
             dy = (keys[pygame.K_DOWN] - keys[pygame.K_UP]) * CAMERA_KEY_SPEED
