@@ -124,6 +124,7 @@ class Unit:
         self.last_attack_time = 0
         self.armor = 0
         self.name = None
+        self.worldObject = False
         cls_name = self.__class__.__name__
         if cls_name not in Unit._images:
             self.load_images(cls_name, size)
@@ -503,6 +504,9 @@ class Tree(Unit):
         self.attack_damage = 0
         self.attack_range = 0
         self.armor = 0
+
+        self.worldObject = True
+        self.minimapColor = "#023020"
 
         # lazy-load sprite for this variant (and tint variants)
         if self.variant not in Tree._images:

@@ -577,11 +577,26 @@ def draw_minimap(screen, *, grass_tiles, all_units, camera, current_player):
     base = _minimap_base_surface(grass_tiles, mm.w)
     screen.blit(base, mm.topleft)
 
-    # Border
-    pygame.draw.rect(screen, (240, 240, 240), mm, 2)
+    # -------------------------------
+    # ✅ 1. Draw unit/world dots FIRST
+    # -------------------------------
+    for u in all_units:
+        ux = mm.x + int((u.pos.x / MAP_WIDTH) * mm.w)
+        uy = mm.y + int((u.pos.y / MAP_HEIGHT) * mm.h)
 
-    # Camera viewport rectangle (scaled to minimap)
-    # World dimensions come from constants
+        if mm.collidepoint(ux, uy):
+
+            # ✅ worldObject uses minimapColor
+            if getattr(u, "worldObject", False):
+                col = getattr(u, "minimapColor", (255, 255, 255))
+            else:
+                col = getattr(u, "player_color", (255, 255, 255))
+
+            pygame.draw.circle(screen, col, (ux, uy), 2)
+
+    # ---------------------------------
+    # ✅ 2. Draw camera rectangle ON TOP
+    # ---------------------------------
     cam_x = max(0, min(camera.x, MAP_WIDTH - VIEW_WIDTH))
     cam_y = max(0, min(camera.y, MAP_HEIGHT - VIEW_HEIGHT))
 
@@ -589,27 +604,15 @@ def draw_minimap(screen, *, grass_tiles, all_units, camera, current_player):
     vy = mm.y + int((cam_y / MAP_HEIGHT) * mm.h)
     vw = max(2, int((VIEW_WIDTH / MAP_WIDTH) * mm.w))
     vh = max(2, int((VIEW_HEIGHT / MAP_HEIGHT) * mm.h))
-    pygame.draw.rect(screen, (255, 255, 255), pygame.Rect(vx, vy, vw, vh), 1)
 
-    # Units as tiny dots (cheap: just a few draws)
-    # Only draw "real" units (you can tune filters as needed)
-    for u in all_units:
-        # If you want: skip neutral trees, etc. by class name
-        # if u.__class__.__name__ == "Tree": continue
+    pygame.draw.rect(
+        screen,
+        (255, 255, 255),
+        pygame.Rect(vx, vy, vw, vh),
+        1
+    )
 
-        ux = mm.x + int((u.pos.x / MAP_WIDTH) * mm.w)
-        uy = mm.y + int((u.pos.y / MAP_HEIGHT) * mm.h)
-
-        # Clamp to minimap
-        if mm.collidepoint(ux, uy):
-            col = getattr(u, "player_color", (255, 255, 255))
-            pygame.draw.circle(screen, col, (ux, uy), 2)
-
-    # Optional: highlight current player's selected units a bit more
-    if current_player:
-        for u in all_units:
-            if getattr(u, "selected", False) and getattr(u, "player_id", None) == current_player.player_id:
-                ux = mm.x + int((u.pos.x / MAP_WIDTH) * mm.w)
-                uy = mm.y + int((u.pos.y / MAP_HEIGHT) * mm.h)
-                if mm.collidepoint(ux, uy):
-                    pygame.draw.circle(screen, (255, 255, 255), (ux, uy), 3, 1)
+    # ---------------------------------
+    # ✅ 3. Draw minimap border LAST
+    # ---------------------------------
+    pygame.draw.rect(screen, (240, 240, 240), mm, 2)
