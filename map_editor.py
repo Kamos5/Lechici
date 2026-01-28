@@ -33,6 +33,13 @@ TREE_VARIANT_COUNT = 7  # tree0..tree6
 TREE_VARIANT_PREFIX = "tree"  # assets/tree0.png ... assets/tree6.png
 _TREE_EDITOR_IMAGES: Dict[Tuple[str, int], Optional[pygame.Surface]] = {}
 
+# River variants for the editor + saved metadata
+RIVER_VARIANT_MIN = 1
+RIVER_VARIANT_MAX = 13
+RIVER_DEFAULT_INDEX = 5  # river5 (requested default)
+RIVER_VARIANT_PREFIX = "river"  # assets/river/river1.png ... river9.png
+_RIVER_EDITOR_IMAGES: Dict[Tuple[str, int], Optional[pygame.Surface]] = {}
+
 # Tiles available to paint
 TILE_TYPES: Dict[str, Type] = {
     "GrassTile": GrassTile,
@@ -111,6 +118,25 @@ def load_tree_editor_image(variant: str, desired_px: int) -> Optional[pygame.Sur
         _TREE_EDITOR_IMAGES[key] = None
         return None
 
+def load_river_editor_image(variant: str, desired_px: int) -> Optional[pygame.Surface]:
+    """
+    Loads assets/river/{variant}.png (e.g. assets/river/river5.png), scaled to desired_px.
+    Cached by (variant, desired_px).
+    """
+    key = (variant, desired_px)
+    if key in _RIVER_EDITOR_IMAGES:
+        return _RIVER_EDITOR_IMAGES[key]
+
+    path = f"assets/river/{variant}.png"
+    try:
+        img = pygame.image.load(path).convert_alpha()
+        img = pygame.transform.smoothscale(img, (desired_px, desired_px))
+        _RIVER_EDITOR_IMAGES[key] = img
+        return img
+    except Exception as e:
+        print(f"[EDITOR] Failed to load {path}: {e}")
+        _RIVER_EDITOR_IMAGES[key] = None
+        return None
 
 # -----------------------------
 # Map data helpers
@@ -125,9 +151,12 @@ def new_grass_map() -> List[List[object]]:
     return grid
 
 
-def set_tile(grid: List[List[object]], row: int, col: int, tile_name: str) -> None:
+def set_tile(grid: List[List[object]], row: int, col: int, tile_name: str, variant: Optional[str] = None) -> None:
     tile_cls = TILE_TYPES[tile_name]
-    grid[row][col] = tile_cls(col * TILE_SIZE, row * TILE_SIZE)
+    if tile_name == "River":
+        grid[row][col] = tile_cls(col * TILE_SIZE, row * TILE_SIZE, variant=variant)
+    else:
+        grid[row][col] = tile_cls(col * TILE_SIZE, row * TILE_SIZE)
 
 
 def world_to_tile(world_x: int, world_y: int) -> Tuple[int, int]:
@@ -219,12 +248,24 @@ def draw_unit_sprite(
 # -----------------------------
 def save_map(grid: List[List[object]], units_by_cell: Dict[str, Dict[str, Any]], path: str) -> None:
     ensure_dirs(path)
+    tiles_out = []
+    for r in range(GRASS_ROWS):
+        row_out = []
+        for c in range(GRASS_COLS):
+            t = grid[r][c]
+            name = t.__class__.__name__
+            if name == "River":
+                row_out.append({"type": "River", "variant": getattr(t, "variant", "river5")})
+            else:
+                row_out.append(name)
+        tiles_out.append(row_out)
+
     data = {
         "rows": GRASS_ROWS,
         "cols": GRASS_COLS,
         "tile_size": TILE_SIZE,
-        "tiles": [[grid[r][c].__class__.__name__ for c in range(GRASS_COLS)] for r in range(GRASS_ROWS)],
-        "units": units_by_cell,  # key "r,c" -> {"type": "...", "player": int, ...}
+        "tiles": tiles_out,
+        "units": units_by_cell,
     }
     with open(path, "w", encoding="utf-8") as f:
         json.dump(data, f, indent=2)
@@ -247,10 +288,23 @@ def load_map(path: str) -> Tuple[List[List[object]], Dict[str, Dict[str, Any]]]:
     grid = new_grass_map()
     for r in range(GRASS_ROWS):
         for c in range(GRASS_COLS):
-            name = tiles[r][c]
-            if name not in TILE_TYPES:
-                name = "GrassTile"
-            set_tile(grid, r, c, name)
+            cell = tiles[r][c]
+
+            # Backward compatible: old saves store strings; new saves may store dicts
+            if isinstance(cell, dict):
+                name = cell.get("type", "GrassTile")
+                if name not in TILE_TYPES:
+                    name = "GrassTile"
+                if name == "River":
+                    var = cell.get("variant")
+                    set_tile(grid, r, c, "River", variant=var)
+                else:
+                    set_tile(grid, r, c, name)
+            else:
+                name = cell
+                if name not in TILE_TYPES:
+                    name = "GrassTile"
+                set_tile(grid, r, c, name)
 
     units_raw = data.get("units", {})
     units_by_cell: Dict[str, Dict[str, Any]] = {}
@@ -464,6 +518,9 @@ def main() -> None:
     # Tree selection state (cycles on repeated clicks)
     selected_tree_index = 0  # 0..7
 
+    # River selection state (cycles on repeated clicks of River tile button)
+    selected_river_index = RIVER_DEFAULT_INDEX  # 1..9
+
     # Camera is always snapped to tile grid
     camera_x = 0
     camera_y = 0
@@ -478,6 +535,9 @@ def main() -> None:
 
     def current_tree_variant() -> str:
         return f"{TREE_VARIANT_PREFIX}{selected_tree_index}"
+
+    def current_river_variant() -> str:
+        return f"{RIVER_VARIANT_PREFIX}{selected_river_index}"
 
     def rebuild_ui() -> None:
         buttons.clear()
@@ -567,7 +627,10 @@ def main() -> None:
         if mode == "tile":
             if clicked_cell in occ:
                 return
-            set_tile(grid, row, col, selected_tile)
+            if selected_tile == "River":
+                set_tile(grid, row, col, "River", variant=current_river_variant())
+            else:
+                set_tile(grid, row, col, selected_tile)
 
         elif mode == "unit":
             fp = footprint_cells(selected_unit, row, col)
@@ -618,6 +681,10 @@ def main() -> None:
         if b.kind == "unit" and b.value == "Tree":
             label = f"Tree{selected_tree_index}"
 
+        # Dynamic label for River tile: show current river variant
+        if b.kind == "tile" and b.value == "River":
+            label = f"River{selected_river_index}"
+
         t = font.render(label, True, (240, 240, 240))
         screen.blit(t, (b.rect.centerx - t.get_width() // 2, b.rect.centery - t.get_height() // 2))
 
@@ -652,8 +719,19 @@ def main() -> None:
                             mode = b.value
 
                         elif b.kind == "tile":
-                            selected_tile = b.value
-                            mode = "tile"
+                            # Special behavior: repeated clicks on River cycle river1..river9
+                            if b.value == "River":
+                                if selected_tile == "River" and mode == "tile":
+                                    selected_river_index += 1
+                                    if selected_river_index > RIVER_VARIANT_MAX:
+                                        selected_river_index = RIVER_VARIANT_MIN
+                                selected_tile = "River"
+                                mode = "tile"
+                                # preload preview image so it feels instant
+                                _ = load_river_editor_image(current_river_variant(), int(TILE_SIZE))
+                            else:
+                                selected_tile = b.value
+                                mode = "tile"
 
                         elif b.kind == "unit":
                             # Special behavior: repeated clicks on Tree cycle tree0..tree6

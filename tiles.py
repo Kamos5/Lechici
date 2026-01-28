@@ -143,25 +143,57 @@ class Bridge(SimpleTile):
         pass  # Bridges don't regrow grass
 
 class River(SimpleTile):
-    _image = None
+    # Cache per-variant, already scaled to TILE_SIZE
+    _variant_images: dict[str, pygame.Surface | None] = {}
+    DEFAULT_VARIANT = "river5"  # requested default
 
-    def __init__(self, x, y):
+    def __init__(self, x, y, *, variant: str | None = None):
         super().__init__(x, y)
         self.grass_level = 0.0  # Non-harvestable
+        self.variant = self._sanitize_variant(variant) or self.DEFAULT_VARIANT
 
-        if River._image is None:
-            River.load_image()
+        # Ensure this variant is loaded
+        if self.variant not in River._variant_images:
+            River._variant_images[self.variant] = River._load_variant_image(self.variant)
+
+    @staticmethod
+    def _sanitize_variant(v: str | None) -> str | None:
+        if not isinstance(v, str):
+            return None
+        if not v.startswith("river"):
+            return None
+        try:
+            idx = int(v[len("river"):])
+        except Exception:
+            return None
+        return v if 1 <= idx <= 13 else None
 
     @classmethod
-    def load_image(cls):
+    def _load_variant_image(cls, variant: str) -> pygame.Surface | None:
+        path = f"assets/river/{variant}.png"
         try:
-            cls._image = pygame.image.load(f"assets/{cls.__name__.lower()}.png").convert_alpha()
-            cls._image = pygame.transform.scale(cls._image, (TILE_SIZE, TILE_SIZE))
+            img = pygame.image.load(path).convert_alpha()
+            return pygame.transform.scale(img, (TILE_SIZE, TILE_SIZE))
         except (pygame.error, FileNotFoundError) as e:
-            print(f"Failed to load assets/{cls.__name__.lower()}.png: {e}")
-            cls._image = None
+            print(f"Failed to load {path}: {e}")
+            return None
+
+    def draw(self, surface, camera_x, camera_y):
+        # Same culling as SimpleTile.draw, but pick per-instance image
+        if (self.pos.x < camera_x - TILE_SIZE or self.pos.x > camera_x + VIEW_WIDTH or
+            self.pos.y < camera_y - TILE_SIZE or self.pos.y > camera_y + VIEW_HEIGHT):
+            return
+
+        img = River._variant_images.get(self.variant)
+        if img is not None:
+            surface.blit(img, (self.pos.x - camera_x, self.pos.y - camera_y))
+        else:
+            # fallback color if missing
+            pygame.draw.rect(
+                surface,
+                (40, 90, 180),
+                (self.pos.x - camera_x, self.pos.y - camera_y, TILE_SIZE, TILE_SIZE),
+            )
 
     def regrow(self, rate):
         pass  # River tiles don't regrow grass
-
-# Unit class

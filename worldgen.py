@@ -53,15 +53,25 @@ def load_editor_map(path: str) -> Tuple[List[List[Any]], Set[Any], Set[Tuple[int
     for r in range(GRASS_ROWS):
         row_tiles = []
         for c in range(GRASS_COLS):
-            tname = tiles_data[r][c]
+            cell = tiles_data[r][c]
+
+            # Backward compatible (string) + new dict format
+            if isinstance(cell, dict):
+                tname = cell.get("type", "GrassTile")
+                variant = cell.get("variant")
+            else:
+                tname = cell
+                variant = None
+
             x = c * TILE_SIZE
             y = r * TILE_SIZE
+
             if tname == "GrassTile":
                 tile = GrassTile(x, y)
             elif tname == "Dirt":
                 tile = Dirt(x, y)
             elif tname == "River":
-                tile = River(x, y)
+                tile = River(x, y, variant=variant)
                 river_tiles.add((r, c))
             elif tname == "Bridge":
                 tile = Bridge(x, y)
@@ -269,7 +279,7 @@ def generate_river(grass_tiles, tile_size, rows, cols, num_bridges=2):
 
     # Update grass_tiles with River tiles
     for row, col in river_tiles:
-        grass_tiles[row][col] = River(col * tile_size, row * tile_size)
+        grass_tiles[row][col] = River(col * tile_size, row * tile_size, variant="river5")
 
     # Find valid bridge spans (3 tiles wide, at least 3 River tiles, land on both ends)
     valid_spans = []
@@ -375,7 +385,7 @@ def generate_river(grass_tiles, tile_size, rows, cols, num_bridges=2):
     # Re-apply River tiles to avoid overwrites
     for row, col in river_tiles:
         if not isinstance(grass_tiles[row][col], Bridge):
-            grass_tiles[row][col] = River(col * tile_size, row * tile_size)
+            grass_tiles[row][col] = River(col * tile_size, row * tile_size, variant="river5")
 
     print(f"Selected bridge locations (centers): {bridge_locations}")
     return river_tiles
