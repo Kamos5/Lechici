@@ -169,33 +169,26 @@ def tile_center(row: int, col: int) -> Tuple[int, int]:
 # -----------------------------
 # Sprite loading & drawing
 # -----------------------------
-def _ensure_unit_sprite_loaded(cls_name: str, desired_px: int, player_color: Tuple[int, int, int]) -> Optional[pygame.Surface]:
-    """
-    Ensure Unit._images contains a sprite for cls_name. We request desired_px.
-    If missing, return None.
-    """
+def _ensure_unit_sprite_loaded(cls_name: str, desired_px: int, player_color=None) -> Optional[pygame.Surface]:
+    img = Unit._images.get(cls_name)
+
+    def max_dim(surf: pygame.Surface) -> int:
+        w, h = surf.get_size()
+        return max(w, h)
+
+    # Load if missing
+    if img is None:
+        Unit.load_images(cls_name, desired_px)
+        return Unit._images.get(cls_name)
+
+    # If cached size is different, reload at correct size (overwrites cache)
     try:
-        if cls_name not in Unit._images or Unit._images.get(cls_name) is None:
+        if max_dim(img) != desired_px:
             Unit.load_images(cls_name, desired_px)
     except Exception:
         pass
 
-    img = Unit._images.get(cls_name)
-    if img is None:
-        return None
-
-    try:
-        w, h = img.get_size()
-        if max(w, h) != desired_px:
-            scale = desired_px / float(max(w, h))
-            nw = max(1, int(w * scale))
-            nh = max(1, int(h * scale))
-            img = pygame.transform.smoothscale(img, (nw, nh))
-    except Exception:
-        return Unit._images.get(cls_name)
-
-    # Return base or tinted version (handled centrally in units.py)
-    return get_team_sprite(cls_name, desired_px, player_color)
+    return Unit._images.get(cls_name)
 
 
 def draw_unit_sprite(
@@ -525,7 +518,7 @@ def main() -> None:
     buttons: List[Button] = []
 
     BTN_H = 32
-    BTN_W = 110
+    BTN_W = 130
     BTN_GAP = 10
 
     def current_tree_variant() -> str:
@@ -645,6 +638,50 @@ def main() -> None:
                 return
             set_tile(grid, row, col, "GrassTile")
 
+    def get_button_icon(kind: str, value: str, desired_px: int) -> Optional[pygame.Surface]:
+        """
+        Returns a small sprite/icon for a button.
+        - Tiles: prefer their real tile asset (River uses current river variant).
+        - Units: uses unit sprite (Tree uses current tree variant).
+        """
+        # Tiles
+        if kind == "tile":
+            if value == "River":
+                return load_river_editor_image(current_river_variant(), desired_px)
+
+            # Try to load a tile asset based on class naming convention:
+            # assets/{classname_lower}.png
+            # Example: Dirt -> assets/dirt.png, Bridge -> assets/bridge.png
+            # GrassTile -> assets/grasstile.png
+            path = f"assets/{value.lower()}.png"
+            try:
+                img = pygame.image.load(path).convert_alpha()
+                img = pygame.transform.smoothscale(img, (desired_px, desired_px))
+                return img
+            except Exception:
+                return None
+
+        # Units
+        if kind == "unit":
+            if value == "Tree":
+                return load_tree_editor_image(current_tree_variant(), desired_px)
+
+            _, pcol = PLAYERS[selected_player]
+
+            # IMPORTANT: don't load Unit._images at icon size; load at real unit draw size first
+            big_px = int(max(UNIT_SIZE, TILE_SIZE))
+            big_img = _ensure_unit_sprite_loaded(value, big_px, pcol)
+            if big_img is None:
+                return None
+
+            # Then scale down just for the button icon
+            try:
+                return pygame.transform.smoothscale(big_img, (desired_px, desired_px))
+            except Exception:
+                return big_img
+
+        return None
+
     def draw_button(b: Button) -> None:
         active = False
         if b.kind == "mode" and b.value == mode:
@@ -672,6 +709,7 @@ def main() -> None:
         pygame.draw.rect(screen, (255, 255, 255) if active else (120, 120, 120), b.rect, 2, border_radius=6)
 
         label = b.label
+
         # Dynamic label for Tree: show current selected variant index
         if b.kind == "unit" and b.value == "Tree":
             label = f"Tree{selected_tree_index}"
@@ -680,8 +718,34 @@ def main() -> None:
         if b.kind == "tile" and b.value == "River":
             label = f"River{selected_river_index}"
 
-        t = font.render(label, True, (240, 240, 240))
-        screen.blit(t, (b.rect.centerx - t.get_width() // 2, b.rect.centery - t.get_height() // 2))
+        # ---- draw small icon for tiles/units ----
+        PAD = 6
+        ICON_PX = min(22, b.rect.h - 2 * PAD)  # fits inside button height
+        icon = None
+        if b.kind in ("tile", "unit"):
+            icon = get_button_icon(b.kind, b.value, ICON_PX)
+
+        text_color = (240, 240, 240)
+        t = font.render(label, True, text_color)
+
+        # Layout:
+        # [ icon ] [ gap ] [ text ]
+        gap = 6
+        x = b.rect.x + PAD
+        y_center = b.rect.centery
+
+        if icon is not None:
+            icon_rect = icon.get_rect()
+            icon_rect.left = x
+            icon_rect.centery = y_center
+            screen.blit(icon, icon_rect)
+            x = icon_rect.right + gap  # text starts after icon
+        else:
+            # if no icon, keep some left padding so text isn't glued to border
+            x = b.rect.x + PAD
+
+        # Vertically center text, but align left (so it doesn't overlap icon)
+        screen.blit(t, (x, y_center - t.get_height() // 2))
 
     painting = False
     running = True
