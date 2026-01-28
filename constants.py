@@ -141,3 +141,7 @@ TREE_VARIANT_PREFIX = "tree"  # assets/tree0.png ... assets/tree6.png
 RIVER_VARIANT_MIN = 1
 RIVER_VARIANT_MAX = 13
 RIVER_DEFAULT_INDEX = 5  # river5 (requested default)
+
+MOUNTAIN_VARIANT_MIN = 1
+MOUNTAIN_VARIANT_MAX = 13
+MOUNTAIN_DEFAULT_INDEX = 5  # river5 (requested default)

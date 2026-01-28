@@ -20,7 +20,7 @@ from typing import Dict, List, Optional, Tuple, Type, Any
 import pygame
 
 from constants import *  # SCREEN_WIDTH/HEIGHT, TILE_SIZE, VIEW_* etc.
-from tiles import GrassTile, Dirt, River, Bridge, Foundation
+from tiles import GrassTile, Dirt, River, Bridge, Foundation, Mountain
 from units import Unit, Axeman, Knight, Archer, Cow, Tree, Barn, TownCenter, Barracks, ShamansHut, get_team_sprite
 
 # -----------------------------
@@ -35,6 +35,9 @@ _TREE_EDITOR_IMAGES: Dict[Tuple[str, int], Optional[pygame.Surface]] = {}
 RIVER_VARIANT_PREFIX = "river"  # assets/river/river1.png ... river9.png
 _RIVER_EDITOR_IMAGES: Dict[Tuple[str, int], Optional[pygame.Surface]] = {}
 
+MOUNTAIN_VARIANT_PREFIX = "mountain"  # assets/river/river1.png ... river9.png
+_MOUNTAIN_EDITOR_IMAGES: Dict[Tuple[str, int], Optional[pygame.Surface]] = {}
+
 # Tiles available to paint
 TILE_TYPES: Dict[str, Type] = {
     "GrassTile": GrassTile,
@@ -42,6 +45,7 @@ TILE_TYPES: Dict[str, Type] = {
     "River": River,
     "Bridge": Bridge,
     "Foundation": Foundation,
+    "Mountain": Mountain,
 }
 
 # Units available to place (as sprites)
@@ -133,6 +137,26 @@ def load_river_editor_image(variant: str, desired_px: int) -> Optional[pygame.Su
         _RIVER_EDITOR_IMAGES[key] = None
         return None
 
+def load_mountain_editor_image(variant: str, desired_px: int) -> Optional[pygame.Surface]:
+    """
+    Loads assets/mountain/{variant}.png (e.g. assets/mountain/mountain5.png), scaled to desired_px.
+    Cached by (variant, desired_px).
+    """
+    key = (variant, desired_px)
+    if key in _MOUNTAIN_EDITOR_IMAGES:
+        return _MOUNTAIN_EDITOR_IMAGES[key]
+
+    path = f"assets/mountain/{variant}.png"
+    try:
+        img = pygame.image.load(path).convert_alpha()
+        img = pygame.transform.smoothscale(img, (desired_px, desired_px))
+        _MOUNTAIN_EDITOR_IMAGES[key] = img
+        return img
+    except Exception as e:
+        print(f"[EDITOR] Failed to load {path}: {e}")
+        _MOUNTAIN_EDITOR_IMAGES[key] = None
+        return None
+
 # -----------------------------
 # Map data helpers
 # -----------------------------
@@ -148,7 +172,7 @@ def new_grass_map() -> List[List[object]]:
 
 def set_tile(grid: List[List[object]], row: int, col: int, tile_name: str, variant: Optional[str] = None) -> None:
     tile_cls = TILE_TYPES[tile_name]
-    if tile_name == "River":
+    if tile_name in ("River", "Mountain"):
         grid[row][col] = tile_cls(col * TILE_SIZE, row * TILE_SIZE, variant=variant)
     else:
         grid[row][col] = tile_cls(col * TILE_SIZE, row * TILE_SIZE)
@@ -244,6 +268,8 @@ def save_map(grid: List[List[object]], units_by_cell: Dict[str, Dict[str, Any]],
             name = t.__class__.__name__
             if name == "River":
                 row_out.append({"type": "River", "variant": getattr(t, "variant", "river5")})
+            elif name == "Mountain":
+                row_out.append({"type": "Mountain", "variant": getattr(t, "variant", "mountain5")})
             else:
                 row_out.append(name)
         tiles_out.append(row_out)
@@ -286,6 +312,9 @@ def load_map(path: str) -> Tuple[List[List[object]], Dict[str, Dict[str, Any]]]:
                 if name == "River":
                     var = cell.get("variant")
                     set_tile(grid, r, c, "River", variant=var)
+                elif name == "Mountain":
+                    var = cell.get("variant")
+                    set_tile(grid, r, c, "Mountain", variant=var)
                 else:
                     set_tile(grid, r, c, name)
             else:
@@ -509,6 +538,8 @@ def main() -> None:
     # River selection state (cycles on repeated clicks of River tile button)
     selected_river_index = RIVER_DEFAULT_INDEX  # 1..9
 
+    selected_mountain_index = MOUNTAIN_DEFAULT_INDEX
+
     # Camera is always snapped to tile grid
     camera_x = 0
     camera_y = 0
@@ -526,6 +557,9 @@ def main() -> None:
 
     def current_river_variant() -> str:
         return f"{RIVER_VARIANT_PREFIX}{selected_river_index}"
+
+    def current_mountain_variant() -> str:
+        return f"{MOUNTAIN_VARIANT_PREFIX}{selected_mountain_index}"
 
     def rebuild_ui() -> None:
         buttons.clear()
@@ -617,6 +651,8 @@ def main() -> None:
                 return
             if selected_tile == "River":
                 set_tile(grid, row, col, "River", variant=current_river_variant())
+            elif selected_tile == "Mountain":
+                set_tile(grid, row, col, "Mountain", variant=current_mountain_variant())
             else:
                 set_tile(grid, row, col, selected_tile)
 
@@ -648,11 +684,9 @@ def main() -> None:
         if kind == "tile":
             if value == "River":
                 return load_river_editor_image(current_river_variant(), desired_px)
+            if value == "Mountain":
+                return load_mountain_editor_image(current_mountain_variant(), desired_px)
 
-            # Try to load a tile asset based on class naming convention:
-            # assets/{classname_lower}.png
-            # Example: Dirt -> assets/dirt.png, Bridge -> assets/bridge.png
-            # GrassTile -> assets/grasstile.png
             path = f"assets/{value.lower()}.png"
             try:
                 img = pygame.image.load(path).convert_alpha()
@@ -717,6 +751,9 @@ def main() -> None:
         # Dynamic label for River tile: show current river variant
         if b.kind == "tile" and b.value == "River":
             label = f"River{selected_river_index}"
+
+        if b.kind == "tile" and b.value == "Mountain":
+            label = f"Mountain{selected_mountain_index}"
 
         # ---- draw small icon for tiles/units ----
         PAD = 6
@@ -786,8 +823,16 @@ def main() -> None:
                                         selected_river_index = RIVER_VARIANT_MIN
                                 selected_tile = "River"
                                 mode = "tile"
-                                # preload preview image so it feels instant
                                 _ = load_river_editor_image(current_river_variant(), int(TILE_SIZE))
+                            # Special behavior: repeated clicks on Mountain cycle mountain1..mountain9
+                            elif b.value == "Mountain":
+                                if selected_tile == "Mountain" and mode == "tile":
+                                    selected_mountain_index += 1
+                                    if selected_mountain_index > MOUNTAIN_VARIANT_MAX:
+                                        selected_mountain_index = MOUNTAIN_VARIANT_MIN
+                                selected_tile = "Mountain"
+                                mode = "tile"
+                                _ = load_mountain_editor_image(current_mountain_variant(), int(TILE_SIZE))
                             else:
                                 selected_tile = b.value
                                 mode = "tile"

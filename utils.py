@@ -3,14 +3,14 @@ from pygame import Vector2
 
 from constants import TILE_SIZE, GRASS_ROWS, GRASS_COLS
 from context import grass_tiles
-from tiles import GrassTile, River, Dirt
+from tiles import GrassTile, River, Dirt, Mountain
 from units import Building, Tree
 
 
 def is_tile_occupied(row, col, all_units,grass_tiles):
     if not (0 <= row < GRASS_ROWS and 0 <= col < GRASS_COLS):
         return True
-    if isinstance(grass_tiles[row][col], River):
+    if isinstance(grass_tiles[row][col], River) or isinstance(grass_tiles[row][col], Mountain):
         return True
     for unit in all_units:
         if isinstance(unit, (Building, Tree)):

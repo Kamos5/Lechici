@@ -13,7 +13,7 @@ from pygame import Vector2
 from constants import *
 import context
 import units as units_mod
-from tiles import GrassTile, Dirt, River, Bridge, Foundation
+from tiles import GrassTile, Dirt, River, Bridge, Foundation, Mountain
 from units import Tree, Building
 from player import Player, PlayerAI
 from pathfinding import SpatialGrid, WaypointGraph
@@ -77,6 +77,8 @@ def load_editor_map(path: str) -> Tuple[List[List[Any]], Set[Any], Set[Tuple[int
                 tile = Bridge(x, y)
             elif tname == "Foundation":
                 tile = Foundation(x, y)
+            elif tname == "Mountain":
+                tile = Mountain(x, y)
             else:
                 tile = GrassTile(x, y)
             row_tiles.append(tile)
@@ -294,7 +296,7 @@ def generate_river(grass_tiles, tile_size, rows, cols, num_bridges=2):
         valid_spans = []  # Reset spans for each length
         for row in range(1, rows - 1):  # Avoid edges for 3-row width
             for col in range(cols):
-                if isinstance(grass_tiles[row][col], River):
+                if isinstance(grass_tiles[row][col], River) or isinstance(grass_tiles[row][col], Mountain):
                     # Check horizontal spans (3 rows wide)
                     if col + length - 1 < cols:  # Ensure within bounds
                         valid = True
@@ -478,7 +480,7 @@ def init_game_world(random_world: bool = False):
         def is_tile_occupied(row, col, all_units_local):
             if not (0 <= row < GRASS_ROWS and 0 <= col < GRASS_COLS):
                 return True
-            if isinstance(grass_tiles[row][col], River):
+            if isinstance(grass_tiles[row][col], River) or isinstance(grass_tiles[row][col], Mountain):
                 return True
             for unit in all_units_local:
                 if isinstance(unit, (Building, Tree)):

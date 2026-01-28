@@ -197,3 +197,59 @@ class River(SimpleTile):
 
     def regrow(self, rate):
         pass  # River tiles don't regrow grass
+
+class Mountain(SimpleTile):
+    # Cache per-variant, already scaled to TILE_SIZE
+    _variant_images: dict[str, pygame.Surface | None] = {}
+    DEFAULT_VARIANT = "mountain1"  # requested default
+
+    def __init__(self, x, y, *, variant: str | None = None):
+        super().__init__(x, y)
+        self.grass_level = 0.0  # Non-harvestable
+        self.variant = self._sanitize_variant(variant) or self.DEFAULT_VARIANT
+
+        # Ensure this variant is loaded
+        if self.variant not in Mountain._variant_images:
+            Mountain._variant_images[self.variant] = Mountain._load_variant_image(self.variant)
+
+    @staticmethod
+    def _sanitize_variant(v: str | None) -> str | None:
+        if not isinstance(v, str):
+            return None
+        if not v.startswith("mountain"):
+            return None
+        try:
+            idx = int(v[len("mountain"):])
+        except Exception:
+            return None
+        return v if MOUNTAIN_VARIANT_MIN <= idx <= MOUNTAIN_VARIANT_MAX else None
+
+    @classmethod
+    def _load_variant_image(cls, variant: str) -> pygame.Surface | None:
+        path = f"assets/mountain/{variant}.png"
+        try:
+            img = pygame.image.load(path).convert_alpha()
+            return pygame.transform.scale(img, (TILE_SIZE, TILE_SIZE))
+        except (pygame.error, FileNotFoundError) as e:
+            print(f"Failed to load {path}: {e}")
+            return None
+
+    def draw(self, surface, camera_x, camera_y):
+        # Same culling as SimpleTile.draw, but pick per-instance image
+        if (self.pos.x < camera_x - TILE_SIZE or self.pos.x > camera_x + VIEW_WIDTH or
+                self.pos.y < camera_y - TILE_SIZE or self.pos.y > camera_y + VIEW_HEIGHT):
+            return
+
+        img = Mountain._variant_images.get(self.variant)
+        if img is not None:
+            surface.blit(img, (self.pos.x - camera_x, self.pos.y - camera_y))
+        else:
+            # fallback color if missing
+            pygame.draw.rect(
+                surface,
+                (40, 90, 180),
+                (self.pos.x - camera_x, self.pos.y - camera_y, TILE_SIZE, TILE_SIZE),
+            )
+
+    def regrow(self, rate):
+        pass  # Mountain tiles don't regrow grass
