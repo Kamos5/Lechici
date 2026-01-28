@@ -6,7 +6,7 @@
 # - Camera: arrow keys only
 # - Scrollbars (top + right) show camera position
 # - Buildings occupy multi-tile footprint and block placement
-# - Tree button cycles variants tree0..tree7 on repeated clicks
+# - Tree button cycles variants tree0..tree6 on repeated clicks
 # - Tree placements store {"variant": "treeN"} and load/save it
 
 from __future__ import annotations
@@ -29,8 +29,8 @@ from units import Unit, Axeman, Knight, Archer, Cow, Tree, Barn, TownCenter, Bar
 DEFAULT_SAVE_PATH = "maps/editor_map.json"
 
 # Tree variants for the editor preview + saved metadata
-TREE_VARIANT_COUNT = 8  # tree0..tree7
-TREE_VARIANT_PREFIX = "tree"  # assets/tree0.png ... assets/tree7.png
+TREE_VARIANT_COUNT = 7  # tree0..tree6
+TREE_VARIANT_PREFIX = "tree"  # assets/tree0.png ... assets/tree6.png
 _TREE_EDITOR_IMAGES: Dict[Tuple[str, int], Optional[pygame.Surface]] = {}
 
 # Tiles available to paint
@@ -285,7 +285,7 @@ def load_map(path: str) -> Tuple[List[List[object]], Dict[str, Dict[str, Any]]]:
             if t == "Tree":
                 var = v.get("variant")
                 if isinstance(var, str) and var.startswith(TREE_VARIANT_PREFIX):
-                    # accept tree0..tree7
+                    # accept tree0..tree6
                     try:
                         idx = int(var[len(TREE_VARIANT_PREFIX):])
                         if 0 <= idx < TREE_VARIANT_COUNT:
@@ -656,7 +656,7 @@ def main() -> None:
                             mode = "tile"
 
                         elif b.kind == "unit":
-                            # Special behavior: repeated clicks on Tree cycle tree0..tree7
+                            # Special behavior: repeated clicks on Tree cycle tree0..tree6
                             if b.value == "Tree":
                                 if selected_unit == "Tree":
                                     selected_tree_index = (selected_tree_index + 1) % TREE_VARIANT_COUNT

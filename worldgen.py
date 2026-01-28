@@ -19,7 +19,7 @@ from player import Player, PlayerAI
 from pathfinding import SpatialGrid, WaypointGraph
 
 
-DEFAULT_TREE_VARIANT = "tree7"
+DEFAULT_TREE_VARIANT = "tree6"
 # ---------------------------
 # Editor map loader
 # ---------------------------
@@ -116,7 +116,7 @@ def load_editor_map(path: str) -> Tuple[List[List[Any]], Set[Any], Set[Tuple[int
                 if issubclass(cls, Building):
                     unit = cls(x, y, player_id, pcol)
                 elif cls is Tree:
-                    # Editor may store "variant": "tree0"..."tree7"
+                    # Editor may store "variant": "tree0"..."tree6"
                     variant = info.get("variant", DEFAULT_TREE_VARIANT)
                     if not isinstance(variant, str) or not variant.startswith("tree"):
                         variant = DEFAULT_TREE_VARIANT

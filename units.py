@@ -488,19 +488,14 @@ class Tree(Unit):
             "sprite": "assets/tree6.png",
             "hp": 900,
             "max_hp": 900,
-        },
-        "tree7": {
-            "sprite": "assets/tree7.png",
-            "hp": 900,
-            "max_hp": 900,
         }
     }
 
-    def __init__(self, x, y, size, color, player_id, player_color, variant: str = "tree7"):
+    def __init__(self, x, y, size, color, player_id, player_color, variant: str = "tree6"):
         super().__init__(x, y, size=TILE_SIZE, speed=0, color=color, player_id=player_id, player_color=player_color)
 
         # pick variant (fallback to oak if unknown)
-        self.variant = variant if variant in self.VARIANTS else "tree7"
+        self.variant = variant if variant in self.VARIANTS else "tree6"
         cfg = self.VARIANTS[self.variant]
 
         self.hp = cfg["hp"]
