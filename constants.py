@@ -134,3 +134,10 @@ FEMALE_NAMES = [
 ]
 
 CAMERA_KEY_SPEED = 30  # pixels per frame at 60 FPS (tweak)
+
+TREE_VARIANT_COUNT = 7  # tree0..tree6
+TREE_VARIANT_PREFIX = "tree"  # assets/tree0.png ... assets/tree6.png
+
+RIVER_VARIANT_MIN = 1
+RIVER_VARIANT_MAX = 13
+RIVER_DEFAULT_INDEX = 5  # river5 (requested default)

@@ -29,14 +29,9 @@ from units import Unit, Axeman, Knight, Archer, Cow, Tree, Barn, TownCenter, Bar
 DEFAULT_SAVE_PATH = "maps/editor_map.json"
 
 # Tree variants for the editor preview + saved metadata
-TREE_VARIANT_COUNT = 7  # tree0..tree6
-TREE_VARIANT_PREFIX = "tree"  # assets/tree0.png ... assets/tree6.png
 _TREE_EDITOR_IMAGES: Dict[Tuple[str, int], Optional[pygame.Surface]] = {}
 
 # River variants for the editor + saved metadata
-RIVER_VARIANT_MIN = 1
-RIVER_VARIANT_MAX = 13
-RIVER_DEFAULT_INDEX = 5  # river5 (requested default)
 RIVER_VARIANT_PREFIX = "river"  # assets/river/river1.png ... river9.png
 _RIVER_EDITOR_IMAGES: Dict[Tuple[str, int], Optional[pygame.Surface]] = {}
 

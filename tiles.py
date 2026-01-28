@@ -166,7 +166,7 @@ class River(SimpleTile):
             idx = int(v[len("river"):])
         except Exception:
             return None
-        return v if 1 <= idx <= 13 else None
+        return v if RIVER_VARIANT_MIN <= idx <= RIVER_VARIANT_MAX else None
 
     @classmethod
     def _load_variant_image(cls, variant: str) -> pygame.Surface | None:
