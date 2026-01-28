@@ -35,6 +35,8 @@ done:
 + map editor
 + worldmap
 + minimap
++ different river tiles
++ different mountain tiles
 + fix: when axeman returns he is losing wood if ordered to move
 + different wood types
 + fix: with multiple things being selected dont show spawning button options unless they are the same type
