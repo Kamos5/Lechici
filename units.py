@@ -1,10 +1,12 @@
 from __future__ import annotations
 
 import math
+import os
 import random
 from typing import Dict, List, Optional, Tuple
 
 import pygame
+from PIL import Image
 from pygame.math import Vector2
 
 from constants import *
@@ -21,7 +23,7 @@ TEAM_MASKS: Dict[str, List[str]] = {
     "TownCenter": ["#6f0000"],
     "Barn": ["#6f0000"],
     # Units (if your unit sprites have a team mask too)
-    # "Axeman": ["#6f0000"],
+    "Axeman": ["#700000"],
     "Knight": ["#6b0000"],
     # "Archer": ["#6f0000"],
     # "Cow": ["#6f0000"],
@@ -92,6 +94,77 @@ def get_team_sprite(cls_name: str, desired_px: int, player_color: Tuple[int, int
 
     _TEAM_SPRITE_CACHE[key] = tinted
     return tinted
+
+
+# ------------------ Animated sprites (GIF) support ------------------
+
+# Cache per (folder_key, size_px, player_color_rgb, flip_x) -> list[Surface]
+_ANIM_CACHE: Dict[Tuple[str, int, Tuple[int, int, int], bool], List[pygame.Surface]] = {}
+
+
+def _load_gif_frames(path: str) -> List[pygame.Surface]:
+    """
+    Load all frames from an animated GIF using Pillow.
+    Returns list of pygame.Surface in original pixel size.
+    """
+    img = Image.open(path)
+    frames: List[pygame.Surface] = []
+
+    try:
+        while True:
+            frame = img.convert("RGBA")
+            w, h = frame.size
+            surf = pygame.image.fromstring(frame.tobytes(), (w, h), "RGBA").convert_alpha()
+            frames.append(surf)
+            img.seek(img.tell() + 1)
+    except EOFError:
+        pass
+
+    return frames
+
+
+def _get_team_anim_frames(
+    folder_key: str,
+    gif_path: str,
+    desired_px: int,
+    cls_name_for_tint: str,
+    player_color: Tuple[int, int, int],
+    flip_x: bool = False,
+) -> List[pygame.Surface]:
+    """
+    Universal: load & cache gif frames, scale to desired_px,
+    optionally apply team tint like in get_team_sprite, optionally flip horizontally.
+    """
+    key = (folder_key, int(desired_px), tuple(player_color[:3]), bool(flip_x))
+    if key in _ANIM_CACHE:
+        return _ANIM_CACHE[key]
+
+    if not os.path.exists(gif_path):
+        _ANIM_CACHE[key] = []
+        return []
+
+    frames = _load_gif_frames(gif_path)
+    out: List[pygame.Surface] = []
+
+    for fr in frames:
+        fr2 = pygame.transform.scale(fr, (int(desired_px), int(desired_px)))
+
+        if flip_x:
+            fr2 = pygame.transform.flip(fr2, True, False)
+
+        # team tint if configured for this class
+        if cls_name_for_tint in TEAM_MASKS:
+            fr2 = remap_red_gradient(
+                fr2,
+                red_min=0x20,
+                red_max=0xFF,
+                team_color=tuple(player_color[:3]),
+            )
+
+        out.append(fr2)
+
+    _ANIM_CACHE[key] = out
+    return out
 
 class Unit:
     _images = {}
@@ -648,6 +721,14 @@ class Axeman(Unit):
     milk_cost = 300
     wood_cost = 0
 
+    # folder z animacjami:
+    # assets/units/axeman/walk_D.gif, walk_L.gif, walk_LD.gif, walk_LU.gif, walk_M.gif, walk_U.gif
+    _ANIM_DIR = "assets/units/axeman"
+
+    # klatki na sekundę (czas na klatkę)
+    _FRAME_TIME = 0.30  # 0.10s = 10 FPS; dostosuj jak chcesz
+    _IDLE_SPEED_EPS2 = 0.05  # threshold dla uznania "stoi"
+
     def __init__(self, x, y, player_id, player_color):
         super().__init__(x, y, size=UNIT_SIZE, speed=2, color=RED, player_id=player_id, player_color=player_color)
         self.chop_damage = 1
@@ -658,6 +739,127 @@ class Axeman(Unit):
         self.attack_range = 20
         self.attack_cooldown = 1.0
         self.armor = 2
+
+        # kierunek "ostatni" żeby idle trzymał sensowny zwrot (opcjonalne)
+        self._last_facing = "D"
+
+    def _facing_from_velocity(self) -> str:
+        v = self.velocity
+        if v.length_squared() < self._IDLE_SPEED_EPS2:
+            return "M"  # idle
+
+        # pygame: y rośnie w dół
+        x, y = v.x, v.y
+
+        # preferuj 8-kierunków w prosty sposób
+        if abs(x) < 0.35 and y < 0:
+            return "U"
+        if abs(x) < 0.35 and y > 0:
+            return "D"
+        if abs(y) < 0.35 and x < 0:
+            return "L"
+        if abs(y) < 0.35 and x > 0:
+            return "R"
+
+        if x < 0 and y < 0:
+            return "LU"
+        if x < 0 and y > 0:
+            return "LD"
+        if x > 0 and y < 0:
+            return "RU"
+        if x > 0 and y > 0:
+            return "RD"
+
+        return "D"
+
+    def _get_anim_frames_for_facing(self, facing: str) -> List[pygame.Surface]:
+        """
+        Zwraca listę klatek dla:
+        D, L, LD, LU, M, U
+        a R/RD/RU robi jako mirror z L/LD/LU.
+        """
+        cls_name = self.__class__.__name__
+        size_px = int(self.size)
+        pc = tuple(self.player_color[:3])
+
+        # idle
+        if facing == "M":
+            path = os.path.join(self._ANIM_DIR, "walk_M.gif")
+            return _get_team_anim_frames(f"{cls_name}/walk_M", path, size_px, cls_name, pc, flip_x=False)
+
+        # proste (bez odbicia)
+        if facing in ("D", "L", "LD", "LU", "U"):
+            path = os.path.join(self._ANIM_DIR, f"walk_{facing}.gif")
+            return _get_team_anim_frames(f"{cls_name}/walk_{facing}", path, size_px, cls_name, pc, flip_x=False)
+
+        # odbicia lustrzane
+        if facing == "R":
+            path = os.path.join(self._ANIM_DIR, "walk_L.gif")
+            return _get_team_anim_frames(f"{cls_name}/walk_R_from_L", path, size_px, cls_name, pc, flip_x=True)
+
+        if facing == "RD":
+            path = os.path.join(self._ANIM_DIR, "walk_LD.gif")
+            return _get_team_anim_frames(f"{cls_name}/walk_RD_from_LD", path, size_px, cls_name, pc, flip_x=True)
+
+        if facing == "RU":
+            path = os.path.join(self._ANIM_DIR, "walk_LU.gif")
+            return _get_team_anim_frames(f"{cls_name}/walk_RU_from_LU", path, size_px, cls_name, pc, flip_x=True)
+
+        # fallback
+        path = os.path.join(self._ANIM_DIR, "walk_M.gif")
+        return _get_team_anim_frames(f"{cls_name}/walk_M", path, size_px, cls_name, pc, flip_x=False)
+
+    def draw(self, screen, camera_x, camera_y):
+        # culling jak w Unit.draw()
+        if (self.pos.x < camera_x - self.size / 2 or self.pos.x > camera_x + VIEW_WIDTH + self.size / 2 or
+            self.pos.y < camera_y - self.size / 2 or self.pos.y > camera_y + VIEW_HEIGHT + self.size / 2):
+            return
+
+        facing = self._facing_from_velocity()
+        if facing != "M":
+            self._last_facing = facing
+
+        frames = self._get_anim_frames_for_facing(facing)
+        if not frames:
+            # fallback do starego rysowania sprite
+            return super().draw(screen, camera_x, camera_y)
+
+        # wybór klatki: gdy idle (M) też animuje jeśli GIF ma kilka klatek
+        t = context.current_time
+        idx = int(t / self._FRAME_TIME) % len(frames)
+        image = frames[idx]
+
+        x = self.pos.x - camera_x + VIEW_MARGIN_LEFT
+        y = self.pos.y - camera_y + VIEW_MARGIN_TOP
+
+        image_surface = image.copy()
+        image_surface.set_alpha(self.alpha)
+        image_rect = image_surface.get_rect(center=(int(x), int(y)))
+        screen.blit(image_surface, image_rect)
+
+        if self.selected:
+            pygame.draw.rect(screen, self.player_color,
+                             (x - self.size / 2, y - self.size / 2, self.size, self.size), 1)
+
+        if self.should_highlight(context.current_time):
+            pygame.draw.rect(screen, WHITE,
+                             (x - self.size / 2, y - self.size / 2, self.size, self.size), 1)
+
+        # HP bar jak w Unit.draw()
+        bar_width = 16
+        bar_height = 4
+        bar_offset = 2
+        bar_x = x - bar_width / 2
+        bar_y = y - self.size / 2 - bar_height - bar_offset
+        pygame.draw.rect(screen, BLACK, (bar_x, bar_y, bar_width, bar_height))
+        fill_width = (self.hp / self.max_hp) * bar_width
+        pygame.draw.rect(screen, self.player_color, (bar_x, bar_y, fill_width, bar_height))
+
+        # ścieżka jak w Unit.draw (zostawiam wyłączone)
+        if self.path and len(self.path[self.path_index:]) >= 2:
+            points = [(p.x - camera_x + VIEW_MARGIN_LEFT, p.y - camera_y + VIEW_MARGIN_TOP)
+                      for p in self.path[self.path_index:]]
+            # pygame.draw.lines(screen, WHITE, False, points, 1)
 
     def move(self, units, spatial_grid=None, waypoint_graph=None):
         self.velocity = Vector2(0, 0)
@@ -678,12 +880,7 @@ class Axeman(Unit):
             )
 
             if not target_unit:
-                # Player likely issued a new order (target is no longer a TownCenter).
-                # Stop depositing, but keep special (carried wood).
                 self.depositing = False
-                # do NOT clear self.special here
-                # continue executing normal movement to the new target on this frame
-                # (do not return)
             else:
                 if self.pos.distance_to(self.target) <= self.size + target_unit.size / 2:
                     for player in context.players:
@@ -702,32 +899,26 @@ class Axeman(Unit):
 
         # Returning state: Move to return_pos and target a new tree when close
         if self.target and self.target == self.return_pos:
-            if self.pos.distance_to(self.target) <= TILE_SIZE * 1.5:  # Allow larger distance (30 pixels)
+            if self.pos.distance_to(self.target) <= TILE_SIZE * 1.5:
                 self.target = None
-                # Look for the closest tree and pathfind to it
                 nearby_units = context.spatial_grid.get_nearby_units(self, radius=1000)
                 trees = [unit for unit in nearby_units if isinstance(unit, Tree) and unit.player_id == 0]
                 if trees:
                     closest_tree = min(trees, key=lambda tree: self.pos.distance_to(tree.pos))
                     self.target = closest_tree.pos
                     self.return_pos = None
-                    # Force path recalculation to ensure proper pathfinding
                     self.path = context.waypoint_graph.get_path(self.pos, self.target, self) if context.waypoint_graph else [self.pos, self.target]
                     self.path_index = 0
-                    # print(f"Axeman at {self.pos} near return position, targeting new tree at {self.target}, path: {self.path}")
                 else:
-                    # print(f"Axeman at {self.pos} near return position, no trees found nearby")
                     self.return_pos = None
             else:
-                # print(f"Axeman at {self.pos} moving to return position at {self.target}, distance: {self.pos.distance_to(self.target):.1f}")
                 super().move(units, context.spatial_grid, context.waypoint_graph)
             return
 
-        # Chopping state: Move to tree or stop to chop
+        # Chopping state
         target_tree = next((unit for unit in units if isinstance(unit, Tree) and unit.player_id == 0 and unit.pos == self.target), None)
         if target_tree and self.pos.distance_to(self.target) <= TILE_SIZE:
-            self.velocity = Vector2(0, 0)  # Stop to chop
-            # print(f"Axeman at {self.pos} stopped to chop tree at {self.target}")
+            self.velocity = Vector2(0, 0)
         else:
             super().move(units, context.spatial_grid, context.waypoint_graph)
 
@@ -737,7 +928,6 @@ class Axeman(Unit):
         target_tree = next((tree for tree in trees if isinstance(tree, Tree) and tree.player_id == 0 and self.target == tree.pos and self.pos.distance_to(tree.pos) <= TILE_SIZE), None)
         if target_tree:
             target_tree.hp -= self.chop_damage
-            # print(f"Axeman at {self.pos} chopping tree at {target_tree.pos}, tree HP: {target_tree.hp}")
             if target_tree.hp <= 0:
                 self.return_pos = Vector2(self.pos)
                 context.players[0].remove_unit(target_tree)
@@ -745,7 +935,6 @@ class Axeman(Unit):
                 context.spatial_grid.remove_unit(target_tree)
                 self.special = 25
                 print(f"Tree at {target_tree.pos} chopped down by Axeman at {self.pos}, special = {self.special}")
-                # Set TownCenter as target for depositing
                 town_centers = [unit for unit in context.all_units if isinstance(unit, TownCenter) and unit.player_id == self.player_id and unit.alpha == 255]
                 if town_centers:
                     closest_town = min(town_centers, key=lambda town: self.pos.distance_to(town.pos))
@@ -753,9 +942,7 @@ class Axeman(Unit):
                     self.path = context.waypoint_graph.get_path(self.pos, closest_town.pos, self)
                     self.path_index = 0
                     self.depositing = True
-                    # print(f"Axeman at {self.pos} targeting TownCenter at {self.target} for wood deposit")
                 else:
-                    # print(f"Axeman at {self.pos} found no TownCenter, clearing state")
                     self.special = 0
                     self.depositing = False
                     self.target = None
