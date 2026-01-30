@@ -14,7 +14,7 @@ from constants import *
 import context
 import units as units_mod
 from tiles import GrassTile, Dirt, River, Foundation, Mountain
-from world_objects import Bridge, Road
+from world_objects import Bridge, Road, Wall
 from units import Tree, Building
 from player import Player, PlayerAI
 from pathfinding import SpatialGrid, WaypointGraph
@@ -184,6 +184,14 @@ def load_editor_map(path: str) -> Tuple[
                     world_objects.append(Road(x, y, variant=variant, passable=passable))
                 except TypeError:
                     world_objects.append(Road(x, y))
+
+            elif obj_type == "Wall":
+                variant = info.get("variant")
+                # ignore passable from save: walls are always blocked
+                try:
+                    world_objects.append(Wall(x, y, variant=variant))
+                except TypeError:
+                    world_objects.append(Wall(x, y))
 
     return grass_tiles, all_units, river_tiles, world_objects
 

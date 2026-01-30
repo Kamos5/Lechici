@@ -20,7 +20,7 @@ from typing import Dict, List, Optional, Tuple, Type, Any
 import pygame
 
 from constants import *  # SCREEN_WIDTH/HEIGHT, TILE_SIZE, VIEW_* etc.
-from world_objects import Bridge, Road
+from world_objects import Bridge, Road, Wall
 from tiles import GrassTile, Dirt, River, Foundation, Mountain
 from units import Unit, Axeman, Knight, Archer, Cow, Tree, Barn, TownCenter, Barracks, ShamansHut, get_team_sprite
 
@@ -45,6 +45,8 @@ _BRIDGE_EDITOR_IMAGES: Dict[Tuple[str, int], Optional[pygame.Surface]] = {}
 ROAD_VARIANT_PREFIX = "road"
 _ROAD_EDITOR_IMAGES: Dict[Tuple[str, int], Optional[pygame.Surface]] = {}
 
+WALL_VARIANT_PREFIX = "wall"
+_WALL_EDITOR_IMAGES: Dict[Tuple[str, int], Optional[pygame.Surface]] = {}
 
 
 # Tiles available to paint
@@ -60,6 +62,7 @@ TILE_TYPES = {
 OBJECT_TYPES: Dict[str, Type] = {
     "Bridge": Bridge,
     "Road": Road,
+    "Wall": Wall,
 }
 
 # Units available to place (as sprites)
@@ -199,6 +202,21 @@ def load_mountain_editor_image(variant: str, desired_px: int) -> Optional[pygame
     except Exception as e:
         print(f"[EDITOR] Failed to load {path}: {e}")
         _MOUNTAIN_EDITOR_IMAGES[key] = None
+        return None
+
+def load_wall_editor_image(variant: str, desired_px: int) -> Optional[pygame.Surface]:
+    key = (variant, desired_px)
+    if key in _WALL_EDITOR_IMAGES:
+        return _WALL_EDITOR_IMAGES[key]
+    path = f"assets/worldObjects/wall/{variant}.png"
+    try:
+        img = pygame.image.load(path).convert_alpha()
+        img = pygame.transform.smoothscale(img, (desired_px, desired_px))
+        _WALL_EDITOR_IMAGES[key] = img
+        return img
+    except Exception as e:
+        print(f"[EDITOR] Failed to load {path}: {e}")
+        _WALL_EDITOR_IMAGES[key] = None
         return None
 
 # -----------------------------
@@ -607,6 +625,8 @@ def main() -> None:
 
     selected_road_index = 1  # 1..15 (road1 default)
 
+    selected_wall_index = 1  # 1..15 (road1 default)
+
     object_passable = True  # applies to both road/bridge
 
     # Camera is always snapped to tile grid
@@ -635,6 +655,9 @@ def main() -> None:
 
     def current_road_variant() -> str:
         return f"{ROAD_VARIANT_PREFIX}{selected_road_index}"
+
+    def current_wall_variant() -> str:
+        return f"{WALL_VARIANT_PREFIX}{selected_wall_index}"
 
     def rebuild_ui() -> None:
         buttons.clear()
@@ -743,6 +766,12 @@ def main() -> None:
                     "variant": current_road_variant(),
                     "passable": bool(object_passable),
                 }
+            elif selected_object == "Wall":
+                objects_by_cell[key] = {
+                    "type": "Wall",
+                    "variant": current_wall_variant(),
+                    "passable": False,  # always blocked
+                }
 
         elif mode == "unit":
             fp = footprint_cells(selected_unit, row, col)
@@ -794,6 +823,8 @@ def main() -> None:
                 return load_bridge_editor_image(current_bridge_variant(), desired_px)
             if value == "Road":
                 return load_road_editor_image(current_road_variant(), desired_px)
+            if value == "Wall":
+                return load_wall_editor_image(current_wall_variant(), desired_px)
             return None
 
         # Units
@@ -956,6 +987,14 @@ def main() -> None:
                                 selected_object = "Road"
                                 mode = "object"
                                 _ = load_road_editor_image(current_road_variant(), int(TILE_SIZE))
+                            elif b.value == "Wall":
+                                if selected_object == "Wall" and mode == "object":
+                                    selected_wall_index += 1
+                                    if selected_wall_index > 12:
+                                        selected_wall_index = 1
+                                selected_object = "Wall"
+                                mode = "object"
+                                _ = load_wall_editor_image(current_wall_variant(), int(TILE_SIZE))
 
                         elif b.kind == "unit":
                             # Special behavior: repeated clicks on Tree cycle tree0..tree6
@@ -1028,6 +1067,10 @@ def main() -> None:
 
             elif t == "Road":
                 obj = Road(c * TILE_SIZE, r * TILE_SIZE, variant=variant, passable=passable)
+                obj.draw(view_surf, camera_x, camera_y)
+
+            elif t == "Wall":
+                obj = Wall(c * TILE_SIZE, r * TILE_SIZE, variant=variant)
                 obj.draw(view_surf, camera_x, camera_y)
 
         # Borders ONLY between different tile types
