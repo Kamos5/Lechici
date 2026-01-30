@@ -607,6 +607,7 @@ def main() -> None:
     objects_by_cell: Dict[str, Dict[str, Any]] = {}  # "r,c" -> {"type":"Bridge","variant":"bridge5","passable":True}
 
     mode = "tile"  # "tile" | "unit" | "erase"
+    palette_group = "tile"  # which group the 2-row palette shows (tile/object/unit)
     selected_tile = "Dirt"
     selected_unit = "Axeman"
     selected_player = 1
@@ -683,27 +684,38 @@ def main() -> None:
         for i, (plabel, _col) in enumerate(PLAYERS):
             buttons.append(Button(pygame.Rect(px + i * (70 + 6), y, 70, BTN_H), plabel, "player", str(i)))
 
-        # Row 2: tiles + units
-        x2 = 10
+        # Row 2 + Row 3: palette (ONLY the selected group), 10 buttons per row
         y2 = PANEL_Y + 10 + BTN_H + 10
+        y3 = y2 + BTN_H + 10
 
-        for name in TILE_TYPES.keys():
-            lab = name.replace("Tile", "")
-            buttons.append(Button(pygame.Rect(x2, y2, BTN_W, BTN_H), lab, "tile", name))
-            x2 += BTN_W + BTN_GAP
+        # 10-wide layout across screen
+        PALETTE_COLS = 10
+        left_margin = 10
+        right_margin = 10
+        avail_w = SCREEN_WIDTH - left_margin - right_margin
+        btn_w = int((avail_w - (PALETTE_COLS - 1) * BTN_GAP) / PALETTE_COLS)
+        btn_w = max(60, btn_w)  # safety
 
-        for name in OBJECT_TYPES.keys():
-            buttons.append(Button(pygame.Rect(x2, y2, BTN_W, BTN_H), name, "object", name))
-            x2 += BTN_W + BTN_GAP
+        # Build the list for the currently selected palette group
+        if palette_group == "tile":
+            items = [(k.replace("Tile", ""), "tile", k) for k in TILE_TYPES.keys()]
+        elif palette_group == "object":
+            items = [(k, "object", k) for k in OBJECT_TYPES.keys()]
+        else:  # "unit"
+            ordered = list(UNIT_ROW) + list(BOTTOM_ROW)
+            # include any units not already in the two lists (keeps it future-proof)
+            for k in UNIT_TYPES.keys():
+                if k not in ordered:
+                    ordered.append(k)
+            items = [(k, "unit", k) for k in ordered if k in UNIT_TYPES]
 
-        # Row 3: bottom row (Tree + buildings)
-        x3 = 10
-        y3 = PANEL_Y + 10 + BTN_H + 10 + BTN_H + 10
-        for name in list(UNIT_ROW) + list(BOTTOM_ROW):
-            if name not in UNIT_TYPES:
-                continue
-            buttons.append(Button(pygame.Rect(x3, y3, BTN_W, BTN_H), name, "unit", name))
-            x3 += BTN_W + BTN_GAP
+        # Place up to 20 items into a 2-row x 10-col grid
+        for i, (label, kind, value) in enumerate(items[:20]):
+            row = i // PALETTE_COLS
+            col = i % PALETTE_COLS
+            y = y2 if row == 0 else y3
+            x = left_margin + col * (btn_w + BTN_GAP)
+            buttons.append(Button(pygame.Rect(x, y, btn_w, BTN_H), label, kind, value))
 
     rebuild_ui()
 
@@ -945,6 +957,10 @@ def main() -> None:
 
                         if b.kind == "mode":
                             mode = b.value
+                            # keep palette synced to the chosen group; Erase should NOT change it
+                            if mode in ("tile", "object", "unit"):
+                                palette_group = mode
+                            rebuild_ui()
 
                         elif b.kind == "tile":
                             # Special behavior: repeated clicks on River cycle river1..river9

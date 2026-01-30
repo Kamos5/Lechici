@@ -24,8 +24,8 @@ TEAM_MASKS: Dict[str, List[str]] = {
     "Barn": ["#6f0000"],
     # Units (if your unit sprites have a team mask too)
     "Axeman": ["#700000"],
-    "Knight": ["#6b0000"],
-    # "Archer": ["#6f0000"],
+    "Knight": ["#700000"],
+    "Archer": ["#700000"],
     # "Cow": ["#6f0000"],
     "ShamansHut": ["#6f0000"],
 }
@@ -426,7 +426,18 @@ class Unit:
                 })
                 damage = max(0, self.attack_damage - target.armor)
                 target.hp -= damage
+                target.hp -= damage
                 self.last_attack_time = context.current_time
+
+                # ---- trigger attack animation window for Archer ----
+                if isinstance(self, Archer):
+                    # keep orientation from last movement direction (default D set in Archer.__init__)
+                    self._attacking_until = context.current_time + self._ATTACK_HOLD_TIME
+                    # optional: store when attack started if you ever want non-looping attack anim
+                    if not hasattr(self, "_attack_start_time"):
+                        self._attack_start_time = 0.0
+                    self._attack_start_time = context.current_time
+
                 print(f"{self.__class__.__name__} at {self.pos} attacked {target.__class__.__name__} at {target.pos}, dealing {damage} damage")
                 # Notify target of attack for defensive behavior
                 if isinstance(target, (Axeman, Archer, Knight)) and target.hp > 0:
@@ -965,12 +976,204 @@ class Archer(Unit):
     milk_cost = 400
     wood_cost = 200
 
+    _ANIM_DIR = "assets/units/archer"
+
+    # animation timing
+    _WALK_FRAME_TIME = 0.12
+    _ATTACK_FRAME_TIME = 0.10
+
+    # how long to keep showing attack animation after a shot
+    _ATTACK_HOLD_TIME = 0.45
+
+    _IDLE_SPEED_EPS2 = 0.05
+
     def __init__(self, x, y, player_id, player_color):
         super().__init__(x, y, size=UNIT_SIZE, speed=2.3, color=YELLOW, player_id=player_id, player_color=player_color)
         self.attack_damage = 15
         self.attack_range = 100
         self.attack_cooldown = 1.5
         self.armor = 0
+
+        # remember last movement direction so attacking keeps orientation
+        self._last_facing = "D"
+
+        # attack animation timer
+        self._attacking_until = 0.0
+        self._attack_start_time = 0.0
+
+    def _facing_from_velocity(self) -> str:
+        v = self.velocity
+        if v.length_squared() < self._IDLE_SPEED_EPS2:
+            return "M"
+
+        x, y = v.x, v.y
+
+        if abs(x) < 0.35 and y < 0: return "U"
+        if abs(x) < 0.35 and y > 0: return "D"
+        if abs(y) < 0.35 and x < 0: return "L"
+        if abs(y) < 0.35 and x > 0: return "R"
+
+        if x < 0 and y < 0: return "LU"
+        if x < 0 and y > 0: return "LD"
+        if x > 0 and y < 0: return "RU"
+        if x > 0 and y > 0: return "RD"
+
+        return "D"
+
+    def _get_walk_frames(self, facing: str) -> List[pygame.Surface]:
+        cls_name = self.__class__.__name__
+        size_px = int(self.size)
+        pc = tuple(self.player_color[:3])
+
+        if facing == "M":
+            p = os.path.join(self._ANIM_DIR, "walk_M.gif")
+            return _get_team_anim_frames(f"{cls_name}/walk_M", p, size_px, cls_name, pc)
+
+        if facing in ("D", "L", "LD", "LU", "U"):
+            p = os.path.join(self._ANIM_DIR, f"walk_{facing}.gif")
+            return _get_team_anim_frames(f"{cls_name}/walk_{facing}", p, size_px, cls_name, pc)
+
+        if facing == "R":
+            p = os.path.join(self._ANIM_DIR, "walk_L.gif")
+            return _get_team_anim_frames(f"{cls_name}/walk_R_from_L", p, size_px, cls_name, pc, flip_x=True)
+
+        if facing == "RD":
+            p = os.path.join(self._ANIM_DIR, "walk_LD.gif")
+            return _get_team_anim_frames(f"{cls_name}/walk_RD_from_LD", p, size_px, cls_name, pc, flip_x=True)
+
+        if facing == "RU":
+            p = os.path.join(self._ANIM_DIR, "walk_LU.gif")
+            return _get_team_anim_frames(f"{cls_name}/walk_RU_from_LU", p, size_px, cls_name, pc, flip_x=True)
+
+        p = os.path.join(self._ANIM_DIR, "walk_M.gif")
+        return _get_team_anim_frames(f"{cls_name}/walk_M", p, size_px, cls_name, pc)
+
+    def _get_attack_frames(self, facing: str) -> List[pygame.Surface]:
+        """
+        Attack uses attack_<facing>.gif (same direction set as walk).
+        Right-side directions are mirrored from left:
+          R  <- L
+          RD <- LD
+          RU <- LU
+        Also accepts 'attackD.gif' style if you decide to name them without underscore later.
+        """
+        cls_name = self.__class__.__name__
+        size_px = int(self.size)
+        pc = tuple(self.player_color[:3])
+
+        if facing == "M" or not facing:
+            facing = "D"
+
+        def try_load(prefix: str, key_suffix: str, flip_x: bool = False) -> List[pygame.Surface]:
+            path = os.path.join(self._ANIM_DIR, f"{prefix}{key_suffix}.gif")
+            return _get_team_anim_frames(f"{cls_name}/{prefix}{key_suffix}", path, size_px, cls_name, pc, flip_x=flip_x)
+
+        def try_both_namings(key_suffix: str, flip_x: bool = False) -> List[pygame.Surface]:
+            # preferred: attack_<dir>.gif
+            fr = try_load("attack_", key_suffix, flip_x=flip_x)
+            if fr:
+                return fr
+            # fallback: attack<dir>.gif (no underscore)
+            fr = try_load("attack", key_suffix, flip_x=flip_x)
+            if fr:
+                return fr
+            return []
+
+        # direct directions
+        if facing in ("D", "L", "LD", "LU", "U"):
+            fr = try_both_namings(facing, flip_x=False)
+            if not fr:
+                print(f"[Archer] Missing attack gif for facing={facing} in {self._ANIM_DIR} "
+                      f"(expected attack_{facing}.gif or attack{facing}.gif)")
+            return fr
+
+        # mirror directions
+        if facing == "R":
+            fr = try_both_namings("R", flip_x=False)
+            if fr:
+                return fr
+            fr = try_both_namings("L", flip_x=True)
+            if not fr:
+                print(f"[Archer] Missing attack gif for facing=R (expected attack_R.gif/attackR.gif "
+                      f"or mirror source attack_L.gif/attackL.gif) in {self._ANIM_DIR}")
+            return fr
+
+        if facing == "RD":
+            fr = try_both_namings("RD", flip_x=False)
+            if fr:
+                return fr
+            fr = try_both_namings("LD", flip_x=True)
+            if not fr:
+                print(f"[Archer] Missing attack gif for facing=RD (expected attack_RD.gif/attackRD.gif "
+                      f"or mirror source attack_LD.gif/attackLD.gif) in {self._ANIM_DIR}")
+            return fr
+
+        if facing == "RU":
+            fr = try_both_namings("RU", flip_x=False)
+            if fr:
+                return fr
+            fr = try_both_namings("LU", flip_x=True)
+            if not fr:
+                print(f"[Archer] Missing attack gif for facing=RU (expected attack_RU.gif/attackRU.gif "
+                      f"or mirror source attack_LU.gif/attackLU.gif) in {self._ANIM_DIR}")
+            return fr
+
+        # fallback to D
+        fr = try_both_namings("D", flip_x=False)
+        if not fr:
+            print(f"[Archer] Missing fallback attack_D.gif/attackD.gif in {self._ANIM_DIR}")
+        return fr
+
+    def draw(self, screen, camera_x, camera_y):
+        if (self.pos.x < camera_x - self.size / 2 or self.pos.x > camera_x + VIEW_WIDTH + self.size / 2 or
+            self.pos.y < camera_y - self.size / 2 or self.pos.y > camera_y + VIEW_HEIGHT + self.size / 2):
+            return
+
+        raw_facing = self._facing_from_velocity()
+        if raw_facing != "M":
+            self._last_facing = raw_facing
+
+        is_attacking = context.current_time <= self._attacking_until
+
+        if is_attacking:
+            facing = self._last_facing or "D"
+            frames = self._get_attack_frames(facing)
+            frame_time = self._ATTACK_FRAME_TIME
+        else:
+            facing = raw_facing
+            frames = self._get_walk_frames(facing)
+            frame_time = self._WALK_FRAME_TIME
+
+        if not frames:
+            return super().draw(screen, camera_x, camera_y)
+
+        idx = int(context.current_time / frame_time) % len(frames)
+        image = frames[idx]
+
+        x = self.pos.x - camera_x + VIEW_MARGIN_LEFT
+        y = self.pos.y - camera_y + VIEW_MARGIN_TOP
+
+        image_surface = image.copy()
+        image_surface.set_alpha(self.alpha)
+        rect = image_surface.get_rect(center=(int(x), int(y)))
+        screen.blit(image_surface, rect)
+
+        if self.selected:
+            pygame.draw.rect(screen, self.player_color,
+                             (x - self.size / 2, y - self.size / 2, self.size, self.size), 1)
+        if self.should_highlight(context.current_time):
+            pygame.draw.rect(screen, WHITE,
+                             (x - self.size / 2, y - self.size / 2, self.size, self.size), 1)
+
+        # HP bar (same style as Unit.draw)
+        bar_width = 16
+        bar_height = 4
+        bar_offset = 2
+        bar_x = x - bar_width / 2
+        bar_y = y - self.size / 2 - bar_height - bar_offset
+        pygame.draw.rect(screen, BLACK, (bar_x, bar_y, bar_width, bar_height))
+        fill_width = (self.hp / self.max_hp) * bar_width
+        pygame.draw.rect(screen, self.player_color, (bar_x, bar_y, fill_width, bar_height))
 
 # Cow class
 class Cow(Unit):
