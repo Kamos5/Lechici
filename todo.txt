@@ -41,8 +41,8 @@ done:
 + different wood types
 + fix: with multiple things being selected dont show spawning button options unless they are the same type
 + dirt != used grass
-+ dirt roads
-
++ roads
++ walls
 
 todo:
 
@@ -61,6 +61,5 @@ todo:
 - idle units?
 - fix: when selected with building wrong order (first unit then building)
 - fix: units get stuck on corners
-- walls
 - different grass types (season based?)
 - units should have level (militia, professional, veteran)

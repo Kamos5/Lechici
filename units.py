@@ -979,6 +979,17 @@ class Cow(Unit):
     returning = False
     return_pos = None
 
+    _ANIM_DIR = "assets/units/cow"
+
+    _ANIM_DIR = "assets/units/cow"
+
+    _WALK_FRAME_TIME = 0.12
+    _HARVEST_FRAME_TIME = 0.10
+    _IDLE_SPEED_EPS2 = 0.05
+
+    _HARVEST_HOLD_TIME = 0.40
+    _DIE_FRAME_TIME = 0.10
+
     def __init__(self, x, y, player_id, player_color):
         super().__init__(x, y, size=UNIT_SIZE, speed=2, color=BROWN, player_id=player_id, player_color=player_color)
         self.harvest_rate = 0.005
@@ -988,33 +999,230 @@ class Cow(Unit):
         self.attack_range = 20
         self.attack_cooldown = 2.0
         self.armor = 1
+        # remember last movement direction so harvesting keeps orientation
+        self._last_facing = "D"
+
+        # ✅ Harvest animation timer
+        self._harvesting_until = 0.0
+
+    def _facing_from_velocity(self) -> str:
+        v = self.velocity
+        if v.length_squared() < self._IDLE_SPEED_EPS2:
+            return "M"
+
+        x, y = v.x, v.y
+
+        # 4-direction thresholds + diagonals
+        if abs(x) < 0.35 and y < 0: return "U"
+        if abs(x) < 0.35 and y > 0: return "D"
+        if abs(y) < 0.35 and x < 0: return "L"
+        if abs(y) < 0.35 and x > 0: return "R"
+
+        if x < 0 and y < 0: return "LU"
+        if x < 0 and y > 0: return "LD"
+        if x > 0 and y < 0: return "RU"
+        if x > 0 and y > 0: return "RD"
+
+        return "D"
+
+    def _get_walk_frames(self, facing: str) -> List[pygame.Surface]:
+        cls_name = self.__class__.__name__
+        size_px = int(self.size)
+        pc = tuple(self.player_color[:3])
+
+        if facing == "M":
+            p = os.path.join(self._ANIM_DIR, "walk_M.gif")
+            return _get_team_anim_frames(f"{cls_name}/walk_M", p, size_px, cls_name, pc)
+
+        # present as files
+        if facing in ("D", "L", "LD", "LU", "U"):
+            p = os.path.join(self._ANIM_DIR, f"walk_{facing}.gif")
+            return _get_team_anim_frames(f"{cls_name}/walk_{facing}", p, size_px, cls_name, pc)
+
+        # mirrored directions (RIGHT side)
+        if facing == "R":
+            p = os.path.join(self._ANIM_DIR, "walk_L.gif")
+            return _get_team_anim_frames(f"{cls_name}/walk_R_from_L", p, size_px, cls_name, pc, flip_x=True)
+
+        if facing == "RD":
+            p = os.path.join(self._ANIM_DIR, "walk_LD.gif")
+            return _get_team_anim_frames(f"{cls_name}/walk_RD_from_LD", p, size_px, cls_name, pc, flip_x=True)
+
+        if facing == "RU":
+            p = os.path.join(self._ANIM_DIR, "walk_LU.gif")
+            return _get_team_anim_frames(f"{cls_name}/walk_RU_from_LU", p, size_px, cls_name, pc, flip_x=True)
+
+        # fallback
+        p = os.path.join(self._ANIM_DIR, "walk_M.gif")
+        return _get_team_anim_frames(f"{cls_name}/walk_M", p, size_px, cls_name, pc)
+
+    def _get_harvest_frames(self, facing: str) -> List[pygame.Surface]:
+        """
+        Harvest uses harvest_<facing>.gif.
+        Robustness:
+        - accept common typo: harverst_<facing>.gif
+        - for RIGHT directions: try direct file first, else mirror LEFT
+        """
+        cls_name = self.__class__.__name__
+        size_px = int(self.size)
+        pc = tuple(self.player_color[:3])
+
+        if facing == "M" or not facing:
+            facing = "D"
+
+        def try_load(prefix: str, key_suffix: str, flip_x: bool = False) -> List[pygame.Surface]:
+            path = os.path.join(self._ANIM_DIR, f"{prefix}{key_suffix}.gif")
+            frames = _get_team_anim_frames(f"{cls_name}/{prefix}{key_suffix}", path, size_px, cls_name, pc, flip_x=flip_x)
+            return frames
+
+        def try_both_prefixes(key_suffix: str, flip_x: bool = False) -> List[pygame.Surface]:
+            # prefer correct name first
+            fr = try_load("harvest_", key_suffix, flip_x=flip_x)
+            if fr:
+                return fr
+            # fallback: common typo
+            fr = try_load("harverst_", key_suffix, flip_x=flip_x)
+            if fr:
+                return fr
+            return []
+
+        # Direct (non-mirrored) directions
+        if facing in ("D", "L", "LD", "LU", "U"):
+            fr = try_both_prefixes(facing, flip_x=False)
+            if not fr:
+                print(f"[Cow] Missing harvest gif for facing={facing} in {self._ANIM_DIR} "
+                      f"(expected harvest_{facing}.gif or harverst_{facing}.gif)")
+            return fr
+
+        # Right side: try direct right gif first; otherwise mirror left
+        if facing == "R":
+            fr = try_both_prefixes("R", flip_x=False)
+            if fr:
+                return fr
+            fr = try_both_prefixes("L", flip_x=True)
+            if not fr:
+                print(f"[Cow] Missing harvest gif for facing=R (expected harvest_R.gif / harverst_R.gif "
+                      f"or mirror source harvest_L.gif / harverst_L.gif) in {self._ANIM_DIR}")
+            return fr
+
+        if facing == "RD":
+            fr = try_both_prefixes("RD", flip_x=False)
+            if fr:
+                return fr
+            fr = try_both_prefixes("LD", flip_x=True)
+            if not fr:
+                print(f"[Cow] Missing harvest gif for facing=RD (expected harvest_RD.gif / harverst_RD.gif "
+                      f"or mirror source harvest_LD.gif / harverst_LD.gif) in {self._ANIM_DIR}")
+            return fr
+
+        if facing == "RU":
+            fr = try_both_prefixes("RU", flip_x=False)
+            if fr:
+                return fr
+            fr = try_both_prefixes("LU", flip_x=True)
+            if not fr:
+                print(f"[Cow] Missing harvest gif for facing=RU (expected harvest_RU.gif / harverst_RU.gif "
+                      f"or mirror source harvest_LU.gif / harverst_LU.gif) in {self._ANIM_DIR}")
+            return fr
+
+        # Fallback to D
+        fr = try_both_prefixes("D", flip_x=False)
+        if not fr:
+            print(f"[Cow] Missing fallback harvest_D.gif/harverst_D.gif in {self._ANIM_DIR}")
+        return fr
+
+    def _get_die_frames(self, facing: str) -> List[pygame.Surface]:
+        # simplest: one die.gif for all; or directional die_D, die_L... if you have them
+        cls_name = self.__class__.__name__
+        size_px = int(self.size)
+        pc = tuple(self.player_color[:3])
+
+        # Try directional first
+        if facing in ("D", "L", "LD", "LU", "U", "M"):
+            key = "D" if facing == "M" else facing
+            p = os.path.join(self._ANIM_DIR, f"die_{key}.gif")
+            fr = _get_team_anim_frames(f"{cls_name}/die_{key}", p, size_px, cls_name, pc, flip_x=False)
+            if fr:
+                return fr
+
+        # Mirror for right if only left exists
+        if facing == "R":
+            p = os.path.join(self._ANIM_DIR, "die_L.gif")
+            fr = _get_team_anim_frames(f"{cls_name}/die_R_from_L", p, size_px, cls_name, pc, flip_x=True)
+            if fr:
+                return fr
+
+        if facing == "RD":
+            p = os.path.join(self._ANIM_DIR, "die_LD.gif")
+            fr = _get_team_anim_frames(f"{cls_name}/die_RD_from_LD", p, size_px, cls_name, pc, flip_x=True)
+            if fr:
+                return fr
+
+        if facing == "RU":
+            p = os.path.join(self._ANIM_DIR, "die_LU.gif")
+            fr = _get_team_anim_frames(f"{cls_name}/die_RU_from_LU", p, size_px, cls_name, pc, flip_x=True)
+            if fr:
+                return fr
+
+        # Fallback: single die.gif
+        p = os.path.join(self._ANIM_DIR, "die.gif")
+        return _get_team_anim_frames(f"{cls_name}/die", p, size_px, cls_name, pc, flip_x=False)
 
     def draw(self, screen, camera_x, camera_y):
         if (self.pos.x < camera_x - self.size / 2 or self.pos.x > camera_x + VIEW_WIDTH + self.size / 2 or
-            self.pos.y < camera_y - self.size / 2 or self.pos.y > camera_y + VIEW_HEIGHT + self.size / 2):
+                self.pos.y < camera_y - self.size / 2 or self.pos.y > camera_y + VIEW_HEIGHT + self.size / 2):
             return
-        cls_name = self.__class__.__name__
-        image = get_team_sprite(cls_name, int(self.size), tuple(self.player_color[:3]))
+
+        raw_facing = self._facing_from_velocity()
+
+        # update last facing only when moving
+        if raw_facing != "M":
+            self._last_facing = raw_facing
+
+        is_harvesting = context.current_time <= self._harvesting_until
+
+        if is_harvesting:
+            # ✅ Harvest uses last movement direction (default D)
+            facing = self._last_facing or "D"
+            frames = self._get_harvest_frames(facing)
+            frame_time = self._HARVEST_FRAME_TIME
+        else:
+            facing = raw_facing
+            frames = self._get_walk_frames(facing)
+            frame_time = self._WALK_FRAME_TIME
+
+        if not frames:
+            return super().draw(screen, camera_x, camera_y)
+
+        idx = int(context.current_time / frame_time) % len(frames)
+        image = frames[idx]
+
         x = self.pos.x - camera_x + VIEW_MARGIN_LEFT
         y = self.pos.y - camera_y + VIEW_MARGIN_TOP
-        if not image:
-            color = GREEN if self.selected else self.color
-            pygame.draw.rect(screen, color, (x - self.size / 2, y - self.size / 2, self.size, self.size))
-        else:
-            image_rect = image.get_rect(center=(int(x), int(y)))
-            screen.blit(image, image_rect)
+
+        image_surface = image.copy()
+        image_surface.set_alpha(self.alpha)
+        rect = image_surface.get_rect(center=(int(x), int(y)))
+        screen.blit(image_surface, rect)
+
         if self.selected:
-            pygame.draw.rect(screen, self.player_color, (x - self.size / 2, y - self.size / 2, self.size, self.size), 1)
+            pygame.draw.rect(screen, self.player_color,
+                             (x - self.size / 2, y - self.size / 2, self.size, self.size), 1)
         if self.should_highlight(context.current_time):
-            pygame.draw.rect(screen, WHITE, (x - self.size / 2, y - self.size / 2, self.size, self.size), 1)
+            pygame.draw.rect(screen, WHITE,
+                             (x - self.size / 2, y - self.size / 2, self.size, self.size), 1)
+
+        # HP + special bar (as you had)
         bar_width = 16
         bar_height = 4
         bar_offset = 2
         bar_x = x - bar_width / 2
         bar_y = y - self.size / 2 - bar_height - bar_offset
+
         pygame.draw.rect(screen, BLACK, (bar_x, bar_y, bar_width, bar_height))
         fill_width = (self.hp / self.max_hp) * bar_width
         pygame.draw.rect(screen, self.player_color, (bar_x, bar_y, fill_width, bar_height))
+
         fill_width = (self.special / 100) * bar_width
         pygame.draw.rect(screen, WHITE, (bar_x, bar_y + bar_height + 1, fill_width, bar_height))
 
@@ -1131,6 +1339,10 @@ class Cow(Unit):
                     if not has_tree:
                         harvested = tile.harvest(self.harvest_rate)
                         self.special = min(100, self.special + harvested * 10)
+
+                        # ✅ trigger harvest animation, keep last movement direction
+                        self._harvesting_until = context.current_time + self._HARVEST_HOLD_TIME
+
                         if tile.grass_level == 0:
                             adjacent_tiles = [
                                 (tile_x, tile_y - 1), (tile_x, tile_y + 1), (tile_x - 1, tile_y), (tile_x + 1, tile_y),
