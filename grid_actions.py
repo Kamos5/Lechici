@@ -2,7 +2,7 @@
 import pygame
 from pygame.math import Vector2
 
-from units import Building, Barn, Barracks, TownCenter, Axeman, Archer, Knight, Cow, ShamansHut
+from units import Building, Barn, Barracks, TownCenter, Axeman, Archer, Knight, Cow, ShamansHut, WarriorsLodge, KnightsEstate, Ruin
 
 # 4x3 hotkeys: q w e r / a s d f / z x c v
 GRID_HOTKEYS = {
@@ -34,7 +34,9 @@ def _get_selected_buildings(current_player):
     selected_barracks = next((u for u in current_player.units if isinstance(u, Barracks) and u.selected and u.alpha == 255), None)
     selected_town_center = next((u for u in current_player.units if isinstance(u, TownCenter) and u.selected and u.alpha == 255), None)
     selected_shamans_hut = next((u for u in current_player.units if isinstance(u, ShamansHut) and u.selected and u.alpha == 255), None)
-    return selected_barn, selected_barracks, selected_town_center, selected_shamans_hut
+    selected_warriors_lodge_hut = next((u for u in current_player.units if isinstance(u, WarriorsLodge) and u.selected and u.alpha == 255), None)
+    selected_knights_estate = next((u for u in current_player.units if isinstance(u, KnightsEstate) and u.selected and u.alpha == 255), None)
+    return selected_barn, selected_barracks, selected_town_center, selected_shamans_hut, selected_warriors_lodge_hut, selected_knights_estate
 
 
 def execute_grid_cell(
@@ -117,7 +119,7 @@ def execute_grid_cell(
         return False, placing_building, building_to_place
 
     # ---- PRODUCTION MODE ----
-    selected_barn, selected_barracks, selected_town_center, selected_shamans_hut = _get_selected_buildings(current_player)
+    selected_barn, selected_barracks, selected_town_center, selected_shamans_hut, selected_warriors_lodge_hut, selected_knights_estate = _get_selected_buildings(current_player)
 
     options = []
     if selected_barn:
@@ -134,6 +136,9 @@ def execute_grid_cell(
             (Barracks, selected_town_center, "building"),
             (TownCenter, selected_town_center, "building"),
             (ShamansHut, selected_town_center, "building"),
+            (WarriorsLodge, selected_town_center, "building"),
+            (KnightsEstate, selected_town_center, "building"),
+            (Ruin, selected_town_center, "building"),
         ])
 
     # (r,c) -> linear idx in packed grid
