@@ -8894,6 +8894,46 @@
       "type": "Bridge",
       "variant": "bridge5",
       "passable": true
+    },
+    "2,3": {
+      "type": "Road",
+      "variant": "road1",
+      "passable": true
+    },
+    "2,4": {
+      "type": "Road",
+      "variant": "road2",
+      "passable": true
+    },
+    "3,6": {
+      "type": "Road",
+      "variant": "road3",
+      "passable": true
+    },
+    "3,7": {
+      "type": "Road",
+      "variant": "road5",
+      "passable": true
+    },
+    "4,6": {
+      "type": "Road",
+      "variant": "road4",
+      "passable": true
+    },
+    "2,7": {
+      "type": "Road",
+      "variant": "road7",
+      "passable": true
+    },
+    "3,8": {
+      "type": "Road",
+      "variant": "road9",
+      "passable": true
+    },
+    "2,8": {
+      "type": "Road",
+      "variant": "road12",
+      "passable": true
     }
   }
 }

@@ -20,7 +20,8 @@ from typing import Dict, List, Optional, Tuple, Type, Any
 import pygame
 
 from constants import *  # SCREEN_WIDTH/HEIGHT, TILE_SIZE, VIEW_* etc.
-from tiles import GrassTile, Dirt, River, Bridge, Foundation, Mountain
+from world_objects import Bridge, Road
+from tiles import GrassTile, Dirt, River, Foundation, Mountain
 from units import Unit, Axeman, Knight, Archer, Cow, Tree, Barn, TownCenter, Barracks, ShamansHut, get_team_sprite
 
 # -----------------------------
@@ -41,6 +42,9 @@ _MOUNTAIN_EDITOR_IMAGES: Dict[Tuple[str, int], Optional[pygame.Surface]] = {}
 BRIDGE_VARIANT_PREFIX = "bridge"
 _BRIDGE_EDITOR_IMAGES: Dict[Tuple[str, int], Optional[pygame.Surface]] = {}
 
+ROAD_VARIANT_PREFIX = "road"
+_ROAD_EDITOR_IMAGES: Dict[Tuple[str, int], Optional[pygame.Surface]] = {}
+
 
 
 # Tiles available to paint
@@ -55,6 +59,7 @@ TILE_TYPES = {
 # World-objects layer (drawn above tiles, below units)
 OBJECT_TYPES: Dict[str, Type] = {
     "Bridge": Bridge,
+    "Road": Road,
 }
 
 # Units available to place (as sprites)
@@ -135,7 +140,7 @@ def load_river_editor_image(variant: str, desired_px: int) -> Optional[pygame.Su
     if key in _RIVER_EDITOR_IMAGES:
         return _RIVER_EDITOR_IMAGES[key]
 
-    path = f"assets/river/{variant}.png"
+    path = f"assets/tiles/river/{variant}.png"
     try:
         img = pygame.image.load(path).convert_alpha()
         img = pygame.transform.smoothscale(img, (desired_px, desired_px))
@@ -161,6 +166,20 @@ def load_bridge_editor_image(variant: str, desired_px: int) -> Optional[pygame.S
         _BRIDGE_EDITOR_IMAGES[key] = None
         return None
 
+def load_road_editor_image(variant: str, desired_px: int) -> Optional[pygame.Surface]:
+    key = (variant, desired_px)
+    if key in _ROAD_EDITOR_IMAGES:
+        return _ROAD_EDITOR_IMAGES[key]
+    path = f"assets/worldObjects/road/{variant}.png"
+    try:
+        img = pygame.image.load(path).convert_alpha()
+        img = pygame.transform.smoothscale(img, (desired_px, desired_px))
+        _ROAD_EDITOR_IMAGES[key] = img
+        return img
+    except Exception as e:
+        print(f"[EDITOR] Failed to load {path}: {e}")
+        _ROAD_EDITOR_IMAGES[key] = None
+        return None
 
 def load_mountain_editor_image(variant: str, desired_px: int) -> Optional[pygame.Surface]:
     """
@@ -586,6 +605,10 @@ def main() -> None:
     selected_bridge_index = BRIDGE_DEFAULT_INDEX
     bridge_passable = True  # toggle
 
+    selected_road_index = 1  # 1..15 (road1 default)
+
+    object_passable = True  # applies to both road/bridge
+
     # Camera is always snapped to tile grid
     camera_x = 0
     camera_y = 0
@@ -609,6 +632,9 @@ def main() -> None:
 
     def current_bridge_variant() -> str:
         return f"{BRIDGE_VARIANT_PREFIX}{selected_bridge_index}"
+
+    def current_road_variant() -> str:
+        return f"{ROAD_VARIANT_PREFIX}{selected_road_index}"
 
     def rebuild_ui() -> None:
         buttons.clear()
@@ -643,25 +669,16 @@ def main() -> None:
             buttons.append(Button(pygame.Rect(x2, y2, BTN_W, BTN_H), lab, "tile", name))
             x2 += BTN_W + BTN_GAP
 
-        x2 += 20
-
         for name in OBJECT_TYPES.keys():
             buttons.append(Button(pygame.Rect(x2, y2, BTN_W, BTN_H), name, "object", name))
             x2 += BTN_W + BTN_GAP
 
-        for name in UNIT_ROW:
-            if name not in UNIT_TYPES:
-                continue
-            buttons.append(Button(pygame.Rect(x2, y2, BTN_W, BTN_H), name, "unit", name))
-            x2 += BTN_W + BTN_GAP
-
         # Row 3: bottom row (Tree + buildings)
         x3 = 10
-        y3 = y2 + BTN_H + 10
-        for name in BOTTOM_ROW:
+        y3 = PANEL_Y + 10 + BTN_H + 10 + BTN_H + 10
+        for name in list(UNIT_ROW) + list(BOTTOM_ROW):
             if name not in UNIT_TYPES:
                 continue
-            # NOTE: label for Tree will be drawn dynamically (TreeN)
             buttons.append(Button(pygame.Rect(x3, y3, BTN_W, BTN_H), name, "unit", name))
             x3 += BTN_W + BTN_GAP
 
@@ -714,11 +731,18 @@ def main() -> None:
             # allow placing objects even if tile exists (that's the point)
             # but you probably want to avoid placing on top of a building footprint etc.
             key = f"{row},{col}"
-            objects_by_cell[key] = {
-                "type": "Bridge",
-                "variant": current_bridge_variant(),
-                "passable": bool(bridge_passable),
-            }
+            if selected_object == "Bridge":
+                objects_by_cell[key] = {
+                    "type": "Bridge",
+                    "variant": current_bridge_variant(),
+                    "passable": bool(object_passable),
+                }
+            elif selected_object == "Road":
+                objects_by_cell[key] = {
+                    "type": "Road",
+                    "variant": current_road_variant(),
+                    "passable": bool(object_passable),
+                }
 
         elif mode == "unit":
             fp = footprint_cells(selected_unit, row, col)
@@ -768,6 +792,8 @@ def main() -> None:
         if kind == "object":
             if value == "Bridge":
                 return load_bridge_editor_image(current_bridge_variant(), desired_px)
+            if value == "Road":
+                return load_road_editor_image(current_road_variant(), desired_px)
             return None
 
         # Units
@@ -912,6 +938,7 @@ def main() -> None:
                                 selected_tile = b.value
                                 mode = "tile"
 
+
                         elif b.kind == "object":
                             if b.value == "Bridge":
                                 if selected_object == "Bridge" and mode == "object":
@@ -921,6 +948,14 @@ def main() -> None:
                                 selected_object = "Bridge"
                                 mode = "object"
                                 _ = load_bridge_editor_image(current_bridge_variant(), int(TILE_SIZE))
+                            elif b.value == "Road":
+                                if selected_object == "Road" and mode == "object":
+                                    selected_road_index += 1
+                                    if selected_road_index > 15:
+                                        selected_road_index = 1
+                                selected_object = "Road"
+                                mode = "object"
+                                _ = load_road_editor_image(current_road_variant(), int(TILE_SIZE))
 
                         elif b.kind == "unit":
                             # Special behavior: repeated clicks on Tree cycle tree0..tree6
@@ -984,10 +1019,15 @@ def main() -> None:
             if r < start_row or r >= end_row or c < start_col or c >= end_col:
                 continue
             t = v.get("type")
+            variant = v.get("variant")
+            passable = bool(v.get("passable", True))
+
             if t == "Bridge":
-                variant = v.get("variant")
-                passable = bool(v.get("passable", True))
                 obj = Bridge(c * TILE_SIZE, r * TILE_SIZE, variant=variant, passable=passable)
+                obj.draw(view_surf, camera_x, camera_y)
+
+            elif t == "Road":
+                obj = Road(c * TILE_SIZE, r * TILE_SIZE, variant=variant, passable=passable)
                 obj.draw(view_surf, camera_x, camera_y)
 
         # Borders ONLY between different tile types

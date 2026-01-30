@@ -9,8 +9,10 @@ import pygame
 from pygame.math import Vector2
 
 from constants import *
-from tiles import Bridge, Dirt, GrassTile, Foundation
+from world_objects import Bridge, Road
+from tiles import Dirt, GrassTile, Foundation
 from units import Axeman, Barn, Building, Cow, TownCenter, Tree, Unit
+from world_objects import Road
 
 
 class WaypointGraph:
@@ -42,7 +44,7 @@ class WaypointGraph:
             return self.frame_walkable_cache[cache_key]
 
         # Check tile type
-        if not isinstance(self.grass_tiles[tile_y][tile_x], (GrassTile, Dirt, Bridge, Foundation)):
+        if not isinstance(self.grass_tiles[tile_y][tile_x], (GrassTile, Dirt, Bridge, Road, Foundation)):
             self.frame_walkable_cache[cache_key] = False
             return False
 

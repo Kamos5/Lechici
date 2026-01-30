@@ -13,7 +13,8 @@ from pygame import Vector2
 from constants import *
 import context
 import units as units_mod
-from tiles import GrassTile, Dirt, River, Bridge, Foundation, Mountain
+from tiles import GrassTile, Dirt, River, Foundation, Mountain
+from world_objects import Bridge, Road
 from units import Tree, Building
 from player import Player, PlayerAI
 from pathfinding import SpatialGrid, WaypointGraph
@@ -176,6 +177,14 @@ def load_editor_map(path: str) -> Tuple[
                 except TypeError:
                     # if your Bridge ctor is still Bridge(x,y) only, fall back safely
                     world_objects.append(Bridge(x, y))
+            elif obj_type == "Road":
+                variant = info.get("variant")
+                passable = bool(info.get("passable", True))
+                try:
+                    world_objects.append(Road(x, y, variant=variant, passable=passable))
+                except TypeError:
+                    world_objects.append(Road(x, y))
+
     return grass_tiles, all_units, river_tiles, world_objects
 
 

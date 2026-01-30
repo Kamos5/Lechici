@@ -3,6 +3,7 @@ from __future__ import annotations
 from typing import Optional, Tuple
 
 import pygame
+from PIL import Image
 from pygame import Vector2
 
 from constants import *
@@ -31,18 +32,6 @@ class SimpleTile:
         pass
 
 
-class WorldObject:
-    """
-    Drawn ABOVE tiles but BELOW units.
-    Grid-aligned: x,y are top-left tile coords like tiles.
-    """
-    def __init__(self, x: int, y: int, *, passable: bool = False):
-        self.pos = Vector2(x, y)
-        self.center = Vector2(x + TILE_HALF, y + TILE_HALF)
-        self.passable = bool(passable)
-
-    def draw(self, surface, camera_x, camera_y):
-        raise NotImplementedError
 
 # GrassTile class
 class GrassTile(SimpleTile):
@@ -138,70 +127,24 @@ class Foundation(SimpleTile):
             print(f"Failed to load assets/{cls.__name__.lower()}.png: {e}")
             cls._image = None
 
-class Bridge(WorldObject):
-    _variant_images: dict[str, pygame.Surface | None] = {}
-    DEFAULT_VARIANT = "bridge5"
-
-    def __init__(self, x, y, *, variant: str | None = None, passable: bool = True):
-        super().__init__(x, y, passable=passable)
-        self.variant = self._sanitize_variant(variant) or self.DEFAULT_VARIANT
-        if self.variant not in Bridge._variant_images:
-            Bridge._variant_images[self.variant] = Bridge._load_variant_image(self.variant)
-
-    @staticmethod
-    def _sanitize_variant(v: str | None) -> str | None:
-        if not isinstance(v, str) or not v.startswith("bridge"):
-            return None
-        try:
-            idx = int(v[len("bridge"):])
-        except Exception:
-            return None
-        return v if 1 <= idx <= 9 else None
-
-    @classmethod
-    def _load_variant_image(cls, variant: str) -> pygame.Surface | None:
-        path = f"assets/worldObjects/bridge/{variant}.png"
-        try:
-            img = pygame.image.load(path).convert_alpha()
-            return pygame.transform.scale(img, (TILE_SIZE, TILE_SIZE))
-        except (pygame.error, FileNotFoundError) as e:
-            print(f"Failed to load {path}: {e}")
-            return None
-
-    def draw(self, surface, camera_x, camera_y):
-        if (self.pos.x < camera_x - TILE_SIZE or self.pos.x > camera_x + VIEW_WIDTH or
-            self.pos.y < camera_y - TILE_SIZE or self.pos.y > camera_y + VIEW_HEIGHT):
-            return
-
-        img = Bridge._variant_images.get(self.variant)
-        if img is not None:
-            surface.blit(img, (self.pos.x - camera_x, self.pos.y - camera_y))
-        else:
-            pygame.draw.rect(
-                surface,
-                (120, 90, 40),
-                (self.pos.x - camera_x, self.pos.y - camera_y, TILE_SIZE, TILE_SIZE),
-            )
-
 class River(SimpleTile):
-    # Cache per-variant, already scaled to TILE_SIZE
-    _variant_images: dict[str, pygame.Surface | None] = {}
-    DEFAULT_VARIANT = "river5"  # requested default
+    # variant -> list of frames (already scaled to TILE_SIZE)
+    _variant_frames: dict[str, list[pygame.Surface]] = {}
+    DEFAULT_VARIANT = "river9"
+    FRAME_MS = 500  # tweak speed (lower = faster)
 
     def __init__(self, x, y, *, variant: str | None = None):
         super().__init__(x, y)
-        self.grass_level = 0.0  # Non-harvestable
+        self.grass_level = 0.0
         self.variant = self._sanitize_variant(variant) or self.DEFAULT_VARIANT
 
-        # Ensure this variant is loaded
-        if self.variant not in River._variant_images:
-            River._variant_images[self.variant] = River._load_variant_image(self.variant)
+        # Ensure frames are loaded
+        if self.variant not in River._variant_frames:
+            River._variant_frames[self.variant] = River._load_variant_frames(self.variant)
 
     @staticmethod
     def _sanitize_variant(v: str | None) -> str | None:
-        if not isinstance(v, str):
-            return None
-        if not v.startswith("river"):
+        if not isinstance(v, str) or not v.startswith("river"):
             return None
         try:
             idx = int(v[len("river"):])
@@ -210,26 +153,53 @@ class River(SimpleTile):
         return v if RIVER_VARIANT_MIN <= idx <= RIVER_VARIANT_MAX else None
 
     @classmethod
-    def _load_variant_image(cls, variant: str) -> pygame.Surface | None:
-        path = f"assets/river/{variant}.png"
+    def _load_variant_frames(cls, variant: str) -> list[pygame.Surface]:
+        """
+        Prefer GIF:  assets/tiles/river/{variant}.gif
+        Fallback PNG: assets/tiles/river/{variant}.png
+        """
+        frames: list[pygame.Surface] = []
+
+        gif_path = f"assets/tiles/river/{variant}.gif"
+        png_path = f"assets/tiles/river/{variant}.png"
+
+        # 1) Try GIF frames
         try:
-            img = pygame.image.load(path).convert_alpha()
-            return pygame.transform.scale(img, (TILE_SIZE, TILE_SIZE))
-        except (pygame.error, FileNotFoundError) as e:
-            print(f"Failed to load {path}: {e}")
-            return None
+            im = Image.open(gif_path)
+            i = 0
+            while True:
+                im.seek(i)
+                frame_rgba = im.convert("RGBA")
+
+                # PIL -> pygame surface (RGBA)
+                surf = pygame.image.fromstring(frame_rgba.tobytes(), frame_rgba.size, "RGBA").convert_alpha()
+                surf = pygame.transform.scale(surf, (TILE_SIZE, TILE_SIZE))
+                frames.append(surf)
+                i += 1
+        except Exception:
+            pass
+
+        # 2) Fallback to PNG (single-frame "animation")
+        if not frames:
+            try:
+                img = pygame.image.load(png_path).convert_alpha()
+                frames = [pygame.transform.scale(img, (TILE_SIZE, TILE_SIZE))]
+            except (pygame.error, FileNotFoundError) as e:
+                print(f"Failed to load river asset for {variant}: {e}")
+                frames = []
+
+        return frames
 
     def draw(self, surface, camera_x, camera_y):
-        # Same culling as SimpleTile.draw, but pick per-instance image
         if (self.pos.x < camera_x - TILE_SIZE or self.pos.x > camera_x + VIEW_WIDTH or
             self.pos.y < camera_y - TILE_SIZE or self.pos.y > camera_y + VIEW_HEIGHT):
             return
 
-        img = River._variant_images.get(self.variant)
-        if img is not None:
-            surface.blit(img, (self.pos.x - camera_x, self.pos.y - camera_y))
+        frames = River._variant_frames.get(self.variant, [])
+        if frames:
+            idx = (pygame.time.get_ticks() // self.FRAME_MS) % len(frames)
+            surface.blit(frames[idx], (self.pos.x - camera_x, self.pos.y - camera_y))
         else:
-            # fallback color if missing
             pygame.draw.rect(
                 surface,
                 (40, 90, 180),
@@ -237,7 +207,7 @@ class River(SimpleTile):
             )
 
     def regrow(self, rate):
-        pass  # River tiles don't regrow grass
+        pass
 
 class Mountain(SimpleTile):
     # Cache per-variant, already scaled to TILE_SIZE

@@ -1,0 +1,109 @@
+import pygame
+from pygame import Vector2
+
+from constants import TILE_HALF, TILE_SIZE, VIEW_WIDTH, VIEW_HEIGHT
+
+
+class WorldObject:
+    """
+    Drawn ABOVE tiles but BELOW units.
+    Grid-aligned: x,y are top-left tile coords like tiles.
+    """
+    def __init__(self, x: int, y: int, *, passable: bool = False):
+        self.pos = Vector2(x, y)
+        self.center = Vector2(x + TILE_HALF, y + TILE_HALF)
+        self.passable = bool(passable)
+
+    def draw(self, surface, camera_x, camera_y):
+        raise NotImplementedError
+
+class Road(WorldObject):
+    _variant_images: dict[str, pygame.Surface | None] = {}
+    DEFAULT_VARIANT = "road1"
+
+    def __init__(self, x, y, *, variant: str | None = None, passable: bool = True):
+        # Roads should be passable by default
+        super().__init__(x, y, passable=passable)
+        self.variant = self._sanitize_variant(variant) or self.DEFAULT_VARIANT
+        if self.variant not in Road._variant_images:
+            Road._variant_images[self.variant] = Road._load_variant_image(self.variant)
+
+    @staticmethod
+    def _sanitize_variant(v: str | None) -> str | None:
+        if not isinstance(v, str) or not v.startswith("road"):
+            return None
+        try:
+            idx = int(v[len("road"):])
+        except Exception:
+            return None
+        return v if 1 <= idx <= 15 else None
+
+    @classmethod
+    def _load_variant_image(cls, variant: str) -> pygame.Surface | None:
+        path = f"assets/worldObjects/road/{variant}.png"
+        try:
+            img = pygame.image.load(path).convert_alpha()
+            return pygame.transform.scale(img, (TILE_SIZE, TILE_SIZE))
+        except (pygame.error, FileNotFoundError) as e:
+            print(f"Failed to load {path}: {e}")
+            return None
+
+    def draw(self, surface, camera_x, camera_y):
+        if (self.pos.x < camera_x - TILE_SIZE or self.pos.x > camera_x + VIEW_WIDTH or
+            self.pos.y < camera_y - TILE_SIZE or self.pos.y > camera_y + VIEW_HEIGHT):
+            return
+
+        img = Road._variant_images.get(self.variant)
+        if img is not None:
+            surface.blit(img, (self.pos.x - camera_x, self.pos.y - camera_y))
+        else:
+            pygame.draw.rect(
+                surface,
+                (90, 90, 90),
+                (self.pos.x - camera_x, self.pos.y - camera_y, TILE_SIZE, TILE_SIZE),
+            )
+
+class Bridge(WorldObject):
+    _variant_images: dict[str, pygame.Surface | None] = {}
+    DEFAULT_VARIANT = "bridge5"
+
+    def __init__(self, x, y, *, variant: str | None = None, passable: bool = True):
+        super().__init__(x, y, passable=passable)
+        self.variant = self._sanitize_variant(variant) or self.DEFAULT_VARIANT
+        if self.variant not in Bridge._variant_images:
+            Bridge._variant_images[self.variant] = Bridge._load_variant_image(self.variant)
+
+    @staticmethod
+    def _sanitize_variant(v: str | None) -> str | None:
+        if not isinstance(v, str) or not v.startswith("bridge"):
+            return None
+        try:
+            idx = int(v[len("bridge"):])
+        except Exception:
+            return None
+        return v if 1 <= idx <= 9 else None
+
+    @classmethod
+    def _load_variant_image(cls, variant: str) -> pygame.Surface | None:
+        path = f"assets/worldObjects/bridge/{variant}.png"
+        try:
+            img = pygame.image.load(path).convert_alpha()
+            return pygame.transform.scale(img, (TILE_SIZE, TILE_SIZE))
+        except (pygame.error, FileNotFoundError) as e:
+            print(f"Failed to load {path}: {e}")
+            return None
+
+    def draw(self, surface, camera_x, camera_y):
+        if (self.pos.x < camera_x - TILE_SIZE or self.pos.x > camera_x + VIEW_WIDTH or
+            self.pos.y < camera_y - TILE_SIZE or self.pos.y > camera_y + VIEW_HEIGHT):
+            return
+
+        img = Bridge._variant_images.get(self.variant)
+        if img is not None:
+            surface.blit(img, (self.pos.x - camera_x, self.pos.y - camera_y))
+        else:
+            pygame.draw.rect(
+                surface,
+                (120, 90, 40),
+                (self.pos.x - camera_x, self.pos.y - camera_y, TILE_SIZE, TILE_SIZE),
+            )
