@@ -22,7 +22,7 @@ import pygame
 from constants import *  # SCREEN_WIDTH/HEIGHT, TILE_SIZE, VIEW_* etc.
 from world_objects import Bridge, Road, Wall
 from tiles import GrassTile, Dirt, River, Foundation, Mountain
-from units import Unit, Axeman, Knight, Archer, Cow, Tree, Barn, TownCenter, Barracks, ShamansHut, get_team_sprite, KnightsEstate, WarriorsLodge, Ruin
+from units import Unit, Axeman, Knight, Archer, Cow, Tree, Barn, TownCenter, Barracks, ShamansHut, get_team_sprite, KnightsEstate, WarriorsLodge, Ruin, GIF_UNITS, get_unit_walk_frames, get_unit_walk_first_frame
 
 # -----------------------------
 # Config
@@ -259,18 +259,22 @@ def tile_center(row: int, col: int) -> Tuple[int, int]:
 # Sprite loading & drawing
 # -----------------------------
 def _ensure_unit_sprite_loaded(cls_name: str, desired_px: int, player_color=None) -> Optional[pygame.Surface]:
+    # Units: always use first frame of walk_M.gif as the "static" sprite
+    if cls_name in GIF_UNITS:
+        pc = tuple((player_color or (255, 255, 255))[:3])
+        return get_unit_walk_first_frame(cls_name, int(desired_px), pc)
+
+    # Non-GIF units keep existing caching/PNG behavior
     img = Unit._images.get(cls_name)
 
     def max_dim(surf: pygame.Surface) -> int:
         w, h = surf.get_size()
         return max(w, h)
 
-    # Load if missing
     if img is None:
         Unit.load_images(cls_name, desired_px)
         return Unit._images.get(cls_name)
 
-    # If cached size is different, reload at correct size (overwrites cache)
     try:
         if max_dim(img) != desired_px:
             Unit.load_images(cls_name, desired_px)
@@ -299,9 +303,31 @@ def draw_unit_sprite(
         desired = int(max(UNIT_SIZE, TILE_SIZE))
 
     if unit_type == "Tree":
-        # If not provided, default to tree0
         tv = tree_variant or f"{TREE_VARIANT_PREFIX}0"
         img = load_tree_editor_image(tv, desired)
+
+    elif unit_type in GIF_UNITS:
+
+        # Animated in editor: pick a default moving-facing so it looks like "walking"
+
+        facing = "D"  # change to "M" if you want idle loop instead
+
+        frames = get_unit_walk_frames(unit_type, int(desired), tuple(player_color[:3]), facing=facing)
+
+        if frames:
+
+            FRAME_TIME = 0.12
+
+            t = pygame.time.get_ticks() / 1000.0
+
+            idx = int(t / FRAME_TIME) % len(frames)
+
+            img = frames[idx]
+
+        else:
+
+            img = get_unit_walk_first_frame(unit_type, int(desired), tuple(player_color[:3]), facing="M")
+
     else:
         img = _ensure_unit_sprite_loaded(unit_type, desired, player_color)
 
@@ -311,7 +337,6 @@ def draw_unit_sprite(
     if img is not None:
         rect = img.get_rect(center=(sx, sy))
         surf.blit(img, rect)
-        # reduced border as requested earlier
         if unit_type != "Tree":
             pygame.draw.rect(surf, player_color, rect.inflate(-2, -2), 1)
     else:
@@ -849,13 +874,20 @@ def main() -> None:
 
             _, pcol = PLAYERS[selected_player]
 
-            # IMPORTANT: don't load Unit._images at icon size; load at real unit draw size first
+            if value in GIF_UNITS:
+                mini = get_unit_walk_first_frame(value, int(max(UNIT_SIZE, TILE_SIZE)), tuple(pcol[:3]), facing="M")
+                if mini is None:
+                    return None
+                try:
+                    return pygame.transform.smoothscale(mini, (desired_px, desired_px))
+                except Exception:
+                    return mini
+
             big_px = int(max(UNIT_SIZE, TILE_SIZE))
             big_img = _ensure_unit_sprite_loaded(value, big_px, pcol)
             if big_img is None:
                 return None
 
-            # Then scale down just for the button icon
             try:
                 return pygame.transform.smoothscale(big_img, (desired_px, desired_px))
             except Exception:

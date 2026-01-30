@@ -43,6 +43,8 @@ done:
 + dirt != used grass
 + roads
 + walls
++ all buildings
++ units (4/13)
 
 todo:
 

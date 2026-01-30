@@ -19,15 +19,15 @@ from tiles import GrassTile, Dirt
 # Put the "team mask" color(s) used in your PNGs here.
 TEAM_MASKS: Dict[str, List[str]] = {
     # Buildings
-    "Barracks": ["#6f0000"],
-    "TownCenter": ["#6f0000"],
-    "Barn": ["#6f0000"],
+    "Barracks": ["#700000"],
+    "TownCenter": ["#700000"],
+    "Barn": ["#700000"],
     # Units (if your unit sprites have a team mask too)
     "Axeman": ["#700000"],
-    "Knight": ["#6b0000"],
-    # "Archer": ["#6f0000"],
+    "Knight": ["#700000"],
+    "Archer": ["#700000"],
     # "Cow": ["#6f0000"],
-    "ShamansHut": ["#6f0000"],
+    "ShamansHut": ["#700000"],
 }
 
 # Cache tinted result per (class_name, desired_px, player_color_rgb)
@@ -166,6 +166,63 @@ def _get_team_anim_frames(
     _ANIM_CACHE[key] = out
     return out
 
+# ------------------ Standard unit GIF paths (walk_M.gif) ------------------
+
+GIF_UNITS = {"Axeman", "Archer", "Knight", "Cow"}
+
+def unit_walk_gif_path(cls_name: str, facing: str) -> str:
+    # assets/units/{unit}/walk_<facing>.gif
+    return os.path.join("assets", "units", cls_name.lower(), f"walk_{facing}.gif")
+
+def get_unit_walk_frames(
+    cls_name: str,
+    desired_px: int,
+    player_color: Tuple[int, int, int],
+    facing: str,
+) -> List[pygame.Surface]:
+    """
+    Standard walk frames for any facing.
+    Mirrors right facings from left assets (same convention as your Axeman/Cow).
+    """
+    pc = tuple(player_color[:3])
+    facing = facing or "M"
+
+    # Direct faces that should exist as files (if you have them)
+    if facing in ("M", "D", "L", "LD", "LU", "U"):
+        gif_path = unit_walk_gif_path(cls_name, facing)
+        folder_key = f"{cls_name}/walk_{facing}"
+        return _get_team_anim_frames(folder_key, gif_path, desired_px, cls_name, pc, flip_x=False)
+
+    # Mirror right variants from left
+    if facing == "R":
+        gif_path = unit_walk_gif_path(cls_name, "L")
+        folder_key = f"{cls_name}/walk_R_from_L"
+        return _get_team_anim_frames(folder_key, gif_path, desired_px, cls_name, pc, flip_x=True)
+
+    if facing == "RD":
+        gif_path = unit_walk_gif_path(cls_name, "LD")
+        folder_key = f"{cls_name}/walk_RD_from_LD"
+        return _get_team_anim_frames(folder_key, gif_path, desired_px, cls_name, pc, flip_x=True)
+
+    if facing == "RU":
+        gif_path = unit_walk_gif_path(cls_name, "LU")
+        folder_key = f"{cls_name}/walk_RU_from_LU"
+        return _get_team_anim_frames(folder_key, gif_path, desired_px, cls_name, pc, flip_x=True)
+
+    # Fallback
+    gif_path = unit_walk_gif_path(cls_name, "M")
+    folder_key = f"{cls_name}/walk_M"
+    return _get_team_anim_frames(folder_key, gif_path, desired_px, cls_name, pc, flip_x=False)
+
+def get_unit_walk_first_frame(
+    cls_name: str,
+    desired_px: int,
+    player_color: Tuple[int, int, int],
+    facing: str = "M",
+) -> Optional[pygame.Surface]:
+    frames = get_unit_walk_frames(cls_name, desired_px, player_color, facing=facing)
+    return frames[0] if frames else None
+
 class Unit:
     _images = {}
     _unit_icons = {}
@@ -200,7 +257,7 @@ class Unit:
         self.name = None
         self.worldObject = False
         cls_name = self.__class__.__name__
-        if cls_name not in Unit._images:
+        if cls_name != "Tree" and cls_name not in Unit._images:
             self.load_images(cls_name, size)
         self.alpha = 255
         self.path = []  # Store pathfinding waypoints
@@ -224,24 +281,34 @@ class Unit:
             icon_path = sprite_path  # building_icon = building (for now)
             underbuilding_path = f"{base}_c.png"
         else:
-            sprite_path = f"assets/{cls_name.lower()}.png"
-            icon_path = f"assets/{cls_name.lower()}_icon.png"
+            # Units: standardized to assets/units/{unit}/walk_M.gif
+            # Miniatures: first frame of that gif
+            sprite_path = None
+            icon_path = None
             underbuilding_path = None
 
-        # --- main sprite ---
+            # --- main sprite ---
         try:
-            cls._images[cls_name] = pygame.image.load(sprite_path).convert_alpha()
-            cls._images[cls_name] = pygame.transform.scale(cls._images[cls_name], (int(size), int(size)))
-        except (pygame.error, FileNotFoundError) as e:
-            print(f"Failed to load {sprite_path}: {e}")
+            if not is_building and cls_name in GIF_UNITS:
+                # Use first frame of walk_M.gif as base sprite (static fallback)
+                cls._images[cls_name] = get_unit_walk_first_frame(cls_name, int(size), (255, 255, 255), facing="M")
+            else:
+                cls._images[cls_name] = pygame.image.load(sprite_path).convert_alpha()
+                cls._images[cls_name] = pygame.transform.scale(cls._images[cls_name], (int(size), int(size)))
+        except (pygame.error, FileNotFoundError, TypeError) as e:
+            print(f"Failed to load base sprite for {cls_name}: {e}")
             cls._images[cls_name] = None
 
-        # --- icon sprite ---
+            # --- icon sprite ---
         try:
-            cls._unit_icons[cls_name] = pygame.image.load(icon_path).convert_alpha()
-            cls._unit_icons[cls_name] = pygame.transform.scale(cls._unit_icons[cls_name], (ICON_SIZE, ICON_SIZE))
-        except (pygame.error, FileNotFoundError) as e:
-            print(f"Failed to load {icon_path}: {e}")
+            if not is_building and cls_name in GIF_UNITS:
+                # icon = first frame of walk_M.gif
+                cls._unit_icons[cls_name] = get_unit_walk_first_frame(cls_name, ICON_SIZE, (255, 255, 255), facing="M")
+            else:
+                cls._unit_icons[cls_name] = pygame.image.load(icon_path).convert_alpha()
+                cls._unit_icons[cls_name] = pygame.transform.scale(cls._unit_icons[cls_name], (ICON_SIZE, ICON_SIZE))
+        except (pygame.error, FileNotFoundError, TypeError) as e:
+            print(f"Failed to load icon for {cls_name}: {e}")
             cls._unit_icons[cls_name] = None
 
         # --- underbuilding sprite (construction), ruin is the exception ---
@@ -1011,6 +1078,8 @@ class Axeman(Unit):
 class Knight(Unit):
     milk_cost = 500
     wood_cost = 400
+    _FRAME_TIME = 0.12
+    _IDLE_SPEED_EPS2 = 0.05
 
     def __init__(self, x, y, player_id, player_color):
         super().__init__(x, y, size=UNIT_SIZE, speed=2.5, color=BLUE, player_id=player_id, player_color=player_color)
@@ -1019,10 +1088,63 @@ class Knight(Unit):
         self.attack_cooldown = 1.0
         self.armor = 5
 
+    def _facing_from_velocity(self) -> str:
+        v = self.velocity
+        if v.length_squared() < self._IDLE_SPEED_EPS2:
+            return "M"
+
+        x, y = v.x, v.y
+        if abs(x) < 0.35 and y < 0: return "U"
+        if abs(x) < 0.35 and y > 0: return "D"
+        if abs(y) < 0.35 and x < 0: return "L"
+        if abs(y) < 0.35 and x > 0: return "R"
+        if x < 0 and y < 0: return "LU"
+        if x < 0 and y > 0: return "LD"
+        if x > 0 and y < 0: return "RU"
+        if x > 0 and y > 0: return "RD"
+        return "D"
+
+    def draw(self, screen, camera_x, camera_y):
+        if (self.pos.x < camera_x - self.size / 2 or self.pos.x > camera_x + VIEW_WIDTH + self.size / 2 or
+            self.pos.y < camera_y - self.size / 2 or self.pos.y > camera_y + VIEW_HEIGHT + self.size / 2):
+            return
+
+        facing = self._facing_from_velocity()
+        frames = get_unit_walk_frames("Knight", int(self.size), tuple(self.player_color[:3]), facing=facing)
+        if not frames:
+            return super().draw(screen, camera_x, camera_y)
+
+        idx = int(context.current_time / self._FRAME_TIME) % len(frames)
+        image = frames[idx]
+
+        x = self.pos.x - camera_x + VIEW_MARGIN_LEFT
+        y = self.pos.y - camera_y + VIEW_MARGIN_TOP
+
+        image_surface = image.copy()
+        image_surface.set_alpha(self.alpha)
+        rect = image_surface.get_rect(center=(int(x), int(y)))
+        screen.blit(image_surface, rect)
+
+        if self.selected:
+            pygame.draw.rect(screen, self.player_color, (x - self.size / 2, y - self.size / 2, self.size, self.size), 1)
+        if self.should_highlight(context.current_time):
+            pygame.draw.rect(screen, WHITE, (x - self.size / 2, y - self.size / 2, self.size, self.size), 1)
+
+        bar_width = 16
+        bar_height = 4
+        bar_offset = 2
+        bar_x = x - bar_width / 2
+        bar_y = y - self.size / 2 - bar_height - bar_offset
+        pygame.draw.rect(screen, BLACK, (bar_x, bar_y, bar_width, bar_height))
+        fill_width = (self.hp / self.max_hp) * bar_width
+        pygame.draw.rect(screen, self.player_color, (bar_x, bar_y, fill_width, bar_height))
+
 # Archer class
 class Archer(Unit):
     milk_cost = 400
     wood_cost = 200
+    _FRAME_TIME = 0.12  # same feel as editor
+    _IDLE_SPEED_EPS2 = 0.05
 
     def __init__(self, x, y, player_id, player_color):
         super().__init__(x, y, size=UNIT_SIZE, speed=2.3, color=YELLOW, player_id=player_id, player_color=player_color)
@@ -1030,6 +1152,58 @@ class Archer(Unit):
         self.attack_range = 100
         self.attack_cooldown = 1.5
         self.armor = 0
+
+    def _facing_from_velocity(self) -> str:
+        v = self.velocity
+        if v.length_squared() < self._IDLE_SPEED_EPS2:
+            return "M"
+
+        x, y = v.x, v.y
+        if abs(x) < 0.35 and y < 0: return "U"
+        if abs(x) < 0.35 and y > 0: return "D"
+        if abs(y) < 0.35 and x < 0: return "L"
+        if abs(y) < 0.35 and x > 0: return "R"
+        if x < 0 and y < 0: return "LU"
+        if x < 0 and y > 0: return "LD"
+        if x > 0 and y < 0: return "RU"
+        if x > 0 and y > 0: return "RD"
+        return "D"
+
+    def draw(self, screen, camera_x, camera_y):
+        if (self.pos.x < camera_x - self.size / 2 or self.pos.x > camera_x + VIEW_WIDTH + self.size / 2 or
+                self.pos.y < camera_y - self.size / 2 or self.pos.y > camera_y + VIEW_HEIGHT + self.size / 2):
+            return
+
+        facing = self._facing_from_velocity()
+        frames = get_unit_walk_frames("Archer", int(self.size), tuple(self.player_color[:3]), facing=facing)
+        if not frames:
+            return super().draw(screen, camera_x, camera_y)
+
+        idx = int(context.current_time / self._FRAME_TIME) % len(frames)
+        image = frames[idx]
+
+        x = self.pos.x - camera_x + VIEW_MARGIN_LEFT
+        y = self.pos.y - camera_y + VIEW_MARGIN_TOP
+
+        image_surface = image.copy()
+        image_surface.set_alpha(self.alpha)
+        rect = image_surface.get_rect(center=(int(x), int(y)))
+        screen.blit(image_surface, rect)
+
+        if self.selected:
+            pygame.draw.rect(screen, self.player_color, (x - self.size / 2, y - self.size / 2, self.size, self.size), 1)
+        if self.should_highlight(context.current_time):
+            pygame.draw.rect(screen, WHITE, (x - self.size / 2, y - self.size / 2, self.size, self.size), 1)
+
+        bar_width = 16
+        bar_height = 4
+        bar_offset = 2
+        bar_x = x - bar_width / 2
+        bar_y = y - self.size / 2 - bar_height - bar_offset
+        pygame.draw.rect(screen, BLACK, (bar_x, bar_y, bar_width, bar_height))
+        fill_width = (self.hp / self.max_hp) * bar_width
+        pygame.draw.rect(screen, self.player_color, (bar_x, bar_y, fill_width, bar_height))
+
 
 # Cow class
 class Cow(Unit):
@@ -1419,5 +1593,3 @@ class Cow(Unit):
                                     self.autonomous_target = True
                                     print(f"Cow at {self.pos} targeting adjacent grass tile at {self.target}")
                                     break
-
-# Player class
