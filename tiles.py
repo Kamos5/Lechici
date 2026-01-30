@@ -30,6 +30,20 @@ class SimpleTile:
     def regrow(self, amount):
         pass
 
+
+class WorldObject:
+    """
+    Drawn ABOVE tiles but BELOW units.
+    Grid-aligned: x,y are top-left tile coords like tiles.
+    """
+    def __init__(self, x: int, y: int, *, passable: bool = False):
+        self.pos = Vector2(x, y)
+        self.center = Vector2(x + TILE_HALF, y + TILE_HALF)
+        self.passable = bool(passable)
+
+    def draw(self, surface, camera_x, camera_y):
+        raise NotImplementedError
+
 # GrassTile class
 class GrassTile(SimpleTile):
     _grass_image = None
@@ -124,23 +138,50 @@ class Foundation(SimpleTile):
             print(f"Failed to load assets/{cls.__name__.lower()}.png: {e}")
             cls._image = None
 
-class Bridge(SimpleTile):
-    _image = None
+class Bridge(WorldObject):
+    _variant_images: dict[str, pygame.Surface | None] = {}
+    DEFAULT_VARIANT = "bridge5"
 
-    def __init__(self, x, y):
-        super().__init__(x, y)
-        self.grass_level = 0.0  # No grass, like Dirt
-        Bridge.load_image()
-    @classmethod
-    def load_image(cls):
+    def __init__(self, x, y, *, variant: str | None = None, passable: bool = True):
+        super().__init__(x, y, passable=passable)
+        self.variant = self._sanitize_variant(variant) or self.DEFAULT_VARIANT
+        if self.variant not in Bridge._variant_images:
+            Bridge._variant_images[self.variant] = Bridge._load_variant_image(self.variant)
+
+    @staticmethod
+    def _sanitize_variant(v: str | None) -> str | None:
+        if not isinstance(v, str) or not v.startswith("bridge"):
+            return None
         try:
-            cls._image = pygame.image.load("assets/bridge_hor.png").convert_alpha()
-            cls._image = pygame.transform.scale(cls._image, (TILE_SIZE, TILE_SIZE))
+            idx = int(v[len("bridge"):])
+        except Exception:
+            return None
+        return v if 1 <= idx <= 9 else None
+
+    @classmethod
+    def _load_variant_image(cls, variant: str) -> pygame.Surface | None:
+        path = f"assets/worldObjects/bridge/{variant}.png"
+        try:
+            img = pygame.image.load(path).convert_alpha()
+            return pygame.transform.scale(img, (TILE_SIZE, TILE_SIZE))
         except (pygame.error, FileNotFoundError) as e:
-            print(f"Failed to load bridge_hor.png: {e}")
-            cls._image = None
-    def regrow(self, rate):
-        pass  # Bridges don't regrow grass
+            print(f"Failed to load {path}: {e}")
+            return None
+
+    def draw(self, surface, camera_x, camera_y):
+        if (self.pos.x < camera_x - TILE_SIZE or self.pos.x > camera_x + VIEW_WIDTH or
+            self.pos.y < camera_y - TILE_SIZE or self.pos.y > camera_y + VIEW_HEIGHT):
+            return
+
+        img = Bridge._variant_images.get(self.variant)
+        if img is not None:
+            surface.blit(img, (self.pos.x - camera_x, self.pos.y - camera_y))
+        else:
+            pygame.draw.rect(
+                surface,
+                (120, 90, 40),
+                (self.pos.x - camera_x, self.pos.y - camera_y, TILE_SIZE, TILE_SIZE),
+            )
 
 class River(SimpleTile):
     # Cache per-variant, already scaled to TILE_SIZE
@@ -253,3 +294,4 @@ class Mountain(SimpleTile):
 
     def regrow(self, rate):
         pass  # Mountain tiles don't regrow grass
+

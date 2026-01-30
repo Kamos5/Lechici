@@ -680,7 +680,10 @@ def run_game() -> int:
             highlight_times = {k: v for k, v in highlight_times.items() if current_time - v <= 0.4}
             attack_animations[:] = [anim for anim in attack_animations if current_time - anim['start_time'] < 0.2]
 
-            # Draw units
+            for obj in getattr(context, "world_objects", []):
+                obj.draw(screen, camera.x, camera.y)
+
+            # Draw units (existing)
             for unit in all_units:
                 if isinstance(unit, Building):
                     unit.draw(screen, camera.x, camera.y)

@@ -23,7 +23,12 @@ DEFAULT_TREE_VARIANT = "tree6"
 # ---------------------------
 # Editor map loader
 # ---------------------------
-def load_editor_map(path: str) -> Tuple[List[List[Any]], Set[Any], Set[Tuple[int, int]]]:
+def load_editor_map(path: str) -> Tuple[
+    List[List[Any]],
+    Set[Any],
+    Set[Tuple[int, int]],
+    List[Any],
+]:
     """
     Load map created by map_editor.py (tiles + units).
     Returns:
@@ -73,8 +78,6 @@ def load_editor_map(path: str) -> Tuple[List[List[Any]], Set[Any], Set[Tuple[int
             elif tname == "River":
                 tile = River(x, y, variant=variant)
                 river_tiles.add((r, c))
-            elif tname == "Bridge":
-                tile = Bridge(x, y)
             elif tname == "Foundation":
                 tile = Foundation(x, y)
             elif tname == "Mountain":
@@ -144,7 +147,36 @@ def load_editor_map(path: str) -> Tuple[List[List[Any]], Set[Any], Set[Tuple[int
 
             all_units.add(unit)
 
-    return grass_tiles, all_units, river_tiles
+    # World objects (overlay layer: drawn above tiles, below units)
+    world_objects: List[Any] = []
+    objects_raw = data.get("objects", {})
+
+    if isinstance(objects_raw, dict):
+        for key, info in objects_raw.items():
+            if not isinstance(key, str) or "," not in key or not isinstance(info, dict):
+                continue
+            try:
+                rs, cs = key.split(",")
+                r = int(rs)
+                c = int(cs)
+            except Exception:
+                continue
+            if not (0 <= r < GRASS_ROWS and 0 <= c < GRASS_COLS):
+                continue
+
+            obj_type = str(info.get("type", ""))
+            x = c * TILE_SIZE
+            y = r * TILE_SIZE
+
+            if obj_type == "Bridge":
+                variant = info.get("variant")
+                passable = bool(info.get("passable", True))
+                try:
+                    world_objects.append(Bridge(x, y, variant=variant, passable=passable))
+                except TypeError:
+                    # if your Bridge ctor is still Bridge(x,y) only, fall back safely
+                    world_objects.append(Bridge(x, y))
+    return grass_tiles, all_units, river_tiles, world_objects
 
 
 # ---------------------------
@@ -420,7 +452,8 @@ def init_game_world(random_world: bool = False):
 
     if not random_world:
         # ---- Load editor map ----
-        grass_tiles, loaded_units, river_tiles = load_editor_map("maps/test_map.json")
+        grass_tiles, loaded_units, river_tiles, world_objects  = load_editor_map("maps/test_map.json")
+        context.world_objects = world_objects  # easiest way to make it visible to main.py
 
         # Assign units to players (and rebuild all_units from player lists)
         for u in loaded_units:

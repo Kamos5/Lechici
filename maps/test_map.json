@@ -1,7 +1,7 @@
 {
   "rows": 60,
   "cols": 60,
-  "tile_size": 20,
+  "tile_size": 80,
   "tiles": [
     [
       "GrassTile",
@@ -885,8 +885,8 @@
       "GrassTile",
       "GrassTile",
       "GrassTile",
-      "Bridge",
-      "Bridge",
+      "GrassTile",
+      "GrassTile",
       "GrassTile",
       "GrassTile",
       "GrassTile",
@@ -947,8 +947,8 @@
       "River",
       "River",
       "River",
-      "Bridge",
-      "Bridge",
+      "GrassTile",
+      "GrassTile",
       "River",
       "River",
       "River",
@@ -1009,8 +1009,8 @@
       "GrassTile",
       "GrassTile",
       "GrassTile",
-      "Bridge",
-      "Bridge",
+      "GrassTile",
+      "GrassTile",
       "GrassTile",
       "GrassTile",
       "GrassTile",
@@ -1135,8 +1135,8 @@
       "River",
       "River",
       "GrassTile",
-      "Bridge",
-      "Bridge",
+      "GrassTile",
+      "GrassTile",
       "GrassTile",
       "River",
       "River",
@@ -1197,8 +1197,8 @@
       "River",
       "River",
       "River",
-      "Bridge",
-      "Bridge",
+      "GrassTile",
+      "GrassTile",
       "River",
       "River",
       "River",
@@ -1259,8 +1259,8 @@
       "GrassTile",
       "GrassTile",
       "GrassTile",
-      "Bridge",
-      "Bridge",
+      "GrassTile",
+      "GrassTile",
       "GrassTile",
       "GrassTile",
       "GrassTile",
@@ -8837,6 +8837,63 @@
     "7,9": {
       "type": "Axeman",
       "player": 1
+    }
+  },
+  "objects": {
+    "20,15": {
+      "type": "Bridge",
+      "variant": "bridge4",
+      "passable": true
+    },
+    "19,15": {
+      "type": "Bridge",
+      "variant": "bridge5",
+      "passable": true
+    },
+    "18,15": {
+      "type": "Bridge",
+      "variant": "bridge6",
+      "passable": true
+    },
+    "18,16": {
+      "type": "Bridge",
+      "variant": "bridge6",
+      "passable": true
+    },
+    "16,13": {
+      "type": "Bridge",
+      "variant": "bridge8",
+      "passable": true
+    },
+    "16,14": {
+      "type": "Bridge",
+      "variant": "bridge4",
+      "passable": true
+    },
+    "19,16": {
+      "type": "Bridge",
+      "variant": "bridge5",
+      "passable": true
+    },
+    "14,14": {
+      "type": "Bridge",
+      "variant": "bridge6",
+      "passable": true
+    },
+    "14,13": {
+      "type": "Bridge",
+      "variant": "bridge6",
+      "passable": true
+    },
+    "15,13": {
+      "type": "Bridge",
+      "variant": "bridge5",
+      "passable": true
+    },
+    "15,14": {
+      "type": "Bridge",
+      "variant": "bridge5",
+      "passable": true
     }
   }
 }

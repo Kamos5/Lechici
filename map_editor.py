@@ -38,14 +38,23 @@ _RIVER_EDITOR_IMAGES: Dict[Tuple[str, int], Optional[pygame.Surface]] = {}
 MOUNTAIN_VARIANT_PREFIX = "mountain"  # assets/river/river1.png ... river9.png
 _MOUNTAIN_EDITOR_IMAGES: Dict[Tuple[str, int], Optional[pygame.Surface]] = {}
 
+BRIDGE_VARIANT_PREFIX = "bridge"
+_BRIDGE_EDITOR_IMAGES: Dict[Tuple[str, int], Optional[pygame.Surface]] = {}
+
+
+
 # Tiles available to paint
-TILE_TYPES: Dict[str, Type] = {
+TILE_TYPES = {
     "GrassTile": GrassTile,
     "Dirt": Dirt,
     "River": River,
-    "Bridge": Bridge,
     "Foundation": Foundation,
     "Mountain": Mountain,
+}
+
+# World-objects layer (drawn above tiles, below units)
+OBJECT_TYPES: Dict[str, Type] = {
+    "Bridge": Bridge,
 }
 
 # Units available to place (as sprites)
@@ -136,6 +145,22 @@ def load_river_editor_image(variant: str, desired_px: int) -> Optional[pygame.Su
         print(f"[EDITOR] Failed to load {path}: {e}")
         _RIVER_EDITOR_IMAGES[key] = None
         return None
+
+def load_bridge_editor_image(variant: str, desired_px: int) -> Optional[pygame.Surface]:
+    key = (variant, desired_px)
+    if key in _BRIDGE_EDITOR_IMAGES:
+        return _BRIDGE_EDITOR_IMAGES[key]
+    path = f"assets/worldObjects/bridge/{variant}.png"
+    try:
+        img = pygame.image.load(path).convert_alpha()
+        img = pygame.transform.smoothscale(img, (desired_px, desired_px))
+        _BRIDGE_EDITOR_IMAGES[key] = img
+        return img
+    except Exception as e:
+        print(f"[EDITOR] Failed to load {path}: {e}")
+        _BRIDGE_EDITOR_IMAGES[key] = None
+        return None
+
 
 def load_mountain_editor_image(variant: str, desired_px: int) -> Optional[pygame.Surface]:
     """
@@ -258,32 +283,23 @@ def draw_unit_sprite(
 # -----------------------------
 # Save / Load
 # -----------------------------
-def save_map(grid: List[List[object]], units_by_cell: Dict[str, Dict[str, Any]], path: str) -> None:
+def save_map(
+    grid: List[List[object]],
+    units_by_cell: Dict[str, Dict[str, Any]],
+    objects_by_cell: Dict[str, Dict[str, Any]],
+    path: str,
+) -> None:
     ensure_dirs(path)
-    tiles_out = []
-    for r in range(GRASS_ROWS):
-        row_out = []
-        for c in range(GRASS_COLS):
-            t = grid[r][c]
-            name = t.__class__.__name__
-            if name == "River":
-                row_out.append({"type": "River", "variant": getattr(t, "variant", "river5")})
-            elif name == "Mountain":
-                row_out.append({"type": "Mountain", "variant": getattr(t, "variant", "mountain5")})
-            else:
-                row_out.append(name)
-        tiles_out.append(row_out)
-
     data = {
         "rows": GRASS_ROWS,
         "cols": GRASS_COLS,
         "tile_size": TILE_SIZE,
-        "tiles": tiles_out,
+        "tiles": [[grid[r][c].__class__.__name__ for c in range(GRASS_COLS)] for r in range(GRASS_ROWS)],
         "units": units_by_cell,
+        "objects": objects_by_cell,   # <-- NEW (bridges, etc.)
     }
     with open(path, "w", encoding="utf-8") as f:
         json.dump(data, f, indent=2)
-    print(f"[EDITOR] Saved: {path}")
 
 
 def load_map(path: str) -> Tuple[List[List[object]], Dict[str, Dict[str, Any]]]:
@@ -292,6 +308,7 @@ def load_map(path: str) -> Tuple[List[List[object]], Dict[str, Dict[str, Any]]]:
 
     rows = int(data.get("rows", GRASS_ROWS))
     cols = int(data.get("cols", GRASS_COLS))
+
     if rows != GRASS_ROWS or cols != GRASS_COLS:
         raise ValueError(f"Map size mismatch. Expected {GRASS_ROWS}x{GRASS_COLS}, got {rows}x{cols}")
 
@@ -366,9 +383,33 @@ def load_map(path: str) -> Tuple[List[List[object]], Dict[str, Dict[str, Any]]]:
 
             units_by_cell[k] = entry
 
-    print(f"[EDITOR] Loaded: {path}")
-    return grid, units_by_cell
+    objects_by_cell: Dict[str, Dict[str, Any]] = {}
+    objects_raw = data.get("objects", {})
+    if isinstance(objects_raw, dict):
+        for k, v in objects_raw.items():
+            if not isinstance(k, str) or "," not in k or not isinstance(v, dict):
+                continue
+            t = v.get("type")
+            if t not in OBJECT_TYPES:  # or your dict name
+                continue
 
+            rs, cs = k.split(",")
+            rr, cc = int(rs), int(cs)
+            if not (0 <= rr < GRASS_ROWS and 0 <= cc < GRASS_COLS):
+                continue
+
+            entry: Dict[str, Any] = {"type": t}
+
+            # optional metadata:
+            if "variant" in v:
+                entry["variant"] = v["variant"]
+            if "passable" in v:
+                entry["passable"] = bool(v["passable"])
+
+            objects_by_cell[k] = entry
+
+    print(f"[EDITOR] Loaded: {path}")
+    return grid, units_by_cell, objects_by_cell
 
 # -----------------------------
 # Borders / scrollbars drawing
@@ -526,6 +567,7 @@ def main() -> None:
 
     grid = new_grass_map()
     units_by_cell: Dict[str, Dict[str, Any]] = {}
+    objects_by_cell: Dict[str, Dict[str, Any]] = {}  # "r,c" -> {"type":"Bridge","variant":"bridge5","passable":True}
 
     mode = "tile"  # "tile" | "unit" | "erase"
     selected_tile = "Dirt"
@@ -539,6 +581,10 @@ def main() -> None:
     selected_river_index = RIVER_DEFAULT_INDEX  # 1..9
 
     selected_mountain_index = MOUNTAIN_DEFAULT_INDEX
+
+    selected_object = "Bridge"
+    selected_bridge_index = BRIDGE_DEFAULT_INDEX
+    bridge_passable = True  # toggle
 
     # Camera is always snapped to tile grid
     camera_x = 0
@@ -561,6 +607,9 @@ def main() -> None:
     def current_mountain_variant() -> str:
         return f"{MOUNTAIN_VARIANT_PREFIX}{selected_mountain_index}"
 
+    def current_bridge_variant() -> str:
+        return f"{BRIDGE_VARIANT_PREFIX}{selected_bridge_index}"
+
     def rebuild_ui() -> None:
         buttons.clear()
 
@@ -568,7 +617,7 @@ def main() -> None:
         x = 10
         y = PANEL_Y + 10
 
-        for label, val in [("Tile", "tile"), ("Unit", "unit"), ("Erase", "erase")]:
+        for label, val in [("Tile", "tile"), ("Object", "object"), ("Unit", "unit"), ("Erase", "erase")]:
             buttons.append(Button(pygame.Rect(x, y, 90, BTN_H), label, "mode", val))
             x += 90 + 8
 
@@ -595,6 +644,11 @@ def main() -> None:
             x2 += BTN_W + BTN_GAP
 
         x2 += 20
+
+        for name in OBJECT_TYPES.keys():
+            buttons.append(Button(pygame.Rect(x2, y2, BTN_W, BTN_H), name, "object", name))
+            x2 += BTN_W + BTN_GAP
+
         for name in UNIT_ROW:
             if name not in UNIT_TYPES:
                 continue
@@ -656,6 +710,16 @@ def main() -> None:
             else:
                 set_tile(grid, row, col, selected_tile)
 
+        elif mode == "object":
+            # allow placing objects even if tile exists (that's the point)
+            # but you probably want to avoid placing on top of a building footprint etc.
+            key = f"{row},{col}"
+            objects_by_cell[key] = {
+                "type": "Bridge",
+                "variant": current_bridge_variant(),
+                "passable": bool(bridge_passable),
+            }
+
         elif mode == "unit":
             fp = footprint_cells(selected_unit, row, col)
             if any(cell in occ for cell in fp):
@@ -668,6 +732,11 @@ def main() -> None:
             units_by_cell[f"{row},{col}"] = entry
 
         elif mode == "erase":
+            key = f"{row},{col}"
+            if key in objects_by_cell:
+                objects_by_cell.pop(key, None)
+                return
+
             if clicked_cell in occ:
                 anchor_key = occ[clicked_cell]
                 units_by_cell.pop(anchor_key, None)
@@ -694,6 +763,12 @@ def main() -> None:
                 return img
             except Exception:
                 return None
+
+        # Objects (worldObjects layer)
+        if kind == "object":
+            if value == "Bridge":
+                return load_bridge_editor_image(current_bridge_variant(), desired_px)
+            return None
 
         # Units
         if kind == "unit":
@@ -759,7 +834,7 @@ def main() -> None:
         PAD = 6
         ICON_PX = min(22, b.rect.h - 2 * PAD)  # fits inside button height
         icon = None
-        if b.kind in ("tile", "unit"):
+        if b.kind in ("tile", "unit", "object"):
             icon = get_button_icon(b.kind, b.value, ICON_PX)
 
         text_color = (240, 240, 240)
@@ -837,6 +912,16 @@ def main() -> None:
                                 selected_tile = b.value
                                 mode = "tile"
 
+                        elif b.kind == "object":
+                            if b.value == "Bridge":
+                                if selected_object == "Bridge" and mode == "object":
+                                    selected_bridge_index += 1
+                                    if selected_bridge_index > BRIDGE_VARIANT_MAX:
+                                        selected_bridge_index = BRIDGE_VARIANT_MIN
+                                selected_object = "Bridge"
+                                mode = "object"
+                                _ = load_bridge_editor_image(current_bridge_variant(), int(TILE_SIZE))
+
                         elif b.kind == "unit":
                             # Special behavior: repeated clicks on Tree cycle tree0..tree6
                             if b.value == "Tree":
@@ -856,10 +941,10 @@ def main() -> None:
 
                         elif b.kind == "action":
                             if b.value == "save":
-                                save_map(grid, units_by_cell, DEFAULT_SAVE_PATH)
+                                save_map(grid, units_by_cell, objects_by_cell, DEFAULT_SAVE_PATH)
                             elif b.value == "load":
                                 try:
-                                    grid, units_by_cell = load_map(DEFAULT_SAVE_PATH)
+                                    grid, units_by_cell, objects_by_cell = load_map(DEFAULT_SAVE_PATH)
                                 except Exception as e:
                                     print(f"[EDITOR] Load failed: {e}")
                             elif b.value == "clear":
@@ -891,6 +976,19 @@ def main() -> None:
         for r in range(start_row, end_row):
             for c in range(start_col, end_col):
                 grid[r][c].draw(view_surf, camera_x, camera_y)
+
+        # Objects (bridges etc.) ABOVE tiles
+        for k, v in objects_by_cell.items():
+            rs, cs = k.split(",")
+            r, c = int(rs), int(cs)
+            if r < start_row or r >= end_row or c < start_col or c >= end_col:
+                continue
+            t = v.get("type")
+            if t == "Bridge":
+                variant = v.get("variant")
+                passable = bool(v.get("passable", True))
+                obj = Bridge(c * TILE_SIZE, r * TILE_SIZE, variant=variant, passable=passable)
+                obj.draw(view_surf, camera_x, camera_y)
 
         # Borders ONLY between different tile types
         draw_tile_type_borders(
