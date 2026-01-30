@@ -171,7 +171,7 @@ def load_mountain_editor_image(variant: str, desired_px: int) -> Optional[pygame
     if key in _MOUNTAIN_EDITOR_IMAGES:
         return _MOUNTAIN_EDITOR_IMAGES[key]
 
-    path = f"assets/mountain/{variant}.png"
+    path = f"assets/tiles/mountain/{variant}.png"
     try:
         img = pygame.image.load(path).convert_alpha()
         img = pygame.transform.smoothscale(img, (desired_px, desired_px))

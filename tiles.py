@@ -267,7 +267,7 @@ class Mountain(SimpleTile):
 
     @classmethod
     def _load_variant_image(cls, variant: str) -> pygame.Surface | None:
-        path = f"assets/mountain/{variant}.png"
+        path = f"assets/tiles/mountain/{variant}.png"
         try:
             img = pygame.image.load(path).convert_alpha()
             return pygame.transform.scale(img, (TILE_SIZE, TILE_SIZE))
