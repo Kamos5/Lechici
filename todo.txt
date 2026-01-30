@@ -67,3 +67,18 @@ todo:
 - fix: units get stuck on corners
 - different grass types (season based?)
 - units should have level (militia, professional, veteran)
+
+- button to kill units and buildings
+- build only near roads
+- road -> cost 10 wood
+
+-> townhall lvl 1 -> only barracks and barn + roads + walls
+-> townhall lvl 2 -> shamans hut (only lady) + warriors lodge
+-> townhall lvl 3 -> knights estate
+-> barrack (th1) -> axeman (cheap basic unic) + archer (cheap range)
+-> barrack (th2) -> upgrade better axes (+25% speed chopping) + upgrade fire arrow (active) archer do 5x damage vs build (cost 10 wood per shot)
+-> barn (th2) -> upgrade better grazing (+25% speed harvesting grass)
+-> warrior lodge (th2) -> spearman, swordman + upgrades 1) +dmg 2) +armor
+-> warrior lodge (th3) -> upgrades 1) ++dmg 2) ++armor
+-> shamans hut (th2) -> driad (heal, collect mana?)
+-> shamans hut (th3) -> shamans (summon bear)
