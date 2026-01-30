@@ -67,6 +67,10 @@ todo:
 - fix: units get stuck on corners
 - different grass types (season based?)
 - units should have level (militia, professional, veteran)
+- other misc world_obj pass + impassible
+- magic?
+
+
 
 - button to kill units and buildings
 - build only near roads
