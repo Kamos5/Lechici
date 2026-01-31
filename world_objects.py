@@ -154,3 +154,50 @@ class Wall(WorldObject):
                 (60, 60, 60),
                 (self.pos.x - camera_x, self.pos.y - camera_y, TILE_SIZE, TILE_SIZE),
             )
+
+class MiscPassable(WorldObject):
+    _variant_images: dict[str, pygame.Surface | None] = {}
+    DEFAULT_VARIANT = "misc_pass1"
+
+    def __init__(self, x, y, *, variant: str | None = None):
+        # Walls are NEVER passable
+        super().__init__(x, y, passable=True)
+
+        self.variant = self._sanitize_variant(variant) or self.DEFAULT_VARIANT
+        if self.variant not in MiscPassable._variant_images:
+            MiscPassable._variant_images[self.variant] = MiscPassable._load_variant_image(self.variant)
+
+    @staticmethod
+    def _sanitize_variant(v: str | None) -> str | None:
+        if not isinstance(v, str) or not v.startswith("misc_pass"):
+            return None
+        try:
+            idx = int(v[len("misc_pass"):])
+        except Exception:
+            return None
+        return v if 1 <= idx <= 12 else None
+
+    @classmethod
+    def _load_variant_image(cls, variant: str) -> pygame.Surface | None:
+        path = f"assets/worldObjects/misc_pass/{variant}.png"
+        try:
+            img = pygame.image.load(path).convert_alpha()
+            return pygame.transform.scale(img, (TILE_SIZE, TILE_SIZE))
+        except (pygame.error, FileNotFoundError) as e:
+            print(f"Failed to load {path}: {e}")
+            return None
+
+    def draw(self, surface, camera_x, camera_y):
+        if (self.pos.x < camera_x - TILE_SIZE or self.pos.x > camera_x + VIEW_WIDTH or
+            self.pos.y < camera_y - TILE_SIZE or self.pos.y > camera_y + VIEW_HEIGHT):
+            return
+
+        img = MiscPassable._variant_images.get(self.variant)
+        if img is not None:
+            surface.blit(img, (self.pos.x - camera_x, self.pos.y - camera_y))
+        else:
+            pygame.draw.rect(
+                surface,
+                (60, 60, 60),
+                (self.pos.x - camera_x, self.pos.y - camera_y, TILE_SIZE, TILE_SIZE),
+            )

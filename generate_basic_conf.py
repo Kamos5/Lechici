@@ -128,9 +128,9 @@ def main():
         map_h=300,
         width=800,
         height=600,
-        background_path="assets/background.png",
-        tile_alpha=128,   # 50% opacity
-        none_alpha=204,   # 80% opacity
+        background_path="assets/out_png/world_map.png",
+        tile_alpha=100,   # 50% opacity
+        none_alpha=0,   # 80% opacity
     )
 
     max_attempts = 5000

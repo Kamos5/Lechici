@@ -20,7 +20,7 @@ from typing import Dict, List, Optional, Tuple, Type, Any
 import pygame
 
 from constants import *  # SCREEN_WIDTH/HEIGHT, TILE_SIZE, VIEW_* etc.
-from world_objects import Bridge, Road, Wall
+from world_objects import Bridge, Road, Wall, MiscPassable
 from tiles import GrassTile, Dirt, River, Foundation, Mountain
 from units import Unit, Axeman, Knight, Archer, Cow, Tree, Barn, TownCenter, Barracks, ShamansHut, get_team_sprite, KnightsEstate, WarriorsLodge, Ruin, GIF_UNITS, get_unit_walk_frames, get_unit_walk_first_frame
 
@@ -48,6 +48,8 @@ _ROAD_EDITOR_IMAGES: Dict[Tuple[str, int], Optional[pygame.Surface]] = {}
 WALL_VARIANT_PREFIX = "wall"
 _WALL_EDITOR_IMAGES: Dict[Tuple[str, int], Optional[pygame.Surface]] = {}
 
+MISC_PASS_VARIANT_PREFIX = "misc_pass"
+_MISC_PASS_EDITOR_IMAGES: Dict[Tuple[str, int], Optional[pygame.Surface]] = {}
 
 # Tiles available to paint
 TILE_TYPES = {
@@ -63,6 +65,7 @@ OBJECT_TYPES: Dict[str, Type] = {
     "Bridge": Bridge,
     "Road": Road,
     "Wall": Wall,
+    "MiscPassable": MiscPassable,
 }
 
 # Units available to place (as sprites)
@@ -220,6 +223,21 @@ def load_wall_editor_image(variant: str, desired_px: int) -> Optional[pygame.Sur
     except Exception as e:
         print(f"[EDITOR] Failed to load {path}: {e}")
         _WALL_EDITOR_IMAGES[key] = None
+        return None
+
+def load_misc_pass_editor_image(variant: str, desired_px: int) -> Optional[pygame.Surface]:
+    key = (variant, desired_px)
+    if key in _MISC_PASS_EDITOR_IMAGES:
+        return _MISC_PASS_EDITOR_IMAGES[key]
+    path = f"assets/worldObjects/misc_pass/{variant}.png"
+    try:
+        img = pygame.image.load(path).convert_alpha()
+        img = pygame.transform.smoothscale(img, (desired_px, desired_px))
+        _MISC_PASS_EDITOR_IMAGES[key] = img
+        return img
+    except Exception as e:
+        print(f"[EDITOR] Failed to load {path}: {e}")
+        _MISC_PASS_EDITOR_IMAGES[key] = None
         return None
 
 # -----------------------------
@@ -656,6 +674,8 @@ def main() -> None:
 
     selected_wall_index = 1  # 1..15 (road1 default)
 
+    selected_misc_pass_index = 1  # 1..15 (road1 default)
+
     object_passable = True  # applies to both road/bridge
 
     # Camera is always snapped to tile grid
@@ -687,6 +707,9 @@ def main() -> None:
 
     def current_wall_variant() -> str:
         return f"{WALL_VARIANT_PREFIX}{selected_wall_index}"
+
+    def current_misc_pass_variant() -> str:
+        return f"{MISC_PASS_VARIANT_PREFIX}{selected_misc_pass_index}"
 
     def rebuild_ui() -> None:
         buttons.clear()
@@ -812,6 +835,12 @@ def main() -> None:
                     "variant": current_wall_variant(),
                     "passable": False,  # always blocked
                 }
+            elif selected_object == "MiscPassable":
+                objects_by_cell[key] = {
+                    "type": "MiscPassable",
+                    "variant": current_misc_pass_variant(),
+                    "passable": bool(object_passable),
+                }
 
         elif mode == "unit":
             fp = footprint_cells(selected_unit, row, col)
@@ -865,6 +894,8 @@ def main() -> None:
                 return load_road_editor_image(current_road_variant(), desired_px)
             if value == "Wall":
                 return load_wall_editor_image(current_wall_variant(), desired_px)
+            if value == "MiscPassable":
+                return load_misc_pass_editor_image(current_misc_pass_variant(), desired_px)
             return None
 
         # Units
@@ -1046,6 +1077,14 @@ def main() -> None:
                                 selected_object = "Wall"
                                 mode = "object"
                                 _ = load_wall_editor_image(current_wall_variant(), int(TILE_SIZE))
+                            elif b.value == "MiscPassable":
+                                if selected_object == "MiscPassable" and mode == "object":
+                                    selected_misc_pass_index += 1
+                                    if selected_misc_pass_index > 10:
+                                        selected_misc_pass_index = 1
+                                selected_object = "MiscPassable"
+                                mode = "object"
+                                _ = load_misc_pass_editor_image(current_misc_pass_variant(), int(TILE_SIZE))
 
                         elif b.kind == "unit":
                             # Special behavior: repeated clicks on Tree cycle tree0..tree6
@@ -1122,6 +1161,10 @@ def main() -> None:
 
             elif t == "Wall":
                 obj = Wall(c * TILE_SIZE, r * TILE_SIZE, variant=variant)
+                obj.draw(view_surf, camera_x, camera_y)
+
+            elif t == "MiscPassable":
+                obj = MiscPassable(c * TILE_SIZE, r * TILE_SIZE, variant=variant)
                 obj.draw(view_surf, camera_x, camera_y)
 
         # Borders ONLY between different tile types
