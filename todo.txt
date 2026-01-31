@@ -60,7 +60,7 @@ todo:
 - sounds?
 - upgrade units
 - repair
-- animations (archer done, cow done, axeman done, knight (movement only)
+- animations (archer done, cow done, axeman done, knight done (idle to fix)
 - rest of units
 - fix: without selected player selection boarders clicks are remember
 - self learning AI?
@@ -71,7 +71,7 @@ todo:
 - other misc world_obj pass + impassible
 - magic?
 - fix: cow stuck in empty of grass field dont move and wait for regrow (do something)
-
+- hp of build and units better displayed
 
 
 - button to kill units and buildings
