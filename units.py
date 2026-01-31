@@ -1530,13 +1530,32 @@ class Archer(Unit):
         anim_len = (len(attack_frames) * self._ATTACK_FRAME_TIME) if attack_frames else 0.35
         self._attacking_until = max(self._attacking_until, context.current_time + anim_len)
 
+        # The projectile travels to a fixed impact point (snapshot at fire time).
+        # If the target moves away before arrival, it "dodges" and takes no damage.
+        impact_point = Vector2(b)  # tile-center of target at the moment of firing
+
         def apply_damage():
             # target may already be dead/removed
-            if target.hp > 0 and target in context.all_units:
-                target.hp -= damage
-                print(
-                    f"Arrow hit {target.__class__.__name__} at {target.pos}, dealing {damage} damage"
-                )
+            if target.hp <= 0 or target not in context.all_units:
+                return
+
+            # check hit against CURRENT target rect at impact time
+            half = target.size / 2
+            target_rect = pygame.Rect(
+                target.pos.x - half,
+                target.pos.y - half,
+                target.size,
+                target.size,
+            )
+
+            if not target_rect.collidepoint(impact_point.x, impact_point.y):
+                # Miss: projectile doesn't collide with the moved sprite -> no damage
+                # (optional debug)
+                # print(f"Arrow missed {target.__class__.__name__}: impact={impact_point}, target_now={target.pos}")
+                return
+
+            target.hp -= damage
+            print(f"Arrow hit {target.__class__.__name__} at {target.pos}, dealing {damage} damage")
 
         # Spawn arrow effect roughly mid-animation
         try:
@@ -1547,18 +1566,18 @@ class Archer(Unit):
             context.effects.append(
                 ArrowEffect(
                     start_pos=Vector2(self.pos),
-                    end_pos=Vector2(target.pos),
+                    end_pos=Vector2(impact_point),
                     facing=self._attack_facing,
                     size_px=int(TILE_SIZE),
                     spawn_time=fire_time,
-
-                    # ✅ damage happens only if projectile reaches target
                     on_hit=apply_damage,
                 )
             )
         except Exception as e:
             # If effects system isn't available, fail gracefully (still deal damage).
+            # Here we keep old behavior: apply immediately.
             print(f"ArrowEffect spawn failed: {e}")
+            apply_damage()
 
         # Deal damage at fire time (game logic stays immediate)
         damage = max(0, self.attack_damage - target.armor)

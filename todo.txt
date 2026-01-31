@@ -47,6 +47,7 @@ done:
 + units (4/13)
 + fix: issue with pathfinding and shortcutting (like 1 tile gap in river) when clicked like 4-5 tiles ahead
 + fix: units get stuck on corners
++ dodging arrow/projectiles?
 
 todo:
 
@@ -59,7 +60,7 @@ todo:
 - sounds?
 - upgrade units
 - repair
-- animations
+- animations (archer done, cow done, axeman done, knight (movement only)
 - rest of units
 - fix: without selected player selection boarders clicks are remember
 - self learning AI?
@@ -70,7 +71,7 @@ todo:
 - other misc world_obj pass + impassible
 - magic?
 - fix: cow stuck in empty of grass field dont move and wait for regrow (do something)
-- dodging arrow/projectiles?
+
 
 
 - button to kill units and buildings
