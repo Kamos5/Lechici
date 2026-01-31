@@ -130,12 +130,27 @@ def _get_team_anim_frames(
     cls_name_for_tint: str,
     player_color: Tuple[int, int, int],
     flip_x: bool = False,
+    *,
+    fit_to_tile: bool = True,
+    scale_factor: float = 1.0,
 ) -> List[pygame.Surface]:
     """
-    Universal: load & cache gif frames, scale to desired_px,
-    optionally apply team tint like in get_team_sprite, optionally flip horizontally.
+    Universal: load & cache gif frames.
+
+    Modes:
+    - fit_to_tile=True  -> scale each frame to (desired_px, desired_px)   (old behavior)
+    - fit_to_tile=False -> keep original frame size, but multiply by scale_factor
+                           (preserves aspect ratio, does NOT "fit into tile")
     """
-    key = (folder_key, int(desired_px), tuple(player_color[:3]), bool(flip_x))
+    # cache key must include mode + factor, otherwise you'll reuse wrong-sized frames
+    key = (
+        folder_key,
+        int(desired_px),
+        tuple(player_color[:3]),
+        bool(flip_x),
+        bool(fit_to_tile),
+        int(round(scale_factor * 1000)),
+    )
     if key in _ANIM_CACHE:
         return _ANIM_CACHE[key]
 
@@ -147,12 +162,18 @@ def _get_team_anim_frames(
     out: List[pygame.Surface] = []
 
     for fr in frames:
-        fr2 = pygame.transform.scale(fr, (int(desired_px), int(desired_px)))
+        if fit_to_tile:
+            fr2 = pygame.transform.scale(fr, (int(desired_px), int(desired_px)))
+        else:
+            # preserve original dims, just apply global factor (e.g. SCALE)
+            w, h = fr.get_width(), fr.get_height()
+            nw = max(1, int(round(w * scale_factor)))
+            nh = max(1, int(round(h * scale_factor)))
+            fr2 = pygame.transform.scale(fr, (nw, nh))
 
         if flip_x:
             fr2 = pygame.transform.flip(fr2, True, False)
 
-        # team tint if configured for this class
         if cls_name_for_tint in TEAM_MASKS:
             fr2 = remap_red_gradient(
                 fr2,
@@ -170,6 +191,10 @@ def _get_team_anim_frames(
 
 GIF_UNITS = {"Axeman", "Archer", "Knight", "Cow"}
 
+ATTACK_D_USES_LD = {"Axeman"}
+
+ATTACK_NO_SCALE = {"Axeman"}
+
 def unit_walk_gif_path(cls_name: str, facing: str) -> str:
     # assets/units/{unit}/walk_<facing>.gif
     return os.path.join("assets", "units", cls_name.lower(), f"walk_{facing}.gif")
@@ -186,39 +211,59 @@ def get_unit_attack_frames(
     facing: str,
 ) -> List[pygame.Surface]:
     """
-    Standard attack frames for any facing.
-    Mirrors right facings from left assets (same convention as walk).
+    Attack frames for any facing.
+    Mirrors right facings from left assets.
+
+    Scaling:
+    - default: fit_to_tile=True  -> scale to (desired_px, desired_px)
+    - for cls_name in ATTACK_NO_SCALE: fit_to_tile=False, but still multiply by SCALE
+      (keeps original aspect ratio and doesn't "fit into tile").
     """
     pc = tuple(player_color[:3])
     facing = facing or "M"
 
-    if facing in ("M", "D", "L", "LD", "LU", "U"):
-        gif_path = unit_attack_gif_path(cls_name, facing)
-        folder_key = f"{cls_name}/attack_{facing}"
-        return _get_team_anim_frames(folder_key, gif_path, desired_px, cls_name, pc, flip_x=False)
+    # scaling mode (exception uses SCALE but doesn't tile-fit)
+    fit_to_tile = (cls_name not in ATTACK_NO_SCALE)
+    scale_factor = SCALE if not fit_to_tile else 1.0
 
-    # Mirror right variants from left assets
+    def load(fkey: str, path: str, flip: bool) -> List[pygame.Surface]:
+        return _get_team_anim_frames(
+            fkey, path, desired_px, cls_name, pc, flip_x=flip,
+            fit_to_tile=fit_to_tile,
+            scale_factor=scale_factor,
+        )
+
+    # ---- mirroring first (keeps it robust) ----
     if facing == "R":
         gif_path = unit_attack_gif_path(cls_name, "L")
         folder_key = f"{cls_name}/attack_L"
-        return _get_team_anim_frames(folder_key, gif_path, desired_px, cls_name, pc, flip_x=True)
+        return load(folder_key, gif_path, flip=True)
 
     if facing == "RD":
         gif_path = unit_attack_gif_path(cls_name, "LD")
         folder_key = f"{cls_name}/attack_LD"
-        return _get_team_anim_frames(folder_key, gif_path, desired_px, cls_name, pc, flip_x=True)
+        return load(folder_key, gif_path, flip=True)
 
     if facing == "RU":
         gif_path = unit_attack_gif_path(cls_name, "LU")
         folder_key = f"{cls_name}/attack_LU"
-        return _get_team_anim_frames(folder_key, gif_path, desired_px, cls_name, pc, flip_x=True)
+        return load(folder_key, gif_path, flip=True)
 
-    # fallback
-    gif_path = unit_attack_gif_path(cls_name, "D")
-    folder_key = f"{cls_name}/attack_D"
-    return _get_team_anim_frames(folder_key, gif_path, desired_px, cls_name, pc, flip_x=False)
+    # ---- special rule: treat D as LD for selected units ----
+    if facing == "D" and cls_name in ATTACK_D_USES_LD:
+        facing = "LD"
 
+    # direct facings
+    if facing in ("M", "D", "L", "LD", "LU", "U"):
+        gif_path = unit_attack_gif_path(cls_name, facing)
+        folder_key = f"{cls_name}/attack_{facing}"
+        return load(folder_key, gif_path, flip=False)
 
+    # fallback (also respects the D->LD rule if configured)
+    fallback = "LD" if (cls_name in ATTACK_D_USES_LD) else "D"
+    gif_path = unit_attack_gif_path(cls_name, fallback)
+    folder_key = f"{cls_name}/attack_{fallback}"
+    return load(folder_key, gif_path, flip=False)
 
 def get_unit_walk_frames(
     cls_name: str,
@@ -941,6 +986,8 @@ class Axeman(Unit):
     _FRAME_TIME = 0.30  # 0.10s = 10 FPS; dostosuj jak chcesz
     _IDLE_SPEED_EPS2 = 0.05  # threshold dla uznania "stoi"
 
+    _ATTACK_FRAME_TIME = 0.40
+
     def __init__(self, x, y, player_id, player_color):
         super().__init__(x, y, size=UNIT_SIZE, speed=2, color=RED, player_id=player_id, player_color=player_color)
         self.chop_damage = 1
@@ -954,6 +1001,10 @@ class Axeman(Unit):
 
         # kierunek "ostatni" żeby idle trzymał sensowny zwrot (opcjonalne)
         self._last_facing = "D"
+
+        # ---- attack animation state (like Archer) ----
+        self._attacking_until = 0.0
+        self._attack_facing = "D"
 
     def _facing_from_velocity(self) -> str:
         v = self.velocity
@@ -1027,18 +1078,24 @@ class Axeman(Unit):
             self.pos.y < camera_y - self.size / 2 or self.pos.y > camera_y + VIEW_HEIGHT + self.size / 2):
             return
 
-        facing = self._facing_from_velocity()
-        if facing != "M":
-            self._last_facing = facing
+        now = context.current_time
 
-        frames = self._get_anim_frames_for_facing(facing)
+        # Decide which animation to show
+        if now < self._attacking_until:
+            facing = self._attack_facing or "D"
+            frames = get_unit_attack_frames("Axeman", int(self.size), tuple(self.player_color[:3]), facing=facing)
+            frame_time = self._ATTACK_FRAME_TIME
+        else:
+            facing = self._facing_from_velocity()
+            if facing != "M":
+                self._last_facing = facing
+            frames = self._get_anim_frames_for_facing(facing)
+            frame_time = self._FRAME_TIME
+
         if not frames:
-            # fallback do starego rysowania sprite
             return super().draw(screen, camera_x, camera_y)
 
-        # wybór klatki: gdy idle (M) też animuje jeśli GIF ma kilka klatek
-        t = context.current_time
-        idx = int(t / self._FRAME_TIME) % len(frames)
+        idx = int(now / frame_time) % len(frames)
         image = frames[idx]
 
         x = self.pos.x - camera_x + VIEW_MARGIN_LEFT
@@ -1046,7 +1103,54 @@ class Axeman(Unit):
 
         image_surface = image.copy()
         image_surface.set_alpha(self.alpha)
-        image_rect = image_surface.get_rect(center=(int(x), int(y)))
+
+        # --- special alignment for oversized ATTACK frames ---
+        if now < self._attacking_until:
+            CORE_W, CORE_H = 16, 14  # "original" sprite box you want to align
+
+            w, h = image_surface.get_width(), image_surface.get_height()
+
+            # anchor tells where the core box sits inside the big image:
+            # (ax, ay) in {"L","C","R"} x {"T","C","B"}
+            # We'll compute dx/dy so that the core's center equals (x, y).
+            if facing in ("L", "LU"):
+                ax, ay = "R", "B"  # bottom-right
+            elif facing == "LD":
+                ax, ay = "R", "T"  # top-right
+            elif facing in ("R", "RU"):
+                ax, ay = "L", "B"  # bottom-left (mirrored from L/LU)
+            elif facing == "RD":
+                ax, ay = "L", "T"  # top-left (mirrored from LD)
+            else:
+                # D/U/M etc: default center the big image on unit
+                ax, ay = "C", "C"
+
+            # where is the core's top-left inside the big image?
+            if ax == "L":
+                core_x0 = 0
+            elif ax == "C":
+                core_x0 = (w - CORE_W) // 2
+            else:  # "R"
+                core_x0 = w - CORE_W
+
+            if ay == "T":
+                core_y0 = 0
+            elif ay == "C":
+                core_y0 = (h - CORE_H) // 2
+            else:  # "B"
+                core_y0 = h - CORE_H
+
+            # core center in image-local coordinates:
+            core_cx = core_x0 + CORE_W / 2
+            core_cy = core_y0 + CORE_H / 2
+
+            # shift whole image so core center lands on (x,y)
+            dx = int(x - core_cx)
+            dy = int(y - core_cy)
+            image_rect = image_surface.get_rect(topleft=(dx, dy))
+        else:
+            image_rect = image_surface.get_rect(center=(int(x), int(y)))
+
         screen.blit(image_surface, image_rect)
 
         if self.selected:
@@ -1137,29 +1241,151 @@ class Axeman(Unit):
     def chop_tree(self, trees):
         if self.special > 0 or self.depositing or self.target == self.return_pos:
             return
-        target_tree = next((tree for tree in trees if isinstance(tree, Tree) and tree.player_id == 0 and self.target == tree.pos and self.pos.distance_to(tree.pos) <= TILE_SIZE), None)
-        if target_tree:
-            target_tree.hp -= self.chop_damage
-            if target_tree.hp <= 0:
-                self.return_pos = Vector2(self.pos)
-                context.players[0].remove_unit(target_tree)
-                context.all_units.remove(target_tree)
-                context.spatial_grid.remove_unit(target_tree)
-                self.special = 25
-                print(f"Tree at {target_tree.pos} chopped down by Axeman at {self.pos}, special = {self.special}")
-                town_centers = [unit for unit in context.all_units if isinstance(unit, TownCenter) and unit.player_id == self.player_id and unit.alpha == 255]
-                if town_centers:
-                    closest_town = min(town_centers, key=lambda town: self.pos.distance_to(town.pos))
-                    self.target = closest_town.pos
-                    self.path = context.waypoint_graph.get_path(self.pos, closest_town.pos, self)
-                    self.path_index = 0
-                    self.depositing = True
-                else:
-                    self.special = 0
-                    self.depositing = False
-                    self.target = None
-                    self.return_pos = None
 
+        target_tree = next(
+            (
+                tree for tree in trees
+                if isinstance(tree, Tree)
+                   and tree.player_id == 0
+                   and self.target == tree.pos
+                   and self.pos.distance_to(tree.pos) <= TILE_SIZE
+            ),
+            None,
+        )
+        if not target_tree:
+            return
+
+        # ------------------ trigger SAME attack animation while chopping ------------------
+        now = context.current_time
+
+        # face toward the tree (same directional rules as in attack())
+        v = (target_tree.pos - self.pos)
+        if v.length_squared() > 1e-6:
+            x, y = v.x, v.y
+            if abs(x) < 0.35 * abs(y) and y < 0:
+                self._attack_facing = "U"
+            elif abs(x) < 0.35 * abs(y) and y > 0:
+                self._attack_facing = "D"
+            elif abs(y) < 0.35 * abs(x) and x < 0:
+                self._attack_facing = "L"
+            elif abs(y) < 0.35 * abs(x) and x > 0:
+                self._attack_facing = "R"
+            elif x < 0 and y < 0:
+                self._attack_facing = "LU"
+            elif x < 0 and y > 0:
+                self._attack_facing = "LD"
+            elif x > 0 and y < 0:
+                self._attack_facing = "RU"
+            elif x > 0 and y > 0:
+                self._attack_facing = "RD"
+            else:
+                self._attack_facing = "D"
+        else:
+            self._attack_facing = self._last_facing or "D"
+
+        # set attacking window long enough to play the gif once
+        attack_frames = get_unit_attack_frames(
+            "Axeman",
+            int(self.size),
+            tuple(self.player_color[:3]),
+            facing=self._attack_facing,
+        )
+        frame_time = self._ATTACK_FRAME_TIME
+        anim_len = (len(attack_frames) * frame_time) if attack_frames else 0.35
+        self._attacking_until = max(self._attacking_until, now + anim_len)
+        # -------------------------------------------------------------------------------
+
+        # actual chop damage
+        target_tree.hp -= self.chop_damage
+
+        if target_tree.hp <= 0:
+            self.return_pos = Vector2(self.pos)
+            context.players[0].remove_unit(target_tree)
+            context.all_units.remove(target_tree)
+            context.spatial_grid.remove_unit(target_tree)
+            self.special = 25
+            print(f"Tree at {target_tree.pos} chopped down by Axeman at {self.pos}, special = {self.special}")
+
+            town_centers = [
+                unit for unit in context.all_units
+                if isinstance(unit, TownCenter)
+                   and unit.player_id == self.player_id
+                   and unit.alpha == 255
+            ]
+            if town_centers:
+                closest_town = min(town_centers, key=lambda town: self.pos.distance_to(town.pos))
+                self.target = closest_town.pos
+                self.path = context.waypoint_graph.get_path(self.pos, closest_town.pos, self)
+                self.path_index = 0
+                self.depositing = True
+            else:
+                self.special = 0
+                self.depositing = False
+                self.target = None
+                self.return_pos = None
+
+    def attack(self, target, current_time):
+        # Use existing generic logic, but start attack anim window when a hit is made.
+        if not isinstance(target, Unit) or isinstance(target, Tree) or target.hp <= 0 or target not in context.all_units:
+            return
+
+        distance = (self.pos - target.pos).length()
+        max_range = self.attack_range + self.size / 2 + target.size / 2
+        if distance > max_range:
+            return
+
+        if context.current_time - self.last_attack_time < self.attack_cooldown:
+            return
+
+        # lock facing for attack (use last movement if close to zero velocity)
+        v = (target.pos - self.pos)
+        if v.length_squared() > 1e-6:
+            # reuse the same facing rules as movement
+            self._attack_facing = self._facing_from_velocity() if self.velocity.length_squared() > 1e-6 else self._last_facing
+            # better: face toward target
+            x, y = v.x, v.y
+            if abs(x) < 0.35 * abs(y) and y < 0:
+                self._attack_facing = "U"
+            elif abs(x) < 0.35 * abs(y) and y > 0:
+                self._attack_facing = "D"
+            elif abs(y) < 0.35 * abs(x) and x < 0:
+                self._attack_facing = "L"
+            elif abs(y) < 0.35 * abs(x) and x > 0:
+                self._attack_facing = "R"
+            elif x < 0 and y < 0:
+                self._attack_facing = "LU"
+            elif x < 0 and y > 0:
+                self._attack_facing = "LD"
+            elif x > 0 and y < 0:
+                self._attack_facing = "RU"
+            elif x > 0 and y > 0:
+                self._attack_facing = "RD"
+            else:
+                self._attack_facing = "D"
+        else:
+            self._attack_facing = self._last_facing or "D"
+
+        # compute anim length from frames
+        attack_frames = get_unit_attack_frames("Axeman", int(self.size), tuple(self.player_color[:3]), facing=self._attack_facing)
+        frame_time = self._ATTACK_FRAME_TIME
+        anim_len = (len(attack_frames) * frame_time) if attack_frames else 0.35
+        self._attacking_until = max(self._attacking_until, context.current_time + anim_len)
+
+        # do normal damage + aggro logic
+        damage = max(0, self.attack_damage - target.armor)
+        target.hp -= damage
+        self.last_attack_time = context.current_time
+        print(f"{self.__class__.__name__} at {self.pos} attacked {target.__class__.__name__} at {target.pos}, dealing {damage} damage")
+
+        if isinstance(target, (Axeman, Archer, Knight)) and target.hp > 0:
+            target.update_attackers(self, context.current_time)
+            if not target.target or getattr(target, "autonomous_target", False):
+                closest_attacker = target.get_closest_attacker()
+                if closest_attacker:
+                    target.target = closest_attacker
+                    target.autonomous_target = True
+                    target.path = []
+                    target.path_index = 0
 # Knight class
 class Knight(Unit):
     milk_cost = 500
