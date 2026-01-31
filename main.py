@@ -691,7 +691,9 @@ def run_game() -> int:
             attack_animations[:] = [anim for anim in attack_animations if current_time - anim['start_time'] < 0.2]
 
             for obj in getattr(context, "world_objects", []):
-                obj.draw(screen, camera.x, camera.y)
+                obj.draw(tile_surface, camera.x, camera.y)
+
+            screen.blit(tile_surface, (VIEW_MARGIN_LEFT, VIEW_MARGIN_TOP))
 
             # Draw units (existing)
             for unit in all_units:
