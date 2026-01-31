@@ -45,6 +45,8 @@ done:
 + walls
 + all buildings
 + units (4/13)
++ fix: issue with pathfinding and shortcutting (like 1 tile gap in river) when clicked like 4-5 tiles ahead
++ fix: units get stuck on corners
 
 todo:
 
@@ -59,12 +61,10 @@ todo:
 - repair
 - animations
 - rest of units
-- fix: issue with pathfinding and shortcutting (like 1 tile gap in river) when clicked like 4-5 tiles ahead
 - fix: without selected player selection boarders clicks are remember
 - self learning AI?
 - idle units?
 - fix: when selected with building wrong order (first unit then building)
-- fix: units get stuck on corners
 - different grass types (season based?)
 - units should have level (militia, professional, veteran)
 - other misc world_obj pass + impassible
