@@ -60,7 +60,7 @@ todo:
 - sounds?
 - upgrade units
 - repair
-- animations (archer done, cow done, axeman done, knight done (idle to fix)
+- animations (archer done, cow done, axeman done, knight done)
 - rest of units
 - fix: without selected player selection boarders clicks are remember
 - self learning AI?
