@@ -121,20 +121,41 @@ pygame.surfarray.blit_array(color_map_low, rgb_low_bytes)
 # Scale up hidden map to map display size (no button bar)
 color_map = pygame.transform.smoothscale(color_map_low, (MAP_DISP_W, MAP_DISP_H))
 
+# ✅ Nearest-neighbor version ONLY for border detection (prevents "fat" borders)
+color_map_nn = pygame.transform.scale(color_map_low, (MAP_DISP_W, MAP_DISP_H))
+
 # -------------------- Precompute border layer ONCE --------------------
+BORDER_THICKNESS = 1  # in screen pixels
+BORDER_COLOR = (255, 255, 255)
+
 border_surf = pygame.Surface((MAP_DISP_W, MAP_DISP_H), flags=pygame.SRCALPHA)
-border_surf.fill((0, 0, 0, 0))  # transparent
+border_surf.fill((0, 0, 0, 0))
 
-cp = pygame.PixelArray(color_map)
-bp = pygame.PixelArray(border_surf)
+sx = MAP_DISP_W / MAP_W
+sy = MAP_DISP_H / MAP_H
+w = max(1, int(BORDER_THICKNESS))
 
-# set only border pixels to opaque white
-white = border_surf.map_rgb((255, 255, 255, 255))
-for x in range(MAP_DISP_W):
-    for y in range(MAP_DISP_H):
-        c = cp[x][y]
-        if (x < MAP_DISP_W - 1 and cp[x + 1][y] != c) or (y < MAP_DISP_H - 1 and cp[x][y + 1] != c):
-            bp[x][y] = white
+# Horizontal neighbor edges: draw vertical line at x+1 boundary
+for y in range(MAP_H):
+    for x in range(MAP_W - 1):
+        a = int(assign[y, x])
+        b = int(assign[y, x + 1])
+        if a != b:
+            x_line = round((x + 1) * sx)
+            y0 = round(y * sy)
+            y1 = round((y + 1) * sy)
+            pygame.draw.line(border_surf, BORDER_COLOR, (x_line, y0), (x_line, y1), w)
+
+# Vertical neighbor edges: draw horizontal line at y+1 boundary
+for y in range(MAP_H - 1):
+    for x in range(MAP_W):
+        a = int(assign[y, x])
+        b = int(assign[y + 1, x])
+        if a != b:
+            y_line = round((y + 1) * sy)
+            x0 = round(x * sx)
+            x1 = round((x + 1) * sx)
+            pygame.draw.line(border_surf, BORDER_COLOR, (x0, y_line), (x1, y_line), w)
 
 del cp
 del bp

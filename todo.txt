@@ -69,7 +69,8 @@ todo:
 - units should have level (militia, professional, veteran)
 - other misc world_obj pass + impassible
 - magic?
-
+- fix: cow stuck in empty of grass field dont move and wait for regrow (do something)
+- dodging arrow/projectiles?
 
 
 - button to kill units and buildings
@@ -86,3 +87,5 @@ todo:
 -> warrior lodge (th3) -> upgrades 1) ++dmg 2) ++armor
 -> shamans hut (th2) -> driad (heal, collect mana?)
 -> shamans hut (th3) -> shamans (summon bear)
+
+- drużyna a elitarnymi jednostkami - a la warlords battlecry

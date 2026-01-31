@@ -174,6 +174,52 @@ def unit_walk_gif_path(cls_name: str, facing: str) -> str:
     # assets/units/{unit}/walk_<facing>.gif
     return os.path.join("assets", "units", cls_name.lower(), f"walk_{facing}.gif")
 
+def unit_attack_gif_path(cls_name: str, facing: str) -> str:
+    # assets/units/{unit}/attack_<facing>.gif
+    return os.path.join("assets", "units", cls_name.lower(), f"attack_{facing}.gif")
+
+
+def get_unit_attack_frames(
+    cls_name: str,
+    desired_px: int,
+    player_color: Tuple[int, int, int],
+    facing: str,
+) -> List[pygame.Surface]:
+    """
+    Standard attack frames for any facing.
+    Mirrors right facings from left assets (same convention as walk).
+    """
+    pc = tuple(player_color[:3])
+    facing = facing or "M"
+
+    if facing in ("M", "D", "L", "LD", "LU", "U"):
+        gif_path = unit_attack_gif_path(cls_name, facing)
+        folder_key = f"{cls_name}/attack_{facing}"
+        return _get_team_anim_frames(folder_key, gif_path, desired_px, cls_name, pc, flip_x=False)
+
+    # Mirror right variants from left assets
+    if facing == "R":
+        gif_path = unit_attack_gif_path(cls_name, "L")
+        folder_key = f"{cls_name}/attack_L"
+        return _get_team_anim_frames(folder_key, gif_path, desired_px, cls_name, pc, flip_x=True)
+
+    if facing == "RD":
+        gif_path = unit_attack_gif_path(cls_name, "LD")
+        folder_key = f"{cls_name}/attack_LD"
+        return _get_team_anim_frames(folder_key, gif_path, desired_px, cls_name, pc, flip_x=True)
+
+    if facing == "RU":
+        gif_path = unit_attack_gif_path(cls_name, "LU")
+        folder_key = f"{cls_name}/attack_LU"
+        return _get_team_anim_frames(folder_key, gif_path, desired_px, cls_name, pc, flip_x=True)
+
+    # fallback
+    gif_path = unit_attack_gif_path(cls_name, "D")
+    folder_key = f"{cls_name}/attack_D"
+    return _get_team_anim_frames(folder_key, gif_path, desired_px, cls_name, pc, flip_x=False)
+
+
+
 def get_unit_walk_frames(
     cls_name: str,
     desired_px: int,
@@ -1183,43 +1229,148 @@ class Knight(Unit):
 class Archer(Unit):
     milk_cost = 400
     wood_cost = 200
-    _FRAME_TIME = 0.12  # same feel as editor
+
+    _WALK_FRAME_TIME = 0.12
+    _ATTACK_FRAME_TIME = 0.10
     _IDLE_SPEED_EPS2 = 0.05
+
+    # fire roughly mid-animation
+    _ARROW_FIRE_FRACTION = 0.5
 
     def __init__(self, x, y, player_id, player_color):
         super().__init__(x, y, size=UNIT_SIZE, speed=2.3, color=YELLOW, player_id=player_id, player_color=player_color)
         self.attack_damage = 15
-        self.attack_range = 100
+
+        # Range is defined in *tiles* (from center of tile to center of tile)
+        self.attack_range_tiles = 5
+        self.attack_range = self.attack_range_tiles * TILE_SIZE  # used by generic movement stop distance
+
         self.attack_cooldown = 1.5
         self.armor = 0
 
-    def _facing_from_velocity(self) -> str:
-        v = self.velocity
-        if v.length_squared() < self._IDLE_SPEED_EPS2:
-            return "M"
+        # Attack animation state
+        self._attacking_until = 0.0
+        self._attack_facing = "D"
 
+    def _tile_center(self, p: Vector2) -> Vector2:
+        tx = int(p.x // TILE_SIZE)
+        ty = int(p.y // TILE_SIZE)
+        return Vector2(tx * TILE_SIZE + TILE_SIZE / 2, ty * TILE_SIZE + TILE_SIZE / 2)
+
+    def _facing_from_vector(self, v: Vector2) -> str:
+        if v.length_squared() < 1e-6:
+            return "D"
         x, y = v.x, v.y
-        if abs(x) < 0.35 and y < 0: return "U"
-        if abs(x) < 0.35 and y > 0: return "D"
-        if abs(y) < 0.35 and x < 0: return "L"
-        if abs(y) < 0.35 and x > 0: return "R"
+        if abs(x) < 0.35 * abs(y) and y < 0: return "U"
+        if abs(x) < 0.35 * abs(y) and y > 0: return "D"
+        if abs(y) < 0.35 * abs(x) and x < 0: return "L"
+        if abs(y) < 0.35 * abs(x) and x > 0: return "R"
         if x < 0 and y < 0: return "LU"
         if x < 0 and y > 0: return "LD"
         if x > 0 and y < 0: return "RU"
         if x > 0 and y > 0: return "RD"
         return "D"
 
+    def _facing_from_velocity(self) -> str:
+        v = self.velocity
+        if v.length_squared() < self._IDLE_SPEED_EPS2:
+            return "M"
+        return self._facing_from_vector(v)
+
+    def attack(self, target, current_time):
+        """Override: tile-based range, attack animation, and arrow effect projectile."""
+        # validate
+        if not isinstance(target, Unit) or isinstance(target, Tree) or target.hp <= 0 or target not in context.all_units:
+            return
+
+        # tile-center distance check
+        a = self._tile_center(self.pos)
+        b = self._tile_center(target.pos)
+        distance = (a - b).length()
+        max_range = self.attack_range_tiles * TILE_SIZE
+
+        if distance > max_range:
+            return
+
+        if context.current_time - self.last_attack_time < self.attack_cooldown:
+            return
+
+        # Lock facing toward the target for the attack animation
+        to_target = (b - a)
+        self._attack_facing = self._facing_from_vector(to_target)
+
+        # Start attack animation window
+        attack_frames = get_unit_attack_frames("Archer", int(self.size), tuple(self.player_color[:3]), facing=self._attack_facing)
+        anim_len = (len(attack_frames) * self._ATTACK_FRAME_TIME) if attack_frames else 0.35
+        self._attacking_until = max(self._attacking_until, context.current_time + anim_len)
+
+        def apply_damage():
+            # target may already be dead/removed
+            if target.hp > 0 and target in context.all_units:
+                target.hp -= damage
+                print(
+                    f"Arrow hit {target.__class__.__name__} at {target.pos}, dealing {damage} damage"
+                )
+
+        # Spawn arrow effect roughly mid-animation
+        try:
+            from effects import ArrowEffect
+            if not hasattr(context, "effects"):
+                context.effects = []
+            fire_time = context.current_time + anim_len * self._ARROW_FIRE_FRACTION
+            context.effects.append(
+                ArrowEffect(
+                    start_pos=Vector2(self.pos),
+                    end_pos=Vector2(target.pos),
+                    facing=self._attack_facing,
+                    size_px=int(TILE_SIZE),
+                    spawn_time=fire_time,
+
+                    # ✅ damage happens only if projectile reaches target
+                    on_hit=apply_damage,
+                )
+            )
+        except Exception as e:
+            # If effects system isn't available, fail gracefully (still deal damage).
+            print(f"ArrowEffect spawn failed: {e}")
+
+        # Deal damage at fire time (game logic stays immediate)
+        damage = max(0, self.attack_damage - target.armor)
+
+        self.last_attack_time = context.current_time
+
+        # Notify target for defensive behavior (same as Unit.attack)
+        if isinstance(target, (Axeman, Archer, Knight)) and target.hp > 0:
+            target.update_attackers(self, context.current_time)
+            if not target.target or getattr(target, "autonomous_target", False):
+                closest_attacker = target.get_closest_attacker()
+                if closest_attacker:
+                    target.target = closest_attacker
+                    target.autonomous_target = True
+                    target.path = []
+                    target.path_index = 0
+
     def draw(self, screen, camera_x, camera_y):
         if (self.pos.x < camera_x - self.size / 2 or self.pos.x > camera_x + VIEW_WIDTH + self.size / 2 or
                 self.pos.y < camera_y - self.size / 2 or self.pos.y > camera_y + VIEW_HEIGHT + self.size / 2):
             return
 
-        facing = self._facing_from_velocity()
-        frames = get_unit_walk_frames("Archer", int(self.size), tuple(self.player_color[:3]), facing=facing)
+        now = context.current_time
+
+        # Choose facing + frames based on whether we're in attack animation window
+        if now < self._attacking_until:
+            facing = self._attack_facing or "D"
+            frames = get_unit_attack_frames("Archer", int(self.size), tuple(self.player_color[:3]), facing=facing)
+            frame_time = self._ATTACK_FRAME_TIME
+        else:
+            facing = self._facing_from_velocity()
+            frames = get_unit_walk_frames("Archer", int(self.size), tuple(self.player_color[:3]), facing=facing)
+            frame_time = self._WALK_FRAME_TIME
+
         if not frames:
             return super().draw(screen, camera_x, camera_y)
 
-        idx = int(context.current_time / self._FRAME_TIME) % len(frames)
+        idx = int(now / frame_time) % len(frames)
         image = frames[idx]
 
         x = self.pos.x - camera_x + VIEW_MARGIN_LEFT

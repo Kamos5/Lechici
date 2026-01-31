@@ -13,6 +13,7 @@ import grid_actions
 # 👇 ADD THIS
 from constants import *
 import context
+from effects import update_effects, draw_effects
 from utils import is_tile_occupied, find_valid_spawn_tiles
 from worldgen import init_game_world
 from world_objects import Bridge, Road
@@ -109,6 +110,7 @@ def run_game() -> int:
     context.building_animations = building_animations
     context.move_order_times = move_order_times
 
+    context.effects = []
 
     selection_end = None
     selecting = False
@@ -148,6 +150,8 @@ def run_game() -> int:
         current_time = pygame.time.get_ticks() / 1000
         context.current_time = current_time
         dt = clock.get_time() / 1000  # Delta time for frame-rate independent updates
+
+        update_effects(getattr(context, "effects", []), current_time, dt)
 
         # Check for Defeat or Victory conditions
         if game_state == GameState.RUNNING:
@@ -625,6 +629,11 @@ def run_game() -> int:
                                 player.cow_in_barn[barn] = unit
                                 break
 
+            # Projectile damage happens asynchronously (on-hit), so collect dead units globally too
+            for u in list(all_units):
+                if isinstance(u, Unit) and not isinstance(u, Tree) and u.hp <= 0:
+                    units_to_remove.add(u)
+
             # Remove dead units
             for unit in units_to_remove:
                 if unit in building_animations:
@@ -694,6 +703,15 @@ def run_game() -> int:
                         unit.draw(screen, camera.x, camera.y, axemen)
                     else:
                         unit.draw(screen, camera.x, camera.y)
+
+            # 👇 ADD THIS: draw arrows / effects
+            draw_effects(
+                getattr(context, "effects", []),
+                screen,
+                camera.x,
+                camera.y,
+                current_time,
+            )
 
             # Draw attack animations
             for anim in attack_animations:
