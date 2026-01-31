@@ -41,8 +41,7 @@ done:
 + different wood types
 + fix: with multiple things being selected dont show spawning button options unless they are the same type
 + dirt != used grass
-+ roads
-+ walls
+
 + all buildings
 + units (4/13)
 + fix: issue with pathfinding and shortcutting (like 1 tile gap in river) when clicked like 4-5 tiles ahead
@@ -51,6 +50,9 @@ done:
 
 todo:
 
+
++ roads (zrobic budowe)
++ walls (zrobic budowe)
 - start screen
 - end screen (objectives)
 - a-move
