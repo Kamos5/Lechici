@@ -451,9 +451,23 @@ class Unit:
         else:
             self.velocity = Vector2(0, 0)
 
-        # Apply velocity and damping
+        # Apply velocity using sub-steps to prevent tunneling through thin gaps
+        delta = Vector2(self.velocity)
+
+        max_step = TILE_SIZE * 0.25  # <= quarter-tile per micro-step
+        dist = delta.length()
+
+        if dist > 0:
+            steps = max(1, int(math.ceil(dist / max_step)))
+            step_vec = delta / steps
+
+            for _ in range(steps):
+                self.pos += step_vec
+                # resolve collisions immediately so we can't jump through blockers
+                self.resolve_collisions(units, context.spatial_grid)
+
+        # apply damping after movement (friction-like)
         self.velocity *= self.damping
-        self.pos += self.velocity
 
     def is_path_blocked(self, units, spatial_grid, waypoint_graph):
         """Check if the current path is blocked, optimized to reduce checks."""
@@ -555,60 +569,86 @@ class Unit:
     def resolve_collisions(self, units, spatial_grid):
         if isinstance(self, (Building, Tree)):
             return
-        corrections = []
+
+        def rect_for(u):
+            return pygame.Rect(u.pos.x - u.size / 2, u.pos.y - u.size / 2, u.size, u.size)
+
+        def aabb_push_out(moving_rect: pygame.Rect, static_rect: pygame.Rect):
+            # Returns a Vector2 correction that minimally separates moving_rect from static_rect
+            if not moving_rect.colliderect(static_rect):
+                return Vector2(0, 0)
+
+            dx1 = static_rect.right - moving_rect.left  # push moving right
+            dx2 = moving_rect.right - static_rect.left  # push moving left
+            dy1 = static_rect.bottom - moving_rect.top  # push moving down
+            dy2 = moving_rect.bottom - static_rect.top  # push moving up
+
+            # Choose smallest magnitude axis push
+            push_x = dx1 if dx1 < dx2 else -dx2
+            push_y = dy1 if dy1 < dy2 else -dy2
+
+            if abs(push_x) < abs(push_y):
+                return Vector2(push_x, 0)
+            else:
+                return Vector2(0, push_y)
+
         nearby_units = context.spatial_grid.get_nearby_units(self)
-        epsilon = 0.01
+        self_rect = rect_for(self)
+
+        total_correction = Vector2(0, 0)
+
         for other in nearby_units:
-            if other is not self:
-                distance = self.pos.distance_to(other.pos)
-                if isinstance(self, Cow) and isinstance(other, Barn):
-                    barn_corners = [
-                        Vector2(other.pos.x - other.size / 2, other.pos.y - other.size / 2),
-                        Vector2(other.pos.x + other.size / 2, other.pos.y - other.size / 2),
-                        Vector2(other.pos.x - other.size / 2, other.pos.y + other.size / 2),
-                        Vector2(other.pos.x + other.size / 2, other.pos.y + other.size / 2)
-                    ]
-                    nearest_corner = barn_corners[2]
-                    distance = self.pos.distance_to(nearest_corner)
-                    corner_radius = 10
-                    if distance < corner_radius and distance > epsilon and (self.target is None or self.target != nearest_corner):
-                        overlap = corner_radius - distance
-                        direction = (self.pos - nearest_corner).normalize()
-                        corrections.append(direction * overlap)
-                elif isinstance(other, Tree) and other.player_id == 0:
-                    combined_min_distance = (self.size + TILE_SIZE) / 2
-                    if distance < combined_min_distance * 2 and distance > epsilon:
-                        if distance < combined_min_distance:
-                            overlap = combined_min_distance - distance
-                            direction = (self.pos - other.pos).normalize()
-                            corrections.append(direction * overlap)
-                elif isinstance(self, Cow) and isinstance(other, Building) and not isinstance(other, Barn):
-                    combined_min_distance = (self.size + other.size) / 2
-                    if distance < combined_min_distance * 2 and distance > epsilon:
-                        if distance < combined_min_distance:
-                            overlap = combined_min_distance - distance
-                            direction = (self.pos - other.pos).normalize()
-                            corrections.append(direction * overlap)
-                elif not isinstance(self, Cow) and isinstance(other, Building):
-                    combined_min_distance = (self.size + other.size) / 2
-                    if distance < combined_min_distance * 2 and distance > epsilon:
-                        if distance < combined_min_distance:
-                            overlap = combined_min_distance - distance
-                            direction = (self.pos - other.pos).normalize()
-                            corrections.append(direction * overlap)
-                elif not isinstance(self, (Building, Tree)) and not isinstance(other, (Building, Tree)):
-                    combined_min_distance = (self.size + other.size) / 2
-                    if distance < combined_min_distance * 2 and distance > epsilon:
-                        if distance < combined_min_distance:
-                            overlap = combined_min_distance - distance
-                            direction = (self.pos - other.pos).normalize()
-                            correction = direction * overlap * 0.5
-                            corrections.append(correction)
-                            other_corrections = getattr(other, '_corrections', [])
-                            other_corrections.append(-correction)
-                            other._corrections = other_corrections
-        if corrections:
-            self.pos += sum(corrections, Vector2(0, 0))
+            if other is self:
+                continue
+
+            # --- STATIC obstacles: Buildings + Trees (AABB push-out prevents corner sticking) ---
+            if isinstance(other, (Tree, Building)):
+                # Keep your special case: Cow can enter Barn
+                if isinstance(self, Cow) and isinstance(other, Barn) and other.player_id == self.player_id:
+                    continue
+
+                other_rect = rect_for(other)
+                corr = aabb_push_out(self_rect, other_rect)
+                if corr.length_squared() > 0:
+                    total_correction += corr
+                    # update rect so multiple collisions stack correctly
+                    self_rect.move_ip(corr.x, corr.y)
+                continue
+
+            # --- UNIT vs UNIT: symmetric separation + stop "moving into each other" ---
+            # Treat as soft circles for separation
+            delta = self.pos - other.pos
+            dist2 = delta.length_squared()
+            if dist2 < 1e-8:
+                # prevent NaNs
+                delta = Vector2(1, 0)
+                dist2 = 1.0
+
+            dist = math.sqrt(dist2)
+            min_dist = (self.size + other.size) / 2
+            if dist < min_dist:
+                overlap = min_dist - dist
+                n = delta / dist  # collision normal (from other -> self)
+
+                # split correction
+                corr = n * (overlap * 0.5)
+                total_correction += corr
+
+                other_corrs = getattr(other, "_corrections", [])
+                other_corrs.append(-corr)
+                other._corrections = other_corrs
+
+                # remove velocity component that drives units INTO each other (fixes issue #2 too)
+                vn_self = self.velocity.dot(-n)
+                if vn_self > 0:
+                    self.velocity += n * vn_self
+
+                vn_other = other.velocity.dot(n)
+                if vn_other > 0:
+                    other.velocity -= n * vn_other
+
+        if total_correction.length_squared() > 0:
+            self.pos += total_correction
 
     def keep_in_bounds(self):
         self.pos.x = max(self.size / 2, min(MAP_WIDTH - self.size / 2, self.pos.x))

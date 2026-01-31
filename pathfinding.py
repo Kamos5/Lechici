@@ -73,7 +73,6 @@ class WaypointGraph:
         return True
 
     def get_neighbors(self, tile_x, tile_y, unit):
-        """Get walkable neighbors (cardinal only for performance, diagonals optional)."""
         neighbors = []
         directions = [
             (0, -1, 1.0),  # Up
@@ -83,15 +82,22 @@ class WaypointGraph:
             (-1, -1, 1.414),  # Up-Left
             (1, -1, 1.414),  # Up-Right
             (-1, 1, 1.414),  # Down-Left
-            (1, 1, 1.414)  # Down-Right
-            # Diagonals commented out to reduce branching; enable if smoother paths needed
-            # (-1, -1, 1.414), (1, -1, 1.414), (-1, 1, 1.414), (1, 1, 1.414)
+            (1, 1, 1.414),  # Down-Right
         ]
+
         for dx, dy, cost in directions:
-            new_x, new_y = tile_x + dx, tile_y + dy
-            if self.is_walkable(new_x, new_y, unit):
-                # Simplified: obstacle penalty removed to reduce computation
-                neighbors.append((new_x, new_y, cost))
+            nx, ny = tile_x + dx, tile_y + dy
+            if not self.is_walkable(nx, ny, unit):
+                continue
+
+            # Prevent diagonal corner cutting:
+            if dx != 0 and dy != 0:
+                if not (self.is_walkable(tile_x + dx, tile_y, unit) and
+                        self.is_walkable(tile_x, tile_y + dy, unit)):
+                    continue
+
+            neighbors.append((nx, ny, cost))
+
         return neighbors
 
     def manhattan_distance(self, tile1, tile2):
@@ -206,13 +212,32 @@ class WaypointGraph:
         return smoothed_path
 
     def is_line_of_sight_clear(self, start, end, unit):
-        """Check line of sight with reduced radius for performance."""
-        nearby_units = self.spatial_grid.get_nearby_units(unit, radius=start.distance_to(end) * 0.75)  # Reduced radius
+        dist = start.distance_to(end)
+        if dist <= 0.001:
+            return True
+
+        # --- 1) Tile sampling along the segment (prevents "river/wall" corner cutting) ---
+        step = max(8.0, self.tile_size * 0.25)  # sample at least 4 points per tile
+        steps = int(dist / step) + 1
+
+        for i in range(steps + 1):
+            t = i / steps
+            p = start.lerp(end, t)
+            tx = int(p.x // self.tile_size)
+            ty = int(p.y // self.tile_size)
+            if not self.is_walkable(tx, ty, unit):
+                return False
+
+        # --- 2) Keep your rectangle intersection for big obstacles (extra safety) ---
+        nearby_units = self.spatial_grid.get_nearby_units(unit, radius=dist + self.tile_size)
         for other in nearby_units:
-            if isinstance(other, Tree) or (isinstance(other, Building) and not (isinstance(unit, Cow) and isinstance(other, Barn))):
-                unit_rect = pygame.Rect(other.pos.x - other.size / 2, other.pos.y - other.size / 2, other.size, other.size)
-                if self.line_intersects_rect(start, end, unit_rect):
+            if isinstance(other, Tree) or (
+                    isinstance(other, Building) and not (isinstance(unit, Cow) and isinstance(other, Barn))
+            ):
+                other_rect = pygame.Rect(other.pos.x - other.size / 2, other.pos.y - other.size / 2, other.size, other.size)
+                if self.line_intersects_rect(start, end, other_rect):
                     return False
+
         return True
 
     def line_intersects_rect(self, start, end, rect):
