@@ -320,7 +320,6 @@ class Unit:
     _underbuilding_images = {}  # building construction sprites (e.g. *_c.png)
     milk_cost = 0
     wood_cost = 0
-    description = "Test description"
     production_time = 15.0
 
     def __init__(self, x, y, size, speed, color, player_id, player_color):
@@ -417,6 +416,48 @@ class Unit:
     def should_highlight(self, current_time):
         return self in context.highlight_times and context.current_time - context.highlight_times[self] <= 0.4
 
+    @staticmethod
+    def _health_color(pct: float) -> Tuple[int, int, int]:
+        """Green (1.0) -> Red (0.0) color for HP fill."""
+        pct = max(0.0, min(1.0, pct))
+        r = int(round(255 * (1.0 - pct)))
+        g = int(round(255 * pct))
+        return (r, g, 0)
+
+    def draw_health_bar(self, screen: pygame.Surface, x: float, y: float) -> None:
+        """Draw HP bar above the unit only if not at full health.
+
+        - Bar width ~ unit size (with small padding)
+        - Filled part uses green->red gradient based on HP%
+        - Unfilled part uses player color
+        """
+        if isinstance(self, Tree):
+            return
+        if self.max_hp <= 0 or self.hp >= self.max_hp:
+            return
+
+        pct = max(0.0, min(1.0, self.hp / self.max_hp))
+
+        pad = 4
+        bar_w = max(10, int(self.size) - pad * 2)
+        bar_h = 5
+        bar_offset = 3
+
+        bar_x = x - bar_w / 2
+        bar_y = y - self.size / 2 - bar_h - bar_offset
+
+        # Unfilled part in player color
+        pc = tuple(self.player_color[:3])
+        pygame.draw.rect(screen, pc, (bar_x, bar_y, bar_w, bar_h))
+
+        # Filled part in HP gradient
+        fill_w = int(round(bar_w * pct))
+        if fill_w > 0:
+            pygame.draw.rect(screen, self._health_color(pct), (bar_x, bar_y, fill_w, bar_h))
+
+        # Outline
+        pygame.draw.rect(screen, BLACK, (bar_x, bar_y, bar_w, bar_h), 1)
+
     def draw(self, screen, camera_x, camera_y):
         if (self.pos.x < camera_x - self.size / 2 or self.pos.x > camera_x + VIEW_WIDTH + self.size / 2 or
             self.pos.y < camera_y - self.size / 2 or self.pos.y > camera_y + VIEW_HEIGHT + self.size / 2):
@@ -447,15 +488,8 @@ class Unit:
             pygame.draw.rect(screen, self.player_color, (x - self.size / 2, y - self.size / 2, self.size, self.size), 1)
         if self.should_highlight(context.current_time):
             pygame.draw.rect(screen, WHITE, (x - self.size / 2, y - self.size / 2, self.size, self.size), 1)
-        if not isinstance(self, Tree):
-            bar_width = 16
-            bar_height = 4
-            bar_offset = 2
-            bar_x = x - bar_width / 2
-            bar_y = y - self.size / 2 - bar_height - bar_offset
-            pygame.draw.rect(screen, BLACK, (bar_x, bar_y, bar_width, bar_height))
-            fill_width = (self.hp / self.max_hp) * bar_width
-            pygame.draw.rect(screen, self.player_color, (bar_x, bar_y, fill_width, bar_height))
+        # HP bar (only when not fully healed)
+        self.draw_health_bar(screen, x, y)
 
         # Draw pathfinding path
         if self.path and len(self.path[self.path_index:]) >= 2:  # Ensure at least 2 points
@@ -1162,15 +1196,8 @@ class Axeman(Unit):
             pygame.draw.rect(screen, WHITE,
                              (x - self.size / 2, y - self.size / 2, self.size, self.size), 1)
 
-        # HP bar jak w Unit.draw()
-        bar_width = 16
-        bar_height = 4
-        bar_offset = 2
-        bar_x = x - bar_width / 2
-        bar_y = y - self.size / 2 - bar_height - bar_offset
-        pygame.draw.rect(screen, BLACK, (bar_x, bar_y, bar_width, bar_height))
-        fill_width = (self.hp / self.max_hp) * bar_width
-        pygame.draw.rect(screen, self.player_color, (bar_x, bar_y, fill_width, bar_height))
+        # HP bar (only when not fully healed)
+        self.draw_health_bar(screen, x, y)
 
         # ścieżka jak w Unit.draw (zostawiam wyłączone)
         if self.path and len(self.path[self.path_index:]) >= 2:
@@ -1512,14 +1539,8 @@ class Knight(Unit):
         if self.should_highlight(context.current_time):
             pygame.draw.rect(screen, WHITE, (x - self.size / 2, y - self.size / 2, self.size, self.size), 1)
 
-        bar_width = 16
-        bar_height = 4
-        bar_offset = 2
-        bar_x = x - bar_width / 2
-        bar_y = y - self.size / 2 - bar_height - bar_offset
-        pygame.draw.rect(screen, BLACK, (bar_x, bar_y, bar_width, bar_height))
-        fill_width = (self.hp / self.max_hp) * bar_width
-        pygame.draw.rect(screen, self.player_color, (bar_x, bar_y, fill_width, bar_height))
+        # HP bar (only when not fully healed)
+        self.draw_health_bar(screen, x, y)
 
 # Archer class
 class Archer(Unit):
@@ -1701,14 +1722,8 @@ class Archer(Unit):
         if self.should_highlight(context.current_time):
             pygame.draw.rect(screen, WHITE, (x - self.size / 2, y - self.size / 2, self.size, self.size), 1)
 
-        bar_width = 16
-        bar_height = 4
-        bar_offset = 2
-        bar_x = x - bar_width / 2
-        bar_y = y - self.size / 2 - bar_height - bar_offset
-        pygame.draw.rect(screen, BLACK, (bar_x, bar_y, bar_width, bar_height))
-        fill_width = (self.hp / self.max_hp) * bar_width
-        pygame.draw.rect(screen, self.player_color, (bar_x, bar_y, fill_width, bar_height))
+        # HP bar (only when not fully healed)
+        self.draw_health_bar(screen, x, y)
 
 
 # Cow class
@@ -1951,19 +1966,21 @@ class Cow(Unit):
             pygame.draw.rect(screen, WHITE,
                              (x - self.size / 2, y - self.size / 2, self.size, self.size), 1)
 
-        # HP + special bar (as you had)
-        bar_width = 16
-        bar_height = 4
-        bar_offset = 2
-        bar_x = x - bar_width / 2
-        bar_y = y - self.size / 2 - bar_height - bar_offset
+        # HP bar (only when not fully healed) + special bar (kept as before)
+        self.draw_health_bar(screen, x, y)
 
-        pygame.draw.rect(screen, BLACK, (bar_x, bar_y, bar_width, bar_height))
-        fill_width = (self.hp / self.max_hp) * bar_width
-        pygame.draw.rect(screen, self.player_color, (bar_x, bar_y, fill_width, bar_height))
+        # Special bar: align with the HP bar width/position
+        pad = 4
+        bar_w = max(10, int(self.size) - pad * 2)
+        bar_h = 5
+        bar_offset = 3
+        bar_x = x - bar_w / 2
+        bar_y = y - self.size / 2 - bar_h - bar_offset
 
-        fill_width = (self.special / 100) * bar_width
-        pygame.draw.rect(screen, WHITE, (bar_x, bar_y + bar_height + 1, fill_width, bar_height))
+        if self.special > 0:
+            fill_w = int(round(bar_w * max(0.0, min(1.0, self.special / 100.0))))
+            pygame.draw.rect(screen, WHITE, (bar_x, bar_y + bar_h + 2, fill_w, bar_h))
+            pygame.draw.rect(screen, BLACK, (bar_x, bar_y + bar_h + 2, bar_w, bar_h), 1)
 
     def move(self, units, spatial_grid=None, waypoint_graph=None):
         self.velocity = Vector2(0, 0)
