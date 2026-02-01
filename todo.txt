@@ -53,7 +53,7 @@ todo:
 
 
 + roads (zrobic budowe)
-+ walls (zrobic budowe)
++ walls (auto łączenie)
 - start screen
 - end screen (objectives)
 - a-move
