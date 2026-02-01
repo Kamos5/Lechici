@@ -320,6 +320,7 @@ class Unit:
     _underbuilding_images = {}  # building construction sprites (e.g. *_c.png)
     milk_cost = 0
     wood_cost = 0
+    description = "Test description"
     production_time = 15.0
 
     def __init__(self, x, y, size, speed, color, player_id, player_color):

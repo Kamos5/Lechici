@@ -32,7 +32,7 @@ def load_ui_icons():
 
         # Totem separator icon (scaled down, keep aspect ratio)
         w, h = totem_icon.get_size()
-        target_h = 150
+        target_h = 180
         scale = (target_h / h) if h else 1
         totem_icon = pygame.transform.smoothscale(
             totem_icon, (max(1, int(w * scale)), target_h)
@@ -65,8 +65,218 @@ def create_fonts():
         "font": pygame.font.SysFont(None, 24),
         "small_font": pygame.font.SysFont(None, 16),
         "button_font": pygame.font.SysFont(None, 20),
+        # Bigger fonts for the new description/tooltip panel
+        "tooltip_title_font": pygame.font.SysFont(None, 36),
+        "tooltip_body_font": pygame.font.SysFont(None, 30),
         "end_button_font": pygame.font.Font(None, 36),
     }
+
+
+
+# ---------------------------------------------------------------------------
+# UI helpers: hoverable buttons + tooltip panel
+# ---------------------------------------------------------------------------
+
+def wrap_text(font: pygame.font.Font, text: str, max_width: int) -> list[str]:
+    """Simple word-wrapping for pygame text."""
+    if not text:
+        return []
+    words = text.split()
+    lines: list[str] = []
+    cur = ""
+    for w in words:
+        test = (cur + " " + w).strip()
+        if font.size(test)[0] <= max_width:
+            cur = test
+        else:
+            if cur:
+                lines.append(cur)
+            # If a single word is longer than max_width, hard-split it.
+            if font.size(w)[0] > max_width:
+                chunk = ""
+                for ch in w:
+                    test_chunk = chunk + ch
+                    if font.size(test_chunk)[0] <= max_width:
+                        chunk = test_chunk
+                    else:
+                        if chunk:
+                            lines.append(chunk)
+                        chunk = ch
+                cur = chunk
+            else:
+                cur = w
+    if cur:
+        lines.append(cur)
+    return lines
+
+
+def draw_tooltip_panel(
+    screen: pygame.Surface,
+    *,
+    name: str,
+    description: str,
+    milk_cost: int | None,
+    wood_cost: int | None,
+    icons: dict,
+    fonts: dict,
+):
+    """Draw bottom-left tooltip panel (20% width/height of the window)."""
+    w = int(SCREEN_WIDTH * 0.20)
+    h = int(SCREEN_HEIGHT * 0.20)
+    # Anchor inside the main world view (avoid overlapping UI borders/panels)
+    x0 = VIEW_MARGIN_LEFT + 10
+    y0 = VIEW_MARGIN_TOP + VIEW_HEIGHT - h - 10
+    rect = pygame.Rect(x0, y0, w, h)
+
+    panel = pygame.Surface((rect.w, rect.h), pygame.SRCALPHA)
+    panel.fill((0, 0, 0, 160))  # semi-transparent black
+
+    pad = 8
+    x = pad
+    y = pad
+
+    title_font = fonts.get("tooltip_title_font") or fonts.get("button_font") or fonts.get("font")
+    body_font = fonts.get("tooltip_body_font") or fonts.get("button_font") or fonts.get("font")
+
+    # Title
+    if name:
+        title_surf = title_font.render(name, True, (255, 255, 255))
+        panel.blit(title_surf, (x, y))
+        y += title_surf.get_height() + 6
+
+    # Costs line (optional)
+    if milk_cost is not None or wood_cost is not None:
+        icon_scale = 1
+        milk_icon = icons.get("milk")
+        wood_icon = icons.get("wood")
+
+        if milk_icon is not None:
+            mw, mh = milk_icon.get_size()
+            milk_small = pygame.transform.smoothscale(milk_icon, (int(mw * icon_scale), int(mh * icon_scale)))
+        else:
+            milk_small = None
+
+        if wood_icon is not None:
+            ww, wh = wood_icon.get_size()
+            wood_small = pygame.transform.smoothscale(wood_icon, (int(ww * icon_scale), int(wh * icon_scale)))
+        else:
+            wood_small = None
+
+        line_x = x
+        if milk_cost is not None:
+            if milk_small:
+                panel.blit(milk_small, (line_x, y))
+                line_x += milk_small.get_width() + 4
+            t = body_font.render(str(milk_cost), True, (255, 255, 255))
+            panel.blit(t, (line_x, y + 2))
+            line_x += t.get_width() + 12
+
+        if wood_cost is not None:
+            if wood_small:
+                panel.blit(wood_small, (line_x, y))
+                line_x += wood_small.get_width() + 4
+            t2 = body_font.render(str(wood_cost), True, (255, 255, 255))
+            panel.blit(t2, (line_x, y + 2))
+
+        y += 22  # fixed row height
+
+    # Description (wrapped)
+    max_text_w = rect.w - 2 * pad
+    for line in wrap_text(body_font, description or "", max_text_w):
+        if y + body_font.get_height() > rect.h - pad:
+            break
+        panel.blit(body_font.render(line, True, (255, 255, 255)), (x, y))
+        y += body_font.get_height() + 2
+
+    screen.blit(panel, rect.topleft)
+
+
+class UIButton:
+    """A minimal hoverable UI button for grids and action panels."""
+
+    def __init__(
+        self,
+        rect: pygame.Rect,
+        *,
+        enabled: bool = True,
+        label: str = "",
+        hotkey: str | None = None,
+        icon: pygame.Surface | None = None,
+        milk_cost: int | None = None,
+        wood_cost: int | None = None,
+        description: str = "",
+    ):
+        self.rect = rect
+        self.enabled = enabled
+        self.label = label
+        self.hotkey = hotkey
+        self.icon = icon
+        self.milk_cost = milk_cost
+        self.wood_cost = wood_cost
+        self.description = description
+
+    def hovered(self, mouse_pos) -> bool:
+        return self.rect.collidepoint(mouse_pos)
+
+    def draw_base(self, screen: pygame.Surface, *, hovered: bool):
+        base_color = HIGHLIGHT_GRAY if self.enabled else GRAY
+        pygame.draw.rect(screen, base_color, self.rect)
+
+        if hovered:
+            # More visible hover highlight (brighter + thin border)
+            overlay = pygame.Surface((self.rect.w, self.rect.h), pygame.SRCALPHA)
+            overlay.fill((255, 255, 255, 120))
+            screen.blit(overlay, self.rect.topleft)
+            pygame.draw.rect(screen, WHITE, self.rect, 2)
+
+    def draw_icon_fill(
+        self,
+        screen: pygame.Surface,
+        *,
+        icon_pad: int = 4,
+    ):
+        """Draw the icon centered, scaled to fill the button with a small padding border."""
+        if not self.icon:
+            return
+
+        inner = self.rect.inflate(-2 * icon_pad, -2 * icon_pad)
+        if inner.w <= 1 or inner.h <= 1:
+            return
+
+        iw, ih = self.icon.get_size()
+        if iw <= 0 or ih <= 0:
+            return
+
+        # Scale to cover the available space (like a thumbnail)
+        scale = max(inner.w / iw, inner.h / ih)
+        tw, th = max(1, int(iw * scale)), max(1, int(ih * scale))
+        img = pygame.transform.smoothscale(self.icon, (tw, th))
+
+        # Center-crop into the inner rect
+        sx = (tw - inner.w) // 2
+        sy = (th - inner.h) // 2
+        src = pygame.Rect(sx, sy, inner.w, inner.h)
+        screen.blit(img, inner.topleft, src)
+
+        # Subtle frame
+        pygame.draw.rect(screen, (0, 0, 0), inner, 1)
+
+    def draw_label(self, screen: pygame.Surface, font: pygame.font.Font):
+        if self.label:
+            txt = font.render(self.label, True, BLACK)
+            screen.blit(txt, (self.rect.x + 2, self.rect.y + 2))
+
+        if self.hotkey:
+            hk = font.render(self.hotkey.upper(), True, BLACK)
+            screen.blit(hk, (self.rect.right - hk.get_width() - 2, self.rect.y + 2))
+
+    def draw_hotkey_center(self, screen: pygame.Surface, font: pygame.font.Font):
+        """For icon-less buttons: draw hotkey centered as the only visible glyph."""
+        if not self.hotkey:
+            return
+        hk = font.render(self.hotkey.upper(), True, BLACK)
+        r = hk.get_rect(center=self.rect.center)
+        screen.blit(hk, r.topleft)
 
 
 def build_ui_layout():
@@ -94,32 +304,36 @@ def build_ui_layout():
     top_pad = 10
 
     grid_total_w = VIEW_MARGIN_LEFT - 2 * left_pad
-    grid_total_h = 3 * GRID_BUTTON_HEIGHT + 2 * GRID_BUTTON_MARGIN
+    # Use the full bottom panel height for a squarer 4x3 grid
+    grid_total_h = PANEL_HEIGHT - 2 * top_pad
 
     grid_button_start_x = left_pad
     grid_button_start_y = PANEL_Y + top_pad  # inside the bottom panel, but left side
 
-    # Make buttons readable: use a minimum width, then compute margin to fit
-    btn_h = GRID_BUTTON_HEIGHT
+    # Make buttons more square-like.
+    # Compute the largest square size that fits into the available region.
+    MIN_BTN = 56
+    max_by_w = (grid_total_w - (GRID_COLS - 1) * GRID_BUTTON_MARGIN) // GRID_COLS
+    max_by_h = (grid_total_h - (GRID_ROWS - 1) * GRID_BUTTON_MARGIN) // GRID_ROWS
+    btn_size = max(MIN_BTN, min(max_by_w, max_by_h))
 
-    # Choose a good minimum width for text+icons+costs
-    MIN_BTN_W = 70  # tweak: 64–80 usually good
-    btn_w = max(MIN_BTN_W, (grid_total_w - (GRID_COLS - 1) * GRID_BUTTON_MARGIN) // GRID_COLS)
-
-    # If 4*btn_w doesn't fit, reduce effective margin instead of shrinking buttons too much
-    needed_w = GRID_COLS * btn_w
-    remaining = grid_total_w - needed_w
-    eff_margin = GRID_BUTTON_MARGIN
-    if remaining < (GRID_COLS - 1) * eff_margin:
-        eff_margin = max(2, remaining // (GRID_COLS - 1))  # squeeze margins, keep at least 2px
+    # Derive effective margins so the grid fits nicely.
+    eff_margin_x = GRID_BUTTON_MARGIN
+    eff_margin_y = GRID_BUTTON_MARGIN
+    if GRID_COLS > 1:
+        remaining_w = grid_total_w - GRID_COLS * btn_size
+        eff_margin_x = max(2, remaining_w // (GRID_COLS - 1))
+    if GRID_ROWS > 1:
+        remaining_h = grid_total_h - GRID_ROWS * btn_size
+        eff_margin_y = max(2, remaining_h // (GRID_ROWS - 1))
 
     grid_buttons = []
     for row in range(GRID_ROWS):
         row_buttons = []
         for col in range(GRID_COLS):
-            x = grid_button_start_x + col * (btn_w + eff_margin)
-            y = grid_button_start_y + row * (btn_h + eff_margin)
-            row_buttons.append(pygame.Rect(x, y, btn_w, btn_h))
+            x = grid_button_start_x + col * (btn_size + eff_margin_x)
+            y = grid_button_start_y + row * (btn_size + eff_margin_y)
+            row_buttons.append(pygame.Rect(x, y, btn_size, btn_size))
         grid_buttons.append(row_buttons)
 
     quit_button = pygame.Rect(
@@ -169,7 +383,11 @@ def draw_panels(screen):
     pygame.draw.rect(screen, PANEL_COLOR, (VIEW_MARGIN_LEFT, PANEL_Y, VIEW_WIDTH, PANEL_HEIGHT))
 
 
-def draw_grid_buttons(screen, grid_buttons, current_player, all_units, production_queues, current_time, icons, small_font):
+def draw_grid_buttons(screen, grid_buttons, current_player, all_units, production_queues, current_time, icons, fonts):
+
+    small_font = fonts["small_font"]
+    mouse_pos = pygame.mouse.get_pos()
+    hovered_tooltip = None  # (name, desc, milk_cost, wood_cost)
 
     # --- cached scaled icons for build grid ---
     if not hasattr(draw_grid_buttons, "_scaled_cache"):
@@ -264,9 +482,28 @@ def draw_grid_buttons(screen, grid_buttons, current_player, all_units, productio
         for (r, c), (label, enabled) in mapping.items():
             if r < len(grid_buttons) and c < len(grid_buttons[r]):
                 btn = grid_buttons[r][c]
-                # enabled = LIGHT_GRAY, disabled = GRAY
-                pygame.draw.rect(screen, HIGHLIGHT_GRAY if enabled else GRAY, btn)
-                draw_label(btn, label, hotkeys.get((r, c)))
+                ui_btn = UIButton(
+                    btn,
+                    enabled=enabled,
+                    # Keep the grid clean: no text inside buttons.
+                    # Use hotkeys + hover tooltip for details.
+                    label="",
+                    hotkey=hotkeys.get((r, c)),
+                    description={
+                        'Patrol': 'Move in formation between points (TODO).',
+                        'Move': 'Issue a move order (right-click also works).',
+                        'Harvest': 'Gather resources (cows/axemen only).',
+                        'Repair': 'Repair buildings (axemen only).',
+                        'Attack': 'Force-attack mode (TODO).',
+                        'Stop': 'Cancel current orders and clear targets.',
+                    }.get(label, ''),
+                )
+                hov = ui_btn.hovered(mouse_pos)
+                ui_btn.draw_base(screen, hovered=hov)
+                # For action buttons we currently have no icons: show the hotkey letter centered.
+                ui_btn.draw_hotkey_center(screen, fonts.get("button_font") or small_font)
+                if hov:
+                    hovered_tooltip = (label, ui_btn.description, None, None)
 
     else:
         # Production mode (only buildings selected)
@@ -317,7 +554,20 @@ def draw_grid_buttons(screen, grid_buttons, current_player, all_units, productio
                             or current_player.building_count < current_player.building_limit
                     )
 
-                pygame.draw.rect(screen, HIGHLIGHT_GRAY if enabled else GRAY, btn)
+                ui_btn = UIButton(
+                    btn,
+                    enabled=enabled,
+                    # No text on production/build buttons; icon + tooltip only.
+                    label="",
+                    hotkey=None,
+                    icon=None,
+                    milk_cost=getattr(cls, 'milk_cost', 0),
+                    wood_cost=getattr(cls, 'wood_cost', 0),
+                    description=getattr(cls, 'description', ''),
+                )
+
+                hov = ui_btn.hovered(mouse_pos)
+                ui_btn.draw_base(screen, hovered=hov)
 
                 # Ensure icon is loaded even if no instance exists yet
                 if cls.__name__ not in Unit._unit_icons or Unit._unit_icons.get(cls.__name__) is None:
@@ -327,19 +577,31 @@ def draw_grid_buttons(screen, grid_buttons, current_player, all_units, productio
                     )
 
                 icon = Unit._unit_icons.get(cls.__name__)
+                ui_btn.icon = icon
+                # Center-fill the icon, covering the whole button with a small border.
+                ui_btn.draw_icon_fill(screen, icon_pad=4)
 
-                if icon:
-                    icon_75 = get_scaled(icon, 0.75)
-                    screen.blit(
-                        icon_75,
-                        (btn.x + btn.width - icon_75.get_width() -2, btn.y + 14),
-                    )
-
-                draw_label(btn, label, enabled=True)  # label always visible
-                draw_costs(btn, cls)
+                # Costs are shown in the tooltip panel, not on the button.
                 draw_progress(btn, owner, cls)
 
+                if hov:
+                    hovered_tooltip = (label, ui_btn.description, ui_btn.milk_cost, ui_btn.wood_cost)
+
                 idx += 1
+
+
+    # Tooltip panel (bottom-left)
+    if hovered_tooltip:
+        name, desc, milk_cost, wood_cost = hovered_tooltip
+        draw_tooltip_panel(
+            screen,
+            name=name,
+            description=desc,
+            milk_cost=milk_cost,
+            wood_cost=wood_cost,
+            icons=icons,
+            fonts=fonts,
+        )
 
 
 def draw_selected_unit_icons(screen, all_units, current_player, fonts, icon_size=32, icon_margin=5):
@@ -460,7 +722,7 @@ def draw_game_ui(
     camera,
 ):
     draw_panels(screen)
-    draw_grid_buttons(screen, grid_buttons, current_player, all_units, production_queues, current_time, icons, fonts["small_font"])
+    draw_grid_buttons(screen, grid_buttons, current_player, all_units, production_queues, current_time, icons, fonts)
 
     # --- NEW: minimap bottom-right (inside right panel) ---
     draw_minimap(screen, grass_tiles=grass_tiles, all_units=all_units, camera=camera, current_player=current_player)
@@ -468,7 +730,7 @@ def draw_game_ui(
     # Totem separator between the left build grid and the selected-unit info area
     if icons and icons.get("totem"):
         totem = icons["totem"]
-        tx = VIEW_MARGIN_LEFT - (totem.get_width() // 2) + 320
+        tx = VIEW_MARGIN_LEFT - (totem.get_width() // 2) + 250
         ty = PANEL_Y + (PANEL_HEIGHT - totem.get_height()) // 2
         screen.blit(totem, (tx, ty))
 
@@ -482,7 +744,7 @@ def draw_game_ui(
     )
     draw_resources_and_limits(screen, current_player, icons, fonts)
     draw_fps(screen, fps, fonts)
-    draw_selected_count(screen, all_units, current_player, fonts)
+    # draw_selected_count(screen, all_units, current_player, fonts)
 
 def _minimap_rect():
     # Right panel bounds: x in [SCREEN_WIDTH - VIEW_MARGIN_RIGHT, SCREEN_WIDTH)
@@ -492,7 +754,7 @@ def _minimap_rect():
 
     # Choose a square minimap that fits comfortably
     size = min(panel_w - 2 * pad, 220)
-    size = max(120, size)  # avoid too tiny
+    size = max(180, size)  # avoid too tiny
 
     x = panel_x + panel_w - pad - size
     y = SCREEN_HEIGHT - pad - size
