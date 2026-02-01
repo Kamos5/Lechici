@@ -2,7 +2,7 @@
 import pygame
 from pygame.math import Vector2
 
-from units import Building, Barn, Barracks, TownCenter, Axeman, Archer, Knight, Cow, ShamansHut, WarriorsLodge, KnightsEstate, Ruin
+from units import Building, Barn, Barracks, TownCenter, Axeman, Archer, Knight, Cow, ShamansHut, WarriorsLodge, KnightsEstate, Ruin, Wall
 
 # 4x3 hotkeys: q w e r / a s d f / z x c v
 GRID_HOTKEYS = {
@@ -139,6 +139,7 @@ def execute_grid_cell(
             (WarriorsLodge, selected_town_center, "building"),
             (KnightsEstate, selected_town_center, "building"),
             (Ruin, selected_town_center, "building"),
+            (Wall, selected_town_center, "building"),
         ])
 
     # (r,c) -> linear idx in packed grid

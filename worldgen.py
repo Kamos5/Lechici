@@ -14,8 +14,8 @@ from constants import *
 import context
 import units as units_mod
 from tiles import GrassTile, Dirt, River, Foundation, Mountain
-from world_objects import Bridge, Road, Wall, MiscPassable
-from units import Tree, Building
+from world_objects import Bridge, Road, MiscPassable
+from units import Tree, Building, Wall
 from player import Player, PlayerAI
 from pathfinding import SpatialGrid, WaypointGraph
 
@@ -130,7 +130,14 @@ def load_editor_map(path: str) -> Tuple[
             # Instantiate with best-effort signature matching your units.py conventions
             try:
                 if issubclass(cls, Building):
-                    unit = cls(x, y, player_id, pcol)
+                    variant = info.get("variant")
+                    try:
+                        if variant is not None:
+                            unit = cls(x, y, player_id, pcol, variant=variant)
+                        else:
+                            unit = cls(x, y, player_id, pcol)
+                    except TypeError:
+                        unit = cls(x, y, player_id, pcol)
                 elif cls is Tree:
                     # Editor may store "variant": "tree0"..."tree6"
                     variant = info.get("variant", DEFAULT_TREE_VARIANT)
@@ -184,15 +191,6 @@ def load_editor_map(path: str) -> Tuple[
                     world_objects.append(Road(x, y, variant=variant, passable=passable))
                 except TypeError:
                     world_objects.append(Road(x, y))
-
-            elif obj_type == "Wall":
-                variant = info.get("variant")
-                # ignore passable from save: walls are always blocked
-                try:
-                    world_objects.append(Wall(x, y, variant=variant))
-                except TypeError:
-                    world_objects.append(Wall(x, y))
-
             elif obj_type == "MiscPassable":
                 variant = info.get("variant")
                 passable = bool(info.get("passable", True))

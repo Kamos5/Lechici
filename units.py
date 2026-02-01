@@ -363,11 +363,14 @@ class Unit:
         # (for now) building_icon == building
         is_building = cls_name in {
             "Barn", "TownCenter", "Barracks", "ShamansHut",
-            "KnightsEstate", "WarriorsLodge", "Ruin",
+            "KnightsEstate", "WarriorsLodge", "Ruin", "Wall",
         }
 
         if is_building:
             base = f"assets/units/buildings/{cls_name.lower()}"
+            if cls_name == "Wall":
+                # Wall sprites are variant-based: wall1.png ... wall12.png
+                base = "assets/units/buildings/wall6"
             sprite_path = f"{base}.png"
             icon_path = sprite_path  # building_icon = building (for now)
             underbuilding_path = f"{base}_c.png"
@@ -944,8 +947,17 @@ class Tree(Unit):
 class Building(Unit):
 
     production_time = 30.0  # Production time for buildings (seconds)
-    def __init__(self, x, y, size, color, player_id, player_color):
-        super().__init__(x, y, size, speed=0, color=color, player_id=player_id, player_color=player_color)
+
+    # Footprint size in tiles (N x N). Most buildings are 3x3. Override in subclasses.
+    SIZE_TILES = 3
+
+    @classmethod
+    def size_px(cls) -> int:
+        """Pixel size (square) derived from SIZE_TILES."""
+        return int(cls.SIZE_TILES) * TILE_SIZE
+
+    def __init__(self, x, y, *, color, player_id, player_color):
+        super().__init__(x, y, self.size_px(), speed=0, color=color, player_id=player_id, player_color=player_color)
         self.hp = 150  # High HP for buildings
         self.max_hp = 150
         self.armor = 5  # Buildings have armor
@@ -961,7 +973,7 @@ class Barn(Building):
     milk_cost = 0
     wood_cost = 300
     def __init__(self, x, y, player_id, player_color):
-        super().__init__(x, y, size=BUILDING_SIZE, color=DARK_GRAY, player_id=player_id, player_color=player_color)
+        super().__init__(x, y, color=DARK_GRAY, player_id=player_id, player_color=player_color)
         self.harvest_rate = 60.0
 
 # Barn class
@@ -969,26 +981,105 @@ class ShamansHut(Building):
     milk_cost = 200
     wood_cost = 300
     def __init__(self, x, y, player_id, player_color):
-        super().__init__(x, y, size=BUILDING_SIZE, color=DARK_GRAY, player_id=player_id, player_color=player_color)
+        super().__init__(x, y, color=DARK_GRAY, player_id=player_id, player_color=player_color)
 
 # New buildings (treat like ShamansHut for now)
 class KnightsEstate(Building):
     milk_cost = 100
     wood_cost = 100
     def __init__(self, x, y, player_id, player_color):
-        super().__init__(x, y, size=BUILDING_SIZE, color=DARK_GRAY, player_id=player_id, player_color=player_color)
+        super().__init__(x, y, color=DARK_GRAY, player_id=player_id, player_color=player_color)
 
 class WarriorsLodge(Building):
     milk_cost = 100
     wood_cost = 100
     def __init__(self, x, y, player_id, player_color):
-        super().__init__(x, y, size=BUILDING_SIZE, color=DARK_GRAY, player_id=player_id, player_color=player_color)
+        super().__init__(x, y, color=DARK_GRAY, player_id=player_id, player_color=player_color)
 
 class Ruin(Building):
     milk_cost = 100
     wood_cost = 100
     def __init__(self, x, y, player_id, player_color):
-        super().__init__(x, y, size=BUILDING_SIZE, color=DARK_GRAY, player_id=player_id, player_color=player_color)
+        super().__init__(x, y, color=DARK_GRAY, player_id=player_id, player_color=player_color)
+
+
+# Wall building (tile-sized). Behaves like other buildings (hp, player, blocking, selectable),
+# but uses per-variant sprites from assets/units/buildings/wallN.png
+class Wall(Building):
+    milk_cost = 0
+    wood_cost = 5
+
+    _variant_images: Dict[str, Optional[pygame.Surface]] = {}
+    DEFAULT_VARIANT = "wall1"
+    VARIANT_MIN = 1
+    VARIANT_MAX = 12
+
+    # Walls are 1x1 tile
+    SIZE_TILES = 1
+
+    def __init__(self, x, y, player_id, player_color, variant: Optional[str] = None):
+        super().__init__(x, y, color=DARK_GRAY, player_id=player_id, player_color=player_color)
+
+        self.variant = self._sanitize_variant(variant) or self.DEFAULT_VARIANT
+
+        # Walls: sturdy, but tweakable
+        self.hp = 150
+        self.max_hp = 150
+        self.armor = 6
+        self.attack_damage = 0
+        self.attack_range = 0
+
+        if self.variant not in Wall._variant_images:
+            Wall._variant_images[self.variant] = Wall._load_variant_image(self.variant)
+
+    @staticmethod
+    def _sanitize_variant(v: Optional[str]) -> Optional[str]:
+        if not isinstance(v, str) or not v.startswith("wall"):
+            return None
+        try:
+            idx = int(v[len("wall"):])
+        except Exception:
+            return None
+        return v if Wall.VARIANT_MIN <= idx <= Wall.VARIANT_MAX else None
+
+    @classmethod
+    def _load_variant_image(cls, variant: str) -> Optional[pygame.Surface]:
+        # NOTE: user moved wall sprites under assets/units/buildings/
+        path = os.path.join("assets", "units", "buildings", f"{variant}.png")
+        try:
+            img = pygame.image.load(path).convert_alpha()
+            return pygame.transform.scale(img, (TILE_SIZE, TILE_SIZE))
+        except (pygame.error, FileNotFoundError) as e:
+            print(f"Failed to load {path}: {e}")
+            return None
+
+    def draw(self, screen, camera_x, camera_y):
+        # Same culling as Unit.draw()
+        if (self.pos.x < camera_x - self.size / 2 or self.pos.x > camera_x + VIEW_WIDTH + self.size / 2 or
+            self.pos.y < camera_y - self.size / 2 or self.pos.y > camera_y + VIEW_HEIGHT + self.size / 2):
+            return
+
+        x = self.pos.x - camera_x + VIEW_MARGIN_LEFT
+        y = self.pos.y - camera_y + VIEW_MARGIN_TOP
+
+        img = Wall._variant_images.get(self.variant)
+        if img is not None:
+            image_surface = img.copy()
+            image_surface.set_alpha(self.alpha)
+            rect = image_surface.get_rect(center=(int(x), int(y)))
+            screen.blit(image_surface, rect)
+        else:
+            surface = pygame.Surface((self.size, self.size), pygame.SRCALPHA)
+            surface.fill((60, 60, 60, int(self.alpha)))
+            screen.blit(surface, (x - self.size / 2, y - self.size / 2))
+
+        if self.selected:
+            pygame.draw.rect(screen, self.player_color, (x - self.size / 2, y - self.size / 2, self.size, self.size), 1)
+        if self.should_highlight(context.current_time):
+            pygame.draw.rect(screen, WHITE, (x - self.size / 2, y - self.size / 2, self.size, self.size), 1)
+
+        self.draw_health_bar(screen, x, y)
+
 
 
 # TownCenter class
@@ -996,7 +1087,7 @@ class TownCenter(Building):
     milk_cost = 0
     wood_cost = 800
     def __init__(self, x, y, player_id, player_color):
-        super().__init__(x, y, size=BUILDING_SIZE, color=TOWN_CENTER_GRAY, player_id=player_id, player_color=player_color)
+        super().__init__(x, y, color=TOWN_CENTER_GRAY, player_id=player_id, player_color=player_color)
         self.hp = 200  # High HP for buildings
         self.max_hp = 200
         self.armor = 5
@@ -1006,7 +1097,7 @@ class Barracks(Building):
     milk_cost = 0
     wood_cost = 500
     def __init__(self, x, y, player_id, player_color):
-        super().__init__(x, y, size=BUILDING_SIZE, color=TOWN_CENTER_GRAY, player_id=player_id, player_color=player_color)
+        super().__init__(x, y, color=TOWN_CENTER_GRAY, player_id=player_id, player_color=player_color)
 
 # Axeman class
 class Axeman(Unit):

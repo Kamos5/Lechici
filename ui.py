@@ -2,7 +2,7 @@ import pygame
 from pygame.math import Vector2
 
 from constants import *
-from units import Unit, Building, Barn, Barracks, TownCenter, Axeman, Archer, Knight, Cow, ShamansHut, KnightsEstate, WarriorsLodge, Ruin
+from units import Unit, Building, Barn, Barracks, TownCenter, Axeman, Archer, Knight, Cow, ShamansHut, KnightsEstate, WarriorsLodge, Ruin, Wall
 
 
 def load_ui_icons():
@@ -534,6 +534,7 @@ def draw_grid_buttons(screen, grid_buttons, current_player, all_units, productio
                 ("KnightsEstate", KnightsEstate, selected_town_center),
                 ("WarriorsLodge", WarriorsLodge, selected_town_center),
                 ("Ruin", Ruin, selected_town_center),
+                ("Wall", Wall, selected_town_center),
             ])
 
         # Draw options into the 4x3 grid

@@ -139,7 +139,11 @@ def run_game() -> int:
     placing_building = False
     building_to_place = None
     building_pos = None
-    building_size = BUILDING_SIZE
+    # Building footprint is class-defined (Building.SIZE_TILES == 3 by default).
+    # Walls override it to 1.
+    def _placement_size_for(cls) -> int:
+        size_tiles = int(getattr(cls, "SIZE_TILES", max(1, int(BUILDING_SIZE // TILE_SIZE))))
+        return size_tiles * TILE_SIZE
 
     current_player = players[1]
 
@@ -235,6 +239,7 @@ def run_game() -> int:
                             tile_y = int(click_pos.y // TILE_SIZE)
                             building_pos = Vector2(tile_x * TILE_SIZE + TILE_HALF, tile_y * TILE_SIZE + TILE_HALF)
 
+                            building_size = _placement_size_for(building_to_place)
                             building_size_tiles = int(building_size // TILE_SIZE)
                             valid_placement = True
                             for row in range(tile_y - building_size_tiles // 2, tile_y + building_size_tiles // 2 + 1):
@@ -260,10 +265,12 @@ def run_game() -> int:
                                     spatial_grid.add_unit(new_building)
 
                                     # Paint area to dirt (same as your old placement code)
-                                    for row in range(tile_y - building_size_tiles // 2, tile_y + building_size_tiles // 2 + 1):
-                                        for col in range(tile_x - building_size_tiles // 2, tile_x + building_size_tiles // 2 + 1):
-                                            if 0 <= row < GRASS_ROWS and 0 <= col < GRASS_COLS:
-                                                grass_tiles[row][col] = Dirt(col * TILE_SIZE, row * TILE_SIZE)
+                                    # (Skip for tile-sized walls so they don't leave a dirt "footprint".)
+                                    if getattr(building_to_place, "__name__", "") != "Wall":
+                                        for row in range(tile_y - building_size_tiles // 2, tile_y + building_size_tiles // 2 + 1):
+                                            for col in range(tile_x - building_size_tiles // 2, tile_x + building_size_tiles // 2 + 1):
+                                                if 0 <= row < GRASS_ROWS and 0 <= col < GRASS_COLS:
+                                                    grass_tiles[row][col] = Dirt(col * TILE_SIZE, row * TILE_SIZE)
 
                                     highlight_times[new_building] = current_time
                                     building_animations[new_building] = {
@@ -728,6 +735,7 @@ def run_game() -> int:
                 temp_building = building_to_place(building_pos.x, building_pos.y, current_player.player_id, current_player.color)
                 cls_name = building_to_place.__name__
                 image = Unit._images.get(cls_name)
+                building_size = _placement_size_for(building_to_place)
                 tile_x = int(building_pos.x // TILE_SIZE)
                 tile_y = int(building_pos.y // TILE_SIZE)
                 snapped_building_pos = Vector2(tile_x * TILE_SIZE + TILE_HALF, tile_y * TILE_SIZE + TILE_HALF)

@@ -20,9 +20,9 @@ from typing import Dict, List, Optional, Tuple, Type, Any
 import pygame
 
 from constants import *  # SCREEN_WIDTH/HEIGHT, TILE_SIZE, VIEW_* etc.
-from world_objects import Bridge, Road, Wall, MiscPassable
+from world_objects import Bridge, Road, MiscPassable
 from tiles import GrassTile, Dirt, River, Foundation, Mountain
-from units import Unit, Axeman, Knight, Archer, Cow, Tree, Barn, TownCenter, Barracks, ShamansHut, get_team_sprite, KnightsEstate, WarriorsLodge, Ruin, GIF_UNITS, get_unit_walk_frames, get_unit_walk_first_frame
+from units import Unit, Axeman, Knight, Archer, Cow, Tree, Barn, TownCenter, Barracks, ShamansHut, get_team_sprite, KnightsEstate, WarriorsLodge, Ruin, Wall, GIF_UNITS, get_unit_walk_frames, get_unit_walk_first_frame
 
 # -----------------------------
 # Config
@@ -64,7 +64,6 @@ TILE_TYPES = {
 OBJECT_TYPES: Dict[str, Type] = {
     "Bridge": Bridge,
     "Road": Road,
-    "Wall": Wall,
     "MiscPassable": MiscPassable,
 }
 
@@ -82,11 +81,12 @@ UNIT_TYPES: Dict[str, Type] = {
     "KnightsEstate": KnightsEstate,
     "WarriorsLodge": WarriorsLodge,
     "Ruin": Ruin,
+    "Wall": Wall,
 }
 
 # UI grouping (Tree is in bottom row with buildings)
 UNIT_ROW: List[str] = ["Axeman", "Knight", "Archer", "Cow"]
-BOTTOM_ROW: List[str] = ["Tree", "Barn", "TownCenter", "Barracks", "ShamansHut", "KnightsEstate", "WarriorsLodge", "Ruin"]
+BOTTOM_ROW: List[str] = ["Tree", "Wall", "Barn", "TownCenter", "Barracks", "ShamansHut", "KnightsEstate", "WarriorsLodge", "Ruin"]
 
 # Editor players (id -> color)
 PLAYERS: List[Tuple[str, Tuple[int, int, int]]] = [
@@ -214,7 +214,7 @@ def load_wall_editor_image(variant: str, desired_px: int) -> Optional[pygame.Sur
     key = (variant, desired_px)
     if key in _WALL_EDITOR_IMAGES:
         return _WALL_EDITOR_IMAGES[key]
-    path = f"assets/worldObjects/wall/{variant}.png"
+    path = f"assets/units/buildings/{variant}.png"
     try:
         img = pygame.image.load(path).convert_alpha()
         img = pygame.transform.smoothscale(img, (desired_px, desired_px))
@@ -315,7 +315,7 @@ def draw_unit_sprite(
     # Buildings bigger
     if unit_type in ("Barn", "TownCenter", "Barracks", "ShamansHut", "KnightsEstate", "WarriorsLodge", "Ruin"):
         desired = int(BUILDING_SIZE)
-    elif unit_type == "Tree":
+    elif unit_type in ("Tree", "Wall"):
         desired = int(TILE_SIZE)
     else:
         desired = int(max(UNIT_SIZE, TILE_SIZE))
@@ -323,6 +323,10 @@ def draw_unit_sprite(
     if unit_type == "Tree":
         tv = tree_variant or f"{TREE_VARIANT_PREFIX}0"
         img = load_tree_editor_image(tv, desired)
+
+    elif unit_type == "Wall":
+        wv = tree_variant or f"{WALL_VARIANT_PREFIX}1"
+        img = load_wall_editor_image(wv, desired)
 
     elif unit_type in GIF_UNITS:
 
@@ -672,7 +676,7 @@ def main() -> None:
 
     selected_road_index = 1  # 1..15 (road1 default)
 
-    selected_wall_index = 1  # 1..15 (road1 default)
+    selected_wall_index = 1  # 1..12 (wall1 default)
 
     selected_misc_pass_index = 1  # 1..15 (road1 default)
 
@@ -829,12 +833,6 @@ def main() -> None:
                     "variant": current_road_variant(),
                     "passable": bool(object_passable),
                 }
-            elif selected_object == "Wall":
-                objects_by_cell[key] = {
-                    "type": "Wall",
-                    "variant": current_wall_variant(),
-                    "passable": False,  # always blocked
-                }
             elif selected_object == "MiscPassable":
                 objects_by_cell[key] = {
                     "type": "MiscPassable",
@@ -850,6 +848,8 @@ def main() -> None:
             entry: Dict[str, Any] = {"type": selected_unit, "player": selected_player}
             if selected_unit == "Tree":
                 entry["variant"] = current_tree_variant()
+            elif selected_unit == "Wall":
+                entry["variant"] = current_wall_variant()
 
             units_by_cell[f"{row},{col}"] = entry
 
@@ -892,8 +892,6 @@ def main() -> None:
                 return load_bridge_editor_image(current_bridge_variant(), desired_px)
             if value == "Road":
                 return load_road_editor_image(current_road_variant(), desired_px)
-            if value == "Wall":
-                return load_wall_editor_image(current_wall_variant(), desired_px)
             if value == "MiscPassable":
                 return load_misc_pass_editor_image(current_misc_pass_variant(), desired_px)
             return None
@@ -902,6 +900,9 @@ def main() -> None:
         if kind == "unit":
             if value == "Tree":
                 return load_tree_editor_image(current_tree_variant(), desired_px)
+
+            if value == "Wall":
+                return load_wall_editor_image(current_wall_variant(), desired_px)
 
             _, pcol = PLAYERS[selected_player]
 
@@ -1069,14 +1070,6 @@ def main() -> None:
                                 selected_object = "Road"
                                 mode = "object"
                                 _ = load_road_editor_image(current_road_variant(), int(TILE_SIZE))
-                            elif b.value == "Wall":
-                                if selected_object == "Wall" and mode == "object":
-                                    selected_wall_index += 1
-                                    if selected_wall_index > 12:
-                                        selected_wall_index = 1
-                                selected_object = "Wall"
-                                mode = "object"
-                                _ = load_wall_editor_image(current_wall_variant(), int(TILE_SIZE))
                             elif b.value == "MiscPassable":
                                 if selected_object == "MiscPassable" and mode == "object":
                                     selected_misc_pass_index += 1
@@ -1096,6 +1089,16 @@ def main() -> None:
                                     mode = "unit"
                                 # preload current preview image so it feels instant
                                 _ = load_tree_editor_image(current_tree_variant(), int(TILE_SIZE))
+                            elif b.value == "Wall":
+                                # Repeated clicks on Wall cycle wall1..wall12
+                                if selected_unit == "Wall":
+                                    selected_wall_index += 1
+                                    if selected_wall_index > 12:
+                                        selected_wall_index = 1
+                                else:
+                                    selected_unit = "Wall"
+                                    mode = "unit"
+                                _ = load_wall_editor_image(current_wall_variant(), int(TILE_SIZE))
                             else:
                                 selected_unit = b.value
                                 mode = "unit"
@@ -1196,9 +1199,11 @@ def main() -> None:
             _, pcol = PLAYERS[pid]
             cx, cy = tile_center(r, c)
 
-            if unit_type == "Tree":
+            if unit_type in ("Tree", "Wall"):
                 tv = v.get("variant")
-                if not isinstance(tv, str):
+                if unit_type == "Wall" and (not isinstance(tv, str) or not tv.startswith(WALL_VARIANT_PREFIX)):
+                    tv = None
+                elif unit_type == "Tree" and not isinstance(tv, str):
                     tv = None
                 draw_unit_sprite(view_surf, unit_type, pcol, cx, cy, camera_x, camera_y, tree_variant=tv)
             else:

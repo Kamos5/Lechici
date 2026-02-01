@@ -3742,6 +3742,11 @@
       "player": 0,
       "variant": "tree0"
     },
+    "0,8": {
+      "type": "Wall",
+      "player": 0,
+      "variant": "wall2"
+    },
     "2,9": {
       "type": "Tree",
       "player": 0,
