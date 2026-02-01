@@ -2079,7 +2079,7 @@ class Cow(Unit):
                 self.return_pos = Vector2(self.pos)
                 self.assigned_corner = self.target
                 self.autonomous_target = True
-                print(f"Cow at {self.pos} targeting barn at {self.target}")
+                # print(f"Cow at {self.pos} targeting barn at {self.target}")
             return
         if self.special < 100 and not self.target and not self.velocity.length() > 0.5:
             tile_x = int(self.pos.x // TILE_SIZE)
@@ -2114,5 +2114,5 @@ class Cow(Unit):
                                     self.target = context.grass_tiles[adj_y][adj_x].center
                                     self.return_pos = Vector2(self.pos)
                                     self.autonomous_target = True
-                                    print(f"Cow at {self.pos} targeting adjacent grass tile at {self.target}")
+                                    # print(f"Cow at {self.pos} targeting adjacent grass tile at {self.target}")
                                     break

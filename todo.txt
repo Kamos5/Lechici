@@ -47,6 +47,7 @@ done:
 + fix: issue with pathfinding and shortcutting (like 1 tile gap in river) when clicked like 4-5 tiles ahead
 + fix: units get stuck on corners
 + dodging arrow/projectiles?
++ hp of build and units better displayed
 
 todo:
 
@@ -73,7 +74,8 @@ todo:
 - other misc world_obj pass + impassible
 - magic?
 - fix: cow stuck in empty of grass field dont move and wait for regrow (do something)
-- hp of build and units better displayed
+- chopping sync with axeman animation
+- dmg only after animation is finished (dmg)
 
 
 - button to kill units and buildings

@@ -741,6 +741,109 @@ def draw_selected_building_panel(
         stats_y += small_font.get_height() + 4
 
 
+def draw_selected_unit_panel(
+    screen: pygame.Surface,
+    unit: Unit,
+    *,
+    fonts: dict,
+):
+    """AoE2-like info panel for a single selected unit."""
+    font = fonts.get("font") or pygame.font.SysFont(None, 24)
+    small_font = fonts.get("small_font") or pygame.font.SysFont(None, 16)
+
+    pad = 8
+    x0 = VIEW_MARGIN_LEFT + 270
+    y0 = PANEL_Y + pad
+    w = VIEW_WIDTH - 500
+    h = PANEL_HEIGHT - 2 * pad
+    rect = pygame.Rect(x0, y0, w, h)
+
+    # Background (shade of gray for now)
+    pygame.draw.rect(screen, (170, 170, 170), rect)
+    pygame.draw.rect(screen, (110, 110, 110), rect, 2)
+
+    # LEFT block (name, icon, HP)
+    left_w = 260
+    left = pygame.Rect(rect.x + pad, rect.y + pad, left_w - pad, rect.h - 2 * pad)
+    stats = pygame.Rect(left.right + pad, rect.y + pad, rect.right - (left.right + 2 * pad), rect.h - 2 * pad)
+
+    name = getattr(unit, "name", "") or unit.__class__.__name__
+    screen.blit(font.render(name, True, BLACK), (left.x, left.y))
+
+    cls_name = unit.__class__.__name__
+    icon = Unit._unit_icons.get(cls_name)
+    if icon is None:
+        Unit.load_images(cls_name, UNIT_SIZE)
+        icon = Unit._unit_icons.get(cls_name)
+
+    icon_size = 54
+    icon_rect = pygame.Rect(left.x, left.y + 28, icon_size, icon_size)
+    pygame.draw.rect(screen, (60, 60, 60), icon_rect, 1)
+    if icon:
+        img = pygame.transform.smoothscale(icon, (icon_size, icon_size))
+        screen.blit(img, icon_rect.topleft)
+
+    # HP bar (only if hp fields exist)
+    if hasattr(unit, "hp") and hasattr(unit, "max_hp"):
+        hp = float(getattr(unit, "hp", 0))
+        max_hp = float(getattr(unit, "max_hp", 1) or 1)
+        pct = 0.0 if max_hp <= 0 else max(0.0, min(1.0, hp / max_hp))
+
+        bar_w = icon_rect.w
+        bar_h = 10
+        bar_x = icon_rect.x
+        bar_y = icon_rect.bottom + 8
+
+        pygame.draw.rect(screen, (0, 0, 0), (bar_x, bar_y, bar_w, bar_h))
+        fill_w = int((bar_w - 2) * pct)
+        pygame.draw.rect(screen, _hp_color(pct), (bar_x + 1, bar_y + 1, fill_w, bar_h - 2))
+
+        hp_text = f"{int(hp)}/{int(max_hp)}"
+        screen.blit(small_font.render(hp_text, True, BLACK), (bar_x, bar_y + bar_h + 4))
+
+    # STATS (to the right of the icon, AoE2-ish)
+    stats_lines: list[str] = []
+
+    # Common combat/movement stats (only if present)
+    for label, attr in [
+        ("Armor", "armor"),
+        ("Attack", "attack_damage"),
+        ("Range", "attack_range"),
+        ("Cooldown", "attack_cooldown"),
+        ("Speed", "speed"),
+        ("View", "view_distance"),
+    ]:
+        if hasattr(unit, attr):
+            stats_lines.append(f"{label}: {getattr(unit, attr)}")
+
+    # Special resource/ability value (generic)
+    if hasattr(unit, "special"):
+        special_val = getattr(unit, "special")
+        # Optional nicer labels for known units
+        if isinstance(unit, Cow):
+            stats_lines.append(f"Milk: {int(special_val)}")
+        elif isinstance(unit, Axeman):
+            stats_lines.append(f"Wood: {int(special_val)}")
+        else:
+            stats_lines.append(f"Special: {special_val}")
+
+    # Mana (if present)
+    if hasattr(unit, "mana"):
+        mana = getattr(unit, "mana")
+        max_mana = getattr(unit, "max_mana", None)
+        if max_mana is not None:
+            stats_lines.append(f"Mana: {int(mana)}/{int(max_mana)}")
+        else:
+            stats_lines.append(f"Mana: {int(mana)}")
+
+    sx = icon_rect.right + 12
+    sy = icon_rect.y
+    for ln in stats_lines:
+        screen.blit(small_font.render(ln, True, BLACK), (sx, sy))
+        sy += small_font.get_height() + 4
+
+
+
 def draw_selected_entity_panel(
     screen: pygame.Surface,
     all_units: list,
@@ -760,16 +863,24 @@ def draw_selected_entity_panel(
     # hide under-construction buildings
     selected = [u for u in selected if not (isinstance(u, Building) and getattr(u, "alpha", 255) < 255)]
 
-    # If exactly one building selected -> AoE2-like panel
-    if len(selected) == 1 and isinstance(selected[0], Building):
-        draw_selected_building_panel(
-            screen,
-            selected[0],
-            production_queues=production_queues,
-            current_time=current_time,
-            fonts=fonts,
-        )
-        return
+    # If exactly one entity selected -> AoE2-like panel
+    if len(selected) == 1:
+        if isinstance(selected[0], Building):
+            draw_selected_building_panel(
+                screen,
+                selected[0],
+                production_queues=production_queues,
+                current_time=current_time,
+                fonts=fonts,
+            )
+            return
+        else:
+            draw_selected_unit_panel(
+                screen,
+                selected[0],
+                fonts=fonts,
+            )
+            return
 
     # Fallback: original icon strip + single-unit details
     small_font = fonts["small_font"]
