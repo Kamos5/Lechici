@@ -8,7 +8,7 @@ from pygame.math import Vector2
 
 from constants import *
 from tiles import GrassTile, Dirt
-from units import Archer, Axeman, Barn, Barracks, Building, Cow, Knight, TownCenter, Tree, Unit, ShamansHut, WarriorsLodge, KnightsEstate
+from units import Archer, Axeman, Barn, Barracks, Building, Cow, Knight, TownCenter, Tree, Unit, ShamansHut, WarriorsLodge, KnightsEstate, Wall
 import context
 from utils import is_tile_occupied
 
@@ -76,6 +76,9 @@ class Player:
                     unit.name = f"{unit.__class__.__name__}_{len(self.used_male_names) + 1}"
                     self.used_male_names.add(unit.name)
                     print(f"No male names available, assigned {unit.name} to {unit.__class__.__name__} for Player {self.player_id}")
+        if isinstance(unit, Wall):
+            return
+
         if isinstance(unit, Building):
             if self.building_limit is not None:
                 self.building_count += 1
@@ -96,6 +99,8 @@ class Player:
                 elif isinstance(unit, (Axeman, Archer, Knight)) and unit.name in self.used_male_names:
                     self.used_male_names.remove(unit.name)
                     print(f"Removed male name {unit.name} from Player {self.player_id}")
+            if isinstance(unit, Wall):
+                return
             if isinstance(unit, Building):
                 if self.building_limit is not None:
                     self.building_count -= 1

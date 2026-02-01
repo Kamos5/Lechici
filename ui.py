@@ -1,6 +1,8 @@
 import pygame
 from pygame.math import Vector2
 
+from typing import Optional
+
 from constants import *
 from units import Unit, Building, Barn, Barracks, TownCenter, Axeman, Archer, Knight, Cow, ShamansHut, KnightsEstate, WarriorsLodge, Ruin, Wall
 
@@ -623,6 +625,7 @@ def draw_selected_building_panel(
     building: Building,
     *,
     production_queues: dict,
+    building_animations: Optional[dict] = None,
     current_time: float,
     fonts: dict,
 ):
@@ -689,29 +692,53 @@ def draw_selected_building_panel(
     hp_text = f"{int(hp)}/{int(max_hp)}"
     screen.blit(small_font.render(hp_text, True, BLACK), (bar_x, bar_y + bar_h + 4))
 
-    # --- MID: queue (single slot) ---
-    # Only show queue UI if producing
-    if building in production_queues:
+    # --- MID: queue / construction (single slot) ---
+    # If the building is under construction, show a similar slot but with "Under construction" text.
+    under_construction = False
+    construction_progress = 0.0
+    if building_animations and building in building_animations and getattr(building, "alpha", 255) < 255:
+        under_construction = True
+        start_time = building_animations[building].get("start_time", current_time)
+        prod_time = float(getattr(building, "production_time", 1.0) or 1.0)
+        construction_progress = (current_time - start_time) / max(0.001, prod_time)
+        construction_progress = max(0.0, min(1.0, construction_progress))
+
+    # Only show queue UI if producing or constructing
+    if building in production_queues or under_construction:
         slot = pygame.Rect(mid.x + 10, mid.y + 20, 64, 64)
         pygame.draw.rect(screen, (200, 200, 200), slot)
         pygame.draw.rect(screen, (80, 80, 80), slot, 2)
 
-        unit_cls = production_queues[building].get("unit_type")
-        start_time = production_queues[building].get("start_time", current_time)
-        prod_time = float(getattr(unit_cls, "production_time", 1) or 1)
-        progress = (current_time - start_time) / prod_time
-        progress = max(0.0, min(1.0, progress))
-
-        # Unit icon in slot
-        if unit_cls is not None:
-            u_name = unit_cls.__name__
-            u_icon = Unit._unit_icons.get(u_name)
-            if u_icon is None:
-                Unit.load_images(u_name, UNIT_SIZE)
-                u_icon = Unit._unit_icons.get(u_name)
-            if u_icon:
-                img = pygame.transform.smoothscale(u_icon, (slot.w, slot.h))
+        # Icon in slot
+        unit_cls = None
+        progress = 0.0
+        if under_construction:
+            progress = construction_progress
+            # Use the building's icon in the slot
+            b_icon = Unit._unit_icons.get(cls_name)
+            if b_icon is None:
+                Unit.load_images(cls_name, BUILDING_SIZE)
+                b_icon = Unit._unit_icons.get(cls_name)
+            if b_icon:
+                img = pygame.transform.smoothscale(b_icon, (slot.w, slot.h))
                 screen.blit(img, slot.topleft)
+        else:
+            unit_cls = production_queues[building].get("unit_type")
+            start_time = production_queues[building].get("start_time", current_time)
+            prod_time = float(getattr(unit_cls, "production_time", 1) or 1)
+            progress = (current_time - start_time) / prod_time
+            progress = max(0.0, min(1.0, progress))
+
+            # Unit icon in slot
+            if unit_cls is not None:
+                u_name = unit_cls.__name__
+                u_icon = Unit._unit_icons.get(u_name)
+                if u_icon is None:
+                    Unit.load_images(u_name, UNIT_SIZE)
+                    u_icon = Unit._unit_icons.get(u_name)
+                if u_icon:
+                    img = pygame.transform.smoothscale(u_icon, (slot.w, slot.h))
+                    screen.blit(img, slot.topleft)
 
         # Progress bar under slot
         pb = pygame.Rect(slot.x, slot.bottom + 8, slot.w, 10)
@@ -719,10 +746,15 @@ def draw_selected_building_panel(
         pygame.draw.rect(screen, (0, 200, 0), (pb.x + 1, pb.y + 1, int((pb.w - 2) * progress), pb.h - 2))
 
         # Percentage text
-        pct_txt = f"Creating {int(progress * 100)}%"
-        screen.blit(small_font.render(pct_txt, True, BLACK), (slot.x + slot.w + 10, slot.y + 6))
-        if unit_cls is not None:
-            screen.blit(small_font.render(unit_cls.__name__, True, BLACK), (slot.x + slot.w + 10, slot.y + 24))
+        if under_construction:
+            pct_txt = f"Under construction {int(progress * 100)}%"
+            screen.blit(small_font.render(pct_txt, True, BLACK), (slot.x + slot.w + 10, slot.y + 6))
+            screen.blit(small_font.render(cls_name, True, BLACK), (slot.x + slot.w + 10, slot.y + 24))
+        else:
+            pct_txt = f"Creating {int(progress * 100)}%"
+            screen.blit(small_font.render(pct_txt, True, BLACK), (slot.x + slot.w + 10, slot.y + 6))
+            if unit_cls is not None:
+                screen.blit(small_font.render(unit_cls.__name__, True, BLACK), (slot.x + slot.w + 10, slot.y + 24))
 
     # --- RIGHT: stats ---
     stats_lines = []
@@ -850,6 +882,7 @@ def draw_selected_entity_panel(
     all_units: list,
     current_player,
     production_queues: dict,
+    building_animations: Optional[dict],
     current_time: float,
     fonts: dict,
     *,
@@ -861,8 +894,6 @@ def draw_selected_entity_panel(
         return
 
     selected = [u for u in all_units if getattr(u, "selected", False)]
-    # hide under-construction buildings
-    selected = [u for u in selected if not (isinstance(u, Building) and getattr(u, "alpha", 255) < 255)]
 
     # If exactly one entity selected -> AoE2-like panel
     if len(selected) == 1:
@@ -871,6 +902,7 @@ def draw_selected_entity_panel(
                 screen,
                 selected[0],
                 production_queues=production_queues,
+                building_animations=building_animations,
                 current_time=current_time,
                 fonts=fonts,
             )
@@ -987,6 +1019,7 @@ def draw_game_ui(
     grid_buttons,
     current_player,
     production_queues,
+    building_animations,
     current_time,
     all_units,
     icons,
@@ -1014,6 +1047,7 @@ def draw_game_ui(
         all_units,
         current_player,
         production_queues,
+        building_animations,
         current_time,
         fonts,
         icon_size=32,

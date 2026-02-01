@@ -259,7 +259,10 @@ def run_game() -> int:
                                     current_player.wood -= building_to_place.wood_cost
 
                                     new_building = building_to_place(building_pos.x, building_pos.y, current_player.player_id, current_player.color)
+                                    # Start buildings under construction.
+                                    # They fade in via alpha and also "build up" HP from 1 -> max_hp over production_time.
                                     new_building.alpha = 0
+                                    new_building.hp = 1
                                     current_player.add_unit(new_building)
                                     all_units.add(new_building)
                                     spatial_grid.add_unit(new_building)
@@ -276,7 +279,9 @@ def run_game() -> int:
                                     building_animations[new_building] = {
                                         'start_time': current_time,
                                         'alpha': 0,
-                                        'town_center': None
+                                        'town_center': None,
+                                        # used to make construction HP progression frame-rate independent
+                                        'last_time': current_time,
                                     }
 
                                     print(f"Placed {building_to_place.__name__} at {building_pos} for Player {current_player.player_id}")
@@ -558,11 +563,22 @@ def run_game() -> int:
                 highlight_times[unit] = current_time
                 print(f"Spawned {unit.__class__.__name__} at {unit.pos} for Player {player.player_id}")
 
-            # Update building animations
+            # Update building animations (construction)
             for building, anim in list(building_animations.items()):
                 if building not in all_units:
                     del building_animations[building]
                     continue
+
+                # HP should be visible and grow at a constant rate during construction.
+                # If damaged during construction, damage reduces current hp and growth continues.
+                if building.alpha < 255:
+                    last_time = anim.get('last_time', anim.get('start_time', current_time))
+                    dtt = max(0.0, current_time - last_time)
+                    anim['last_time'] = current_time
+                    prod_time = float(getattr(building, 'production_time', 1.0) or 1.0)
+                    rate = (max(1.0, float(getattr(building, 'max_hp', 1))) - 1.0) / max(0.001, prod_time)
+                    building.hp = min(float(getattr(building, 'max_hp', building.hp)), float(building.hp) + rate * dtt)
+
                 elapsed = current_time - anim['start_time']
                 if elapsed >= building.production_time:
                     building.alpha = 255
@@ -781,6 +797,7 @@ def run_game() -> int:
                 grid_buttons=grid_buttons,
                 current_player=current_player,
                 production_queues=production_queues,
+                building_animations=building_animations,
                 current_time=current_time,
                 all_units=all_units,
                 icons=icons,

@@ -1010,9 +1010,11 @@ class Wall(Building):
     wood_cost = 5
 
     _variant_images: Dict[str, Optional[pygame.Surface]] = {}
-    DEFAULT_VARIANT = "wall1"
+    DEFAULT_VARIANT = "wall6"
     VARIANT_MIN = 1
     VARIANT_MAX = 12
+
+    production_time = 5.0
 
     # Walls are 1x1 tile
     SIZE_TILES = 1
