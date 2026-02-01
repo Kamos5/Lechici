@@ -609,21 +609,174 @@ def draw_grid_buttons(screen, grid_buttons, current_player, all_units, productio
         )
 
 
-def draw_selected_unit_icons(screen, all_units, current_player, fonts, icon_size=32, icon_margin=5):
-    """Draw icons for currently selected units + details if one unit selected."""
+def _hp_color(pct: float) -> tuple[int, int, int]:
+    """0..1 -> red..green"""
+    pct = max(0.0, min(1.0, pct))
+    r = int(255 * (1.0 - pct))
+    g = int(255 * pct)
+    return (r, g, 0)
+
+
+def draw_selected_building_panel(
+    screen: pygame.Surface,
+    building: Building,
+    *,
+    production_queues: dict,
+    current_time: float,
+    fonts: dict,
+):
+    """AoE2-like info panel for a single selected building."""
+    font = fonts.get("font") or pygame.font.SysFont(None, 24)
+    small_font = fonts.get("small_font") or pygame.font.SysFont(None, 16)
+
+    # Panel area: bottom UI panel, between left build-grid area and right minimap panel.
+    pad = 8
+    x0 = VIEW_MARGIN_LEFT + 270
+    y0 = PANEL_Y + pad
+    w = VIEW_WIDTH - 500  # leave some space near right edge; minimap is in right side panel anyway
+    h = PANEL_HEIGHT - 2 * pad
+    rect = pygame.Rect(x0, y0, w, h)
+
+    # Background (shade of gray for now)
+    pygame.draw.rect(screen, (170, 170, 170), rect)
+    pygame.draw.rect(screen, (110, 110, 110), rect, 2)
+
+    # Layout columns
+    left_w = 200
+    mid_w = 170
+    left = pygame.Rect(rect.x + pad, rect.y + pad, left_w - pad, rect.h - 2 * pad)
+    mid = pygame.Rect(left.right + pad, rect.y + pad, mid_w - pad, rect.h - 2 * pad)
+    right = pygame.Rect(mid.right + pad, rect.y + pad, rect.right - (mid.right + 2 * pad), rect.h - 2 * pad)
+
+    # --- LEFT: name, icon, HP bar ---
+    name = getattr(building, "name", "") or building.__class__.__name__
+    screen.blit(font.render(name, True, BLACK), (left.x, left.y))
+
+    # Building icon
+    cls_name = building.__class__.__name__
+    icon = Unit._unit_icons.get(cls_name)
+    if icon is None:
+        # Ensure icon exists
+        Unit.load_images(cls_name, BUILDING_SIZE)
+        icon = Unit._unit_icons.get(cls_name)
+
+    icon_size = 54
+    icon_rect = pygame.Rect(left.x, left.y + 28, icon_size, icon_size)
+    pygame.draw.rect(screen, (60, 60, 60), icon_rect, 1)
+    if icon:
+        img = pygame.transform.smoothscale(icon, (icon_size, icon_size))
+        screen.blit(img, icon_rect.topleft)
+
+    # HP bar with black background + dynamic fill color
+    hp = float(getattr(building, "hp", 0))
+    max_hp = float(getattr(building, "max_hp", 1) or 1)
+    pct = 0.0 if max_hp <= 0 else max(0.0, min(1.0, hp / max_hp))
+
+    # HP bar: same width as icon
+    bar_w = icon_rect.w
+    bar_h = 10  # slightly smaller height too (optional, tweak as you like)
+    bar_x = icon_rect.x
+    bar_y = icon_rect.bottom + 8
+
+    # black background
+    pygame.draw.rect(screen, (0, 0, 0), (bar_x, bar_y, bar_w, bar_h))
+    # colored fill
+    fill_w = int((bar_w - 2) * pct)
+    pygame.draw.rect(screen, _hp_color(pct), (bar_x + 1, bar_y + 1, fill_w, bar_h - 2))
+
+    # HP text under bar
+    hp_text = f"{int(hp)}/{int(max_hp)}"
+    screen.blit(small_font.render(hp_text, True, BLACK), (bar_x, bar_y + bar_h + 4))
+
+    # --- MID: queue (single slot) ---
+    # Only show queue UI if producing
+    if building in production_queues:
+        slot = pygame.Rect(mid.x + 10, mid.y + 20, 64, 64)
+        pygame.draw.rect(screen, (200, 200, 200), slot)
+        pygame.draw.rect(screen, (80, 80, 80), slot, 2)
+
+        unit_cls = production_queues[building].get("unit_type")
+        start_time = production_queues[building].get("start_time", current_time)
+        prod_time = float(getattr(unit_cls, "production_time", 1) or 1)
+        progress = (current_time - start_time) / prod_time
+        progress = max(0.0, min(1.0, progress))
+
+        # Unit icon in slot
+        if unit_cls is not None:
+            u_name = unit_cls.__name__
+            u_icon = Unit._unit_icons.get(u_name)
+            if u_icon is None:
+                Unit.load_images(u_name, UNIT_SIZE)
+                u_icon = Unit._unit_icons.get(u_name)
+            if u_icon:
+                img = pygame.transform.smoothscale(u_icon, (slot.w, slot.h))
+                screen.blit(img, slot.topleft)
+
+        # Progress bar under slot
+        pb = pygame.Rect(slot.x, slot.bottom + 8, slot.w, 10)
+        pygame.draw.rect(screen, (0, 0, 0), pb)
+        pygame.draw.rect(screen, (0, 200, 0), (pb.x + 1, pb.y + 1, int((pb.w - 2) * progress), pb.h - 2))
+
+        # Percentage text
+        pct_txt = f"Creating {int(progress * 100)}%"
+        screen.blit(small_font.render(pct_txt, True, BLACK), (slot.x + slot.w + 10, slot.y + 6))
+        if unit_cls is not None:
+            screen.blit(small_font.render(unit_cls.__name__, True, BLACK), (slot.x + slot.w + 10, slot.y + 24))
+
+    # --- RIGHT: stats ---
+    stats_lines = []
+    for label, attr in [
+        ("Armor", "armor"),
+        ("View", "view_distance"),
+        ("Attack", "attack_damage"),
+        ("Range", "attack_range"),
+    ]:
+        if hasattr(building, attr):
+            stats_lines.append(f"{label}: {getattr(building, attr)}")
+
+    stats_x = icon_rect.right + 12
+    stats_y = icon_rect.y
+    for ln in stats_lines:
+        screen.blit(small_font.render(ln, True, BLACK), (stats_x, stats_y))
+        stats_y += small_font.get_height() + 4
+
+
+def draw_selected_entity_panel(
+    screen: pygame.Surface,
+    all_units: list,
+    current_player,
+    production_queues: dict,
+    current_time: float,
+    fonts: dict,
+    *,
+    icon_size: int = 32,
+    icon_margin: int = 5,
+):
+    """Draw selected info: AoE2-like building panel when one building is selected, else fallback icons."""
     if not current_player:
         return
 
+    selected = [u for u in all_units if getattr(u, "selected", False)]
+    # hide under-construction buildings
+    selected = [u for u in selected if not (isinstance(u, Building) and getattr(u, "alpha", 255) < 255)]
+
+    # If exactly one building selected -> AoE2-like panel
+    if len(selected) == 1 and isinstance(selected[0], Building):
+        draw_selected_building_panel(
+            screen,
+            selected[0],
+            production_queues=production_queues,
+            current_time=current_time,
+            fonts=fonts,
+        )
+        return
+
+    # Fallback: original icon strip + single-unit details
     small_font = fonts["small_font"]
     icon_x = VIEW_MARGIN_LEFT + 350
     icon_y = PANEL_Y + 10
 
-    selected_units = [u for u in all_units if u.selected]
-    for unit in selected_units:
-        # hide under-construction buildings
-        if isinstance(unit, Building) and unit.alpha < 255:
-            continue
-
+    for unit in selected:
         cls_name = unit.__class__.__name__
         unit_icon_img = Unit._unit_icons.get(cls_name)
         if unit_icon_img:
@@ -631,17 +784,22 @@ def draw_selected_unit_icons(screen, all_units, current_player, fonts, icon_size
         else:
             pygame.draw.rect(screen, WHITE, (icon_x, icon_y, icon_size, icon_size))
 
-        if len(selected_units) == 1:
-            display_text = f"{unit.name or cls_name} - {cls_name}"
-            screen.blit(small_font.render(display_text, True, unit.player_color), (icon_x, icon_y + icon_size + 5))
-            screen.blit(small_font.render(f"HP: {int(unit.hp)}/{int(unit.max_hp)}", True, unit.player_color), (icon_x, icon_y + icon_size + 20))
-            screen.blit(small_font.render(f"Attack: {unit.attack_damage}", True, unit.player_color), (icon_x, icon_y + icon_size + 35))
-            screen.blit(small_font.render(f"Armor: {unit.armor}", True, unit.player_color), (icon_x, icon_y + icon_size + 50))
-            screen.blit(small_font.render(f"Speed: {unit.speed}", True, unit.player_color), (icon_x, icon_y + icon_size + 65))
+        if len(selected) == 1:
+            display_text = f"{getattr(unit, 'name', '') or cls_name} - {cls_name}"
+            color = getattr(unit, "player_color", BLACK)
+            screen.blit(small_font.render(display_text, True, color), (icon_x, icon_y + icon_size + 5))
+            if hasattr(unit, "hp") and hasattr(unit, "max_hp"):
+                screen.blit(small_font.render(f"HP: {int(unit.hp)}/{int(unit.max_hp)}", True, color), (icon_x, icon_y + icon_size + 20))
+            if hasattr(unit, "attack_damage"):
+                screen.blit(small_font.render(f"Attack: {unit.attack_damage}", True, color), (icon_x, icon_y + icon_size + 35))
+            if hasattr(unit, "armor"):
+                screen.blit(small_font.render(f"Armor: {unit.armor}", True, color), (icon_x, icon_y + icon_size + 50))
+            if hasattr(unit, "speed"):
+                screen.blit(small_font.render(f"Speed: {unit.speed}", True, color), (icon_x, icon_y + icon_size + 65))
             if isinstance(unit, Cow):
-                screen.blit(small_font.render(f"Milk: {int(unit.special)}", True, unit.player_color), (icon_x, icon_y + icon_size + 80))
+                screen.blit(small_font.render(f"Milk: {int(unit.special)}", True, color), (icon_x, icon_y + icon_size + 80))
             if isinstance(unit, Axeman) and int(unit.special) > 0:
-                screen.blit(small_font.render(f"Wood: {int(unit.special)}", True, unit.player_color), (icon_x, icon_y + icon_size + 80))
+                screen.blit(small_font.render(f"Wood: {int(unit.special)}", True, color), (icon_x, icon_y + icon_size + 80))
 
         icon_x += icon_size + icon_margin
 
@@ -739,10 +897,12 @@ def draw_game_ui(
         ty = PANEL_Y + (PANEL_HEIGHT - totem.get_height()) // 2
         screen.blit(totem, (tx, ty))
 
-    draw_selected_unit_icons(
+    draw_selected_entity_panel(
         screen,
         all_units,
         current_player,
+        production_queues,
+        current_time,
         fonts,
         icon_size=32,
         icon_margin=5,
