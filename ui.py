@@ -262,13 +262,18 @@ class UIButton:
         pygame.draw.rect(screen, (0, 0, 0), inner, 1)
 
     def draw_label(self, screen: pygame.Surface, font: pygame.font.Font):
+        # Only draw label text (if any). Hotkey badge is drawn elsewhere always.
         if self.label:
             txt = font.render(self.label, True, BLACK)
             screen.blit(txt, (self.rect.x + 2, self.rect.y + 2))
 
-        if self.hotkey:
-            hk = font.render(self.hotkey.upper(), True, BLACK)
-            screen.blit(hk, (self.rect.right - hk.get_width() - 2, self.rect.y + 2))
+    def draw_hotkey_badge(self, screen: pygame.Surface, font: pygame.font.Font):
+        """Draw hotkey in the top-right corner inside [] using the provided font (size 20)."""
+        if not self.hotkey:
+            return
+        text = f"[{self.hotkey.upper()}]"
+        hk = font.render(text, True, BLACK)
+        screen.blit(hk, (self.rect.right - hk.get_width() - 4, self.rect.y + 2))
 
     def draw_hotkey_center(self, screen: pygame.Surface, font: pygame.font.Font):
         """For icon-less buttons: draw hotkey centered as the only visible glyph."""
@@ -501,7 +506,7 @@ def draw_grid_buttons(screen, grid_buttons, current_player, all_units, productio
                 hov = ui_btn.hovered(mouse_pos)
                 ui_btn.draw_base(screen, hovered=hov)
                 # For action buttons we currently have no icons: show the hotkey letter centered.
-                ui_btn.draw_hotkey_center(screen, fonts.get("button_font") or small_font)
+                ui_btn.draw_hotkey_badge(screen, fonts.get("button_font") or small_font)
                 if hov:
                     hovered_tooltip = (label, ui_btn.description, None, None)
 
