@@ -121,6 +121,30 @@ def create_fonts():
         "end_button_font": pygame.font.Font(None, 36),
     }
 
+def _ui_get_selection_groups(current_player, all_units):
+    """Return (groups, active_idx). Groups: list[(type_name, [entities])]."""
+    if not current_player:
+        return [], 0
+    # Prefer groups computed in main (so TAB cycling works)
+    groups = getattr(current_player, 'selection_groups', None)
+    if groups is None:
+        selected = [u for u in all_units if getattr(u, 'selected', False) and u.player_id == current_player.player_id]
+        if any(not isinstance(u, Building) for u in selected):
+            selected = [u for u in selected if not isinstance(u, Building)]
+        else:
+            selected = [u for u in selected if isinstance(u, Building)]
+        d = {}
+        for u in selected:
+            d.setdefault(u.__class__.__name__, []).append(u)
+        groups = [(k, d[k]) for k in sorted(d.keys())]
+    idx = int(getattr(current_player, 'active_selection_group_index', 0) or 0)
+    if not groups:
+        idx = 0
+    else:
+        idx = max(0, min(idx, len(groups)-1))
+    return groups, idx
+
+
 
 # ---------------------------------------------------------------------------
 # UI helpers: hoverable buttons + tooltip panel
@@ -459,7 +483,7 @@ def draw_grid_buttons(screen, grid_buttons, current_player, all_units, productio
     wood_icon_small = get_scaled(icons["wood"], 0.5)
 
     """Draw the 3x1 grid and its contextual contents (unit/building actions)."""
-    selected_barn, selected_barracks, selected_town_center, selected_shamans_hut = _get_selected_buildings(current_player)
+    groups, active_idx = _ui_get_selection_groups(current_player, all_units)
 
     selected = [u for u in all_units if u.selected and current_player and u.player_id == current_player.player_id]
     selected_units = [u for u in selected if not isinstance(u, Building)]
@@ -594,30 +618,37 @@ def draw_grid_buttons(screen, grid_buttons, current_player, all_units, productio
 
     else:
         # Production mode (only buildings selected)
-        # We pack production options from top-left across 4 columns, then next row.
+        # Only show production/build options for the ACTIVE building group.
         options = []
 
-        if current_player and selected_barn:
-            options.append(("Cow", Cow, selected_barn))
+        active_buildings = []
+        if groups:
+            # groups are filtered already; if units were selected we'd be in command mode.
+            _, active_entities = groups[active_idx]
+            active_buildings = [b for b in active_entities if isinstance(b, Building) and getattr(b, 'alpha', 255) == 255]
 
-        if current_player and selected_barracks:
-            options.extend([
-                ("Axeman", Axeman, selected_barracks),
-                ("Archer", Archer, selected_barracks),
-                ("Knight", Knight, selected_barracks),
-            ])
-
-        if current_player and selected_town_center:
-            options.extend([
-                ("Barn", Barn, selected_town_center),
-                ("Barracks", Barracks, selected_town_center),
-                ("TownCenter", TownCenter, selected_town_center),
-                ("ShamansHut", ShamansHut, selected_town_center),
-                ("KnightsEstate", KnightsEstate, selected_town_center),
-                ("WarriorsLodge", WarriorsLodge, selected_town_center),
-                ("Ruin", Ruin, selected_town_center),
-                ("Wall", Wall, selected_town_center),
-            ])
+        # Determine what this group can produce
+        if active_buildings:
+            sample = active_buildings[0]
+            if isinstance(sample, Barn):
+                options.append(('Cow', Cow, active_buildings))
+            elif isinstance(sample, Barracks):
+                options.extend([
+                    ('Axeman', Axeman, active_buildings),
+                    ('Archer', Archer, active_buildings),
+                    ('Knight', Knight, active_buildings),
+                ])
+            elif isinstance(sample, TownCenter):
+                options.extend([
+                    ('Barn', Barn, active_buildings),
+                    ('Barracks', Barracks, active_buildings),
+                    ('TownCenter', TownCenter, active_buildings),
+                    ('ShamansHut', ShamansHut, active_buildings),
+                    ('KnightsEstate', KnightsEstate, active_buildings),
+                    ('WarriorsLodge', WarriorsLodge, active_buildings),
+                    ('Ruin', Ruin, active_buildings),
+                    ('Wall', Wall, active_buildings),
+                ])
 
         # Draw options into the 4x3 grid (reserve bottom-right for KILL)
         idx = 0
@@ -630,17 +661,17 @@ def draw_grid_buttons(screen, grid_buttons, current_player, all_units, productio
                 if idx >= len(options):
                     continue
 
-                label, cls, owner = options[idx]
+                label, cls, owners = options[idx]
                 btn = grid_buttons[row][col]
 
                 enabled = (
                         current_player.milk >= cls.milk_cost
                         and current_player.wood >= cls.wood_cost
-                        and owner not in production_queues
+                        and any(o not in production_queues for o in owners)
                 )
 
                 # If placing buildings from TownCenter, also enforce building limit
-                if owner == selected_town_center and issubclass(cls, Building):
+                if owners and isinstance(owners[0], TownCenter) and issubclass(cls, Building):
                     enabled = enabled and (
                             current_player.building_limit is None
                             or current_player.building_count < current_player.building_limit
@@ -677,7 +708,7 @@ def draw_grid_buttons(screen, grid_buttons, current_player, all_units, productio
                 ui_btn.draw_hotkey_badge(screen, fonts.get("button_font") or small_font)
 
                 # Costs are shown in the tooltip panel, not on the button.
-                draw_progress(btn, owner, cls)
+                draw_progress(btn, owners[0], cls) if owners else None
 
                 if hov:
                     hovered_tooltip = (label, ui_btn.description, ui_btn.milk_cost, ui_btn.wood_cost)
@@ -1101,45 +1132,81 @@ def draw_selected_entity_panel(
             )
             return
 
-    # Fallback: original icon strip + single-unit details
+    # --- Multi-selection panel (grouped by type, AoE2-like) ---
+    groups, active_idx = _ui_get_selection_groups(current_player, all_units)
+
+    # Panel area matches single-selection panels
+    pad = 8
+    x0 = VIEW_MARGIN_LEFT + 270
+    y0 = PANEL_Y + pad
+    w = VIEW_WIDTH - 500
+    h = PANEL_HEIGHT - 2 * pad
+    rect = pygame.Rect(x0, y0, w, h)
+
+    # Same background as single selection panels
+    pygame.draw.rect(screen, (170, 170, 170), rect)
+    pygame.draw.rect(screen, (110, 110, 110), rect, 2)
+
+    if not groups:
+        return
+
+    # Draw grouped miniatures left-to-right, wrapping to new lines.
     small_font = fonts["small_font"]
-    icon_x = VIEW_MARGIN_LEFT + 350
-    icon_y = PANEL_Y + 10
+    icon_size = 32
+    gap = 6
+    group_gap = 14
+    x = rect.x + pad
+    y = rect.y + pad + 24  # small top header space
 
-    for unit in selected:
-        cls_name = unit.__class__.__name__
-        unit_icon_img = Unit._unit_icons.get(cls_name)
-        if unit_icon_img:
-            screen.blit(unit_icon_img, (icon_x, icon_y))
-            # Level markers (+) on the small selection miniature
-            draw_level_pluses(screen, unit, x=icon_x, y=icon_y, font=small_font, pad=2)
+    # Header uses same style as single selection: show active group name
+    active_name, active_entities = groups[active_idx]
+    header = f"{active_name}"
+    screen.blit((fonts.get('font') or pygame.font.SysFont(None, 24)).render(header, True, BLACK), (rect.x + pad, rect.y + pad))
+
+    # We'll compute bounding box for each group as we draw, so we can outline the active one.
+    for gi, (type_name, ents) in enumerate(groups):
+        # start marker for this group
+        group_start_x, group_start_y = x, y
+        max_row_y = y
+        # draw icons for units/buildings of this type
+        for ent in ents:
+            # wrap
+            if x + icon_size > rect.right - pad:
+                x = rect.x + pad
+                y += icon_size + gap
+            cls_name = ent.__class__.__name__
+            icon = Unit._unit_icons.get(cls_name)
+            if icon is None:
+                Unit.load_images(cls_name, BUILDING_SIZE if isinstance(ent, Building) else UNIT_SIZE)
+                icon = Unit._unit_icons.get(cls_name)
+
+            icon_rect = pygame.Rect(x, y, icon_size, icon_size)
+            pygame.draw.rect(screen, (60, 60, 60), icon_rect, 1)
+            if icon:
+                img = pygame.transform.smoothscale(icon, (icon_size, icon_size))
+                screen.blit(img, icon_rect.topleft)
+
+            draw_level_pluses(screen, ent, x=x, y=y, font=small_font, pad=2)
+
+            x += icon_size + gap
+            max_row_y = max(max_row_y, y + icon_size)
+
+        # group bounding box
+        group_end_x = x - gap  # last icon end
+        group_rect = pygame.Rect(group_start_x - 2, group_start_y - 2, max(0, group_end_x - group_start_x) + 4, max(0, max_row_y - group_start_y) + 4)
+
+        # Outline active group in black; others subtle gray
+        if gi == active_idx:
+            pygame.draw.rect(screen, BLACK, group_rect, 3)
         else:
-            pygame.draw.rect(screen, WHITE, (icon_x, icon_y, icon_size, icon_size))
-            draw_level_pluses(screen, unit, x=icon_x, y=icon_y, font=small_font, pad=2)
+            pygame.draw.rect(screen, (120, 120, 120), group_rect, 1)
 
-        # Level markers (+) on miniature (top-left)
-        draw_level_pluses(screen, unit, x=icon_x, y=icon_y, font=small_font, pad=2)
-
-        if len(selected) == 1:
-            display_text = f"{getattr(unit, 'name', '') or cls_name} - {cls_name}"
-            color = getattr(unit, "player_color", BLACK)
-            screen.blit(small_font.render(display_text, True, color), (icon_x, icon_y + icon_size + 5))
-            if hasattr(unit, "hp") and hasattr(unit, "max_hp"):
-                screen.blit(small_font.render(f"HP: {int(unit.hp)}/{int(unit.max_hp)}", True, color), (icon_x, icon_y + icon_size + 20))
-            if hasattr(unit, "attack_damage"):
-                screen.blit(small_font.render(f"Attack: {unit.attack_damage}", True, color), (icon_x, icon_y + icon_size + 35))
-            if hasattr(unit, "armor"):
-                screen.blit(small_font.render(f"Armor: {unit.armor}", True, color), (icon_x, icon_y + icon_size + 50))
-            if hasattr(unit, "speed"):
-                screen.blit(small_font.render(f"Speed: {unit.speed}", True, color), (icon_x, icon_y + icon_size + 65))
-            if isinstance(unit, Cow):
-                screen.blit(small_font.render(f"Milk: {int(unit.special)}", True, color), (icon_x, icon_y + icon_size + 80))
-            if isinstance(unit, Axeman) and int(unit.special) > 0:
-                screen.blit(small_font.render(f"Wood: {int(unit.special)}", True, color), (icon_x, icon_y + icon_size + 80))
-
-        icon_x += icon_size + icon_margin
-
-
+        # gap between groups (keeps types separated visually)
+        x += group_gap
+        # wrap after group gap if needed
+        if x + icon_size > rect.right - pad:
+            x = rect.x + pad
+            y += icon_size + gap
 def draw_resources_and_limits(screen, current_player, icons, fonts):
     if not current_player:
         return

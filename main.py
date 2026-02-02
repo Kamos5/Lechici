@@ -219,6 +219,62 @@ def run_game() -> int:
 
     current_player = players[1]
 
+    # --- Multi-selection grouping helpers (UI/stat-screen style) ---
+    def _normalize_selection_for_player(p):
+        """If units+buildings are selected, keep only units selected (buildings get deselected)."""
+        if not p:
+            return
+        selected_units = [u for u in p.units if getattr(u, "selected", False) and not isinstance(u, Building)]
+        if selected_units:
+            for u in p.units:
+                if getattr(u, "selected", False) and isinstance(u, Building):
+                    u.selected = False
+
+    def _compute_selection_groups(p):
+        """Return list of (type_name, [entities]) for current player's selection, filtered (units over buildings)."""
+        if not p:
+            return []
+        selected = [u for u in p.units if getattr(u, "selected", False)]
+        if not selected:
+            return []
+        # If any non-building selected -> ignore buildings entirely
+        if any(not isinstance(u, Building) for u in selected):
+            selected = [u for u in selected if not isinstance(u, Building)]
+        else:
+            selected = [u for u in selected if isinstance(u, Building)]
+        groups = {}
+        for u in selected:
+            k = u.__class__.__name__
+            groups.setdefault(k, []).append(u)
+        # stable deterministic ordering by type name
+        return [(k, groups[k]) for k in sorted(groups.keys())]
+
+    def _update_player_selection_groups(p):
+        """Store groups + keep active index valid."""
+        if not p:
+            return
+        groups = _compute_selection_groups(p)
+        setattr(p, "selection_groups", groups)
+        idx = int(getattr(p, "active_selection_group_index", 0) or 0)
+        if not groups:
+            idx = 0
+        else:
+            idx = max(0, min(idx, len(groups)-1))
+        setattr(p, "active_selection_group_index", idx)
+
+    def _cycle_selection_group(p):
+        if not p:
+            return
+        groups = _compute_selection_groups(p)
+        if len(groups) <= 1:
+            setattr(p, "selection_groups", groups)
+            setattr(p, "active_selection_group_index", 0)
+            return
+        idx = int(getattr(p, "active_selection_group_index", 0) or 0)
+        idx = (idx + 1) % len(groups)
+        setattr(p, "selection_groups", groups)
+        setattr(p, "active_selection_group_index", idx)
+
     def _handle_right_click_command(screen_pos: tuple[int, int], current_time: float) -> None:
         """Existing right-click behavior (move/attack/rally/cancel placement)."""
         nonlocal placing_building, building_to_place, building_pos
@@ -240,21 +296,21 @@ def run_game() -> int:
                 if unit.is_clicked(Vector2(mouse_pos.x - VIEW_MARGIN_LEFT, mouse_pos.y - VIEW_MARGIN_TOP), camera.x, camera.y):
                     clicked_unit = unit
                     break
-            selected_building = None
+            selected_buildings = []
             selected_non_buildings = 0
             if current_player:
                 for unit in current_player.units:
                     if unit.selected:
                         if isinstance(unit, Building):
-                            if selected_building is None:
-                                selected_building = unit
-                            else:
-                                selected_building = None
+                            selected_buildings.append(unit)
                         else:
                             selected_non_buildings += 1
-            if selected_building and selected_non_buildings == 0 and not clicked_unit:
-                selected_building.rally_point = Vector2(snapped_pos)
-                print(f"Set rally point for {selected_building.__class__.__name__} at {selected_building.pos} to {selected_building.rally_point}")
+
+            # If ONLY buildings are selected and we right-click empty ground -> set rally point for ALL selected buildings.
+            if selected_buildings and selected_non_buildings == 0 and not clicked_unit:
+                for b in selected_buildings:
+                    b.rally_point = Vector2(snapped_pos)
+                print(f"Set rally point for {len(selected_buildings)} building(s) to {snapped_pos}")
                 move_order_times[snapped_pos] = current_time
             else:
                 for unit in all_units:
@@ -477,6 +533,11 @@ def run_game() -> int:
                         right_mouse_last = Vector2(event.pos)
 
             elif event.type == pygame.KEYDOWN and game_state == GameState.RUNNING:
+                # TAB cycles the active selection group (works for units and buildings)
+                if event.key == pygame.K_TAB and current_player:
+                    _cycle_selection_group(current_player)
+                    _normalize_selection_for_player(current_player)
+                    continue
                 cell = grid_actions.cell_from_key(event.key)
                 if cell and current_player:
                     r, c = cell
@@ -518,11 +579,20 @@ def run_game() -> int:
                         if VIEW_MARGIN_LEFT <= mouse_pos.x <= VIEW_BOUNDS_X and VIEW_MARGIN_TOP <= mouse_pos.y <= VIEW_BOUNDS_Y:
                             selection_end = camera.screen_to_world(mouse_pos, view_margin_left=VIEW_MARGIN_LEFT, view_margin_top=VIEW_MARGIN_TOP)
                             selecting = False
-                            for player in players:
-                                player.deselect_all_units()
+                            # Shift+box adds; otherwise replace selection
+                            if not (pygame.key.get_mods() & pygame.KMOD_SHIFT):
+                                for player in players:
+                                    player.deselect_all_units()
+                                _update_player_selection_groups(current_player)
+
+                            x1, x2 = min(selection_start.x, selection_end.x), max(selection_start.x, selection_end.x)
+                            y1, y2 = min(selection_start.y, selection_end.y), max(selection_start.y, selection_end.y)
                             for unit in current_player.units:
-                                unit.selected = (min(selection_start.x, selection_end.x) <= unit.pos.x <= max(selection_start.x, selection_end.x) and
-                                                 min(selection_start.y, selection_end.y) <= unit.pos.y <= max(selection_start.y, selection_end.y))
+                                if x1 <= unit.pos.x <= x2 and y1 <= unit.pos.y <= y2:
+                                    unit.selected = True
+
+                            _normalize_selection_for_player(current_player)
+                            _update_player_selection_groups(current_player)
                             selection_start = None
                             selection_end = None
 
@@ -543,6 +613,8 @@ def run_game() -> int:
                             for player in players:
                                 player.deselect_all_units()
                             unit_clicked.selected = True
+                            _normalize_selection_for_player(current_player)
+                            _update_player_selection_groups(current_player)
                             if unit_clicked.player_id == current_player.player_id:
                                 selected_barn = unit_clicked if isinstance(unit_clicked, Barn) and unit_clicked.alpha == 255 else None
                                 selected_barracks = unit_clicked if isinstance(unit_clicked, Barracks) and unit_clicked.alpha == 255 else None
@@ -571,6 +643,7 @@ def run_game() -> int:
                             if not placing_building:
                                 for player in players:
                                     player.deselect_all_units()
+                                _update_player_selection_groups(current_player)
             elif event.type == pygame.MOUSEMOTION:
                 if game_state == GameState.RUNNING:
                     # --- NEW: minimap dragging ---
@@ -607,8 +680,11 @@ def run_game() -> int:
                             selecting = True
                             pending_click = False
                             pending_click_unit = None
-                            for player in players:
-                                player.deselect_all_units()
+                            # Shift+drag-box adds to selection; normal drag-box replaces selection
+                            if not (pygame.key.get_mods() & pygame.KMOD_SHIFT):
+                                for player in players:
+                                    player.deselect_all_units()
+                                _update_player_selection_groups(current_player)
                             selection_start = mouse_down_world
                             mouse_pos = Vector2(event.pos)
                             if VIEW_MARGIN_LEFT <= mouse_pos.x <= VIEW_BOUNDS_X and VIEW_MARGIN_TOP <= mouse_pos.y <= VIEW_BOUNDS_Y:
@@ -627,6 +703,8 @@ def run_game() -> int:
                             building_pos = Vector2(tile_x * TILE_SIZE + TILE_HALF, tile_y * TILE_SIZE + TILE_HALF)
 
         if game_state == GameState.RUNNING:
+            _normalize_selection_for_player(current_player)
+            _update_player_selection_groups(current_player)
             # Update camera
             mouse_pos_screen = pygame.mouse.get_pos()
             if not minimap_dragging and not right_mouse_dragging:

@@ -128,7 +128,14 @@ def execute_grid_cell(
         return False, placing_building, building_to_place
 
     # ---- PRODUCTION MODE ----
-    selected_barn, selected_barracks, selected_town_center, selected_shamans_hut, selected_warriors_lodge_hut, selected_knights_estate = _get_selected_buildings(current_player)
+    groups = getattr(current_player, 'selection_groups', None) or []
+    active_idx = int(getattr(current_player, 'active_selection_group_index', 0) or 0)
+    if groups:
+        active_idx = max(0, min(active_idx, len(groups)-1))
+    active_buildings = []
+    if groups:
+        _, active_entities = groups[active_idx]
+        active_buildings = [b for b in active_entities if isinstance(b, Building) and getattr(b, 'alpha', 255) == 255]
 
     # Kill (V) — bottom-right (2,3). One click kills ONE selected unit/building.
     if (r, c) == (2, 3):
@@ -139,29 +146,30 @@ def execute_grid_cell(
             return True, placing_building, building_to_place
         return False, placing_building, building_to_place
 
-
     options = []
-    if selected_barn:
-        options.append((Cow, selected_barn, "unit"))
-    if selected_barracks:
-        options.extend([
-            (Axeman, selected_barracks, "unit"),
-            (Archer, selected_barracks, "unit"),
-            (Knight, selected_barracks, "unit"),
-        ])
-    if selected_town_center:
-        options.extend([
-            (Barn, selected_town_center, "building"),
-            (Barracks, selected_town_center, "building"),
-            (TownCenter, selected_town_center, "building"),
-            (ShamansHut, selected_town_center, "building"),
-            (WarriorsLodge, selected_town_center, "building"),
-            (KnightsEstate, selected_town_center, "building"),
-            (Ruin, selected_town_center, "building"),
-            (Wall, selected_town_center, "building"),
-        ])
+    if active_buildings:
+        sample = active_buildings[0]
+        if isinstance(sample, Barn):
+            options.append((Cow, active_buildings, "unit"))
+        elif isinstance(sample, Barracks):
+            options.extend([
+                (Axeman, active_buildings, "unit"),
+                (Archer, active_buildings, "unit"),
+                (Knight, active_buildings, "unit"),
+            ])
+        elif isinstance(sample, TownCenter):
+            options.extend([
+                (Barn, active_buildings, "building"),
+                (Barracks, active_buildings, "building"),
+                (TownCenter, active_buildings, "building"),
+                (ShamansHut, active_buildings, "building"),
+                (WarriorsLodge, active_buildings, "building"),
+                (KnightsEstate, active_buildings, "building"),
+                (Ruin, active_buildings, "building"),
+                (Wall, active_buildings, "building"),
+            ])
 
-    # (r,c) -> linear idx in packed grid, reserving bottom-right for KILL
+    # (r,c) -> linear idx in packed grid, reserving bottom-right for KILL in packed grid, reserving bottom-right for KILL
     cols = len(grid_buttons[0])
     rows = len(grid_buttons)
     idx = r * cols + c
@@ -170,10 +178,10 @@ def execute_grid_cell(
     if not (0 <= idx < len(options)):
         return False, placing_building, building_to_place
 
-    cls, owner, kind = options[idx]
+    cls, owners, kind = options[idx]
 
-    if owner in production_queues:
-        print(f"{owner.__class__.__name__} at {owner.pos} is already producing")
+    if kind == 'unit' and all(o in production_queues for o in owners):
+        print(f"All selected {owners[0].__class__.__name__} are already producing")
         return True, placing_building, building_to_place
 
     # affordability check (for units & buildings)
@@ -182,6 +190,7 @@ def execute_grid_cell(
         return True, placing_building, building_to_place
 
     # buildings from TownCenter: start placement, DO NOT deduct yet
+    owner = owners[0] if owners else None
     if kind == "building" and issubclass(cls, Building):
         if current_player.building_limit is not None and current_player.building_count >= current_player.building_limit:
             print("Cannot place building: building limit reached")
@@ -192,13 +201,24 @@ def execute_grid_cell(
         print(f"Initiated placement of {cls.__name__} for Player {current_player.player_id}")
         return True, placing_building, building_to_place
 
-    # units: queue immediately and deduct immediately (as your current behavior)
-    production_queues[owner] = {
-        "unit_type": cls,
-        "start_time": current_time,
-        "player_id": current_player.player_id
-    }
-    current_player.milk -= cls.milk_cost
+    # units: queue immediately and deduct immediately (for ALL idle buildings in the active group)
+    queued_any = False
+    for o in owners:
+        if o in production_queues:
+            continue
+        if current_player.milk < cls.milk_cost or current_player.wood < cls.wood_cost:
+            break
+        production_queues[o] = {
+            "unit_type": cls,
+            "start_time": current_time,
+            "player_id": current_player.player_id
+        }
+        current_player.milk -= cls.milk_cost
+        current_player.wood -= cls.wood_cost
+        queued_any = True
+
+    if not queued_any:
+        print(f"Cannot queue {cls.__name__} (no idle buildings or insufficient resources)")
+    return True, placing_building, building_to_place
     current_player.wood -= cls.wood_cost
-    print(f"Started production of {cls.__name__} at {owner.__class__.__name__} {owner.pos} for Player {current_player.player_id}")
     return True, placing_building, building_to_place
