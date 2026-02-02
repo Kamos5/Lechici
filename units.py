@@ -1055,6 +1055,13 @@ class Wall(Building):
             print(f"Failed to load {path}: {e}")
             return None
 
+    def set_variant(self, variant: str) -> None:
+        """Set variant and lazy-load its sprite if needed."""
+        v = self._sanitize_variant(variant) or self.DEFAULT_VARIANT
+        self.variant = v
+        if v not in Wall._variant_images:
+            Wall._variant_images[v] = Wall._load_variant_image(v)
+
     def draw(self, screen, camera_x, camera_y):
         # Same culling as Unit.draw()
         if (self.pos.x < camera_x - self.size / 2 or self.pos.x > camera_x + VIEW_WIDTH + self.size / 2 or

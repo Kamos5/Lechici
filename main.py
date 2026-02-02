@@ -18,7 +18,7 @@ from utils import is_tile_occupied, find_valid_spawn_tiles
 from worldgen import init_game_world
 from world_objects import Bridge, Road
 from tiles import GrassTile, Dirt, River
-from units import Unit, Tree, Building, Barn, TownCenter, Barracks, KnightsEstate, WarriorsLodge, Ruin, Axeman, Knight, Archer, Cow, ShamansHut
+from units import Unit, Tree, Building, Barn, TownCenter, Barracks, KnightsEstate, WarriorsLodge, Ruin, Axeman, Knight, Archer, Cow, ShamansHut, Wall
 from player import Player, PlayerAI
 from pathfinding import SpatialGrid, WaypointGraph
 import ui
@@ -145,6 +145,70 @@ def run_game() -> int:
         size_tiles = int(getattr(cls, "SIZE_TILES", max(1, int(BUILDING_SIZE // TILE_SIZE))))
         return size_tiles * TILE_SIZE
 
+    # Map (U, D, L, R) -> variant
+    _WALL_VARIANT = {
+        (0, 0, 0, 0): "wall6",
+        (1, 0, 0, 0): "wall2",  # up
+        (0, 1, 0, 0): "wall2",  # down
+        (1, 1, 0, 0): "wall2",  # up+down
+
+        (0, 0, 1, 0): "wall6",  # left
+        (0, 0, 0, 1): "wall6",  # right
+        (0, 0, 1, 1): "wall6",  # left+right
+
+        (1, 0, 0, 1): "wall1",  # up+right
+        (0, 1, 0, 1): "wall3",  # down+right
+        (1, 1, 0, 1): "wall4",  # up+down+right
+
+        (1, 0, 1, 0): "wall5",  # up+left
+        (1, 0, 1, 1): "wall7",  # left+right+up
+
+        (0, 1, 1, 0): "wall8",  # left+down
+        (1, 1, 1, 0): "wall9",  # up+down+left
+        (0, 1, 1, 1): "wall10",  # left+right+down
+
+        (1, 1, 1, 1): "wall11",  # up+down+left+right
+    }
+
+    def _tile_of(u) -> tuple[int, int]:
+        return (int(u.pos.x // TILE_SIZE), int(u.pos.y // TILE_SIZE))
+
+    def _find_wall_at(all_units, tx: int, ty: int, player_id: int):
+        # placement-time scan (simple + reliable)
+        cx = tx * TILE_SIZE + TILE_HALF
+        cy = ty * TILE_SIZE + TILE_HALF
+        for u in all_units:
+            if isinstance(u, Wall) and u.player_id == player_id:
+                if int(u.pos.x) == int(cx) and int(u.pos.y) == int(cy):
+                    return u
+        return None
+
+    def _compute_wall_variant(all_units, wall: Wall) -> str:
+        tx, ty = _tile_of(wall)
+        pid = wall.player_id
+
+        up = 1 if _find_wall_at(all_units, tx, ty - 1, pid) else 0
+        down = 1 if _find_wall_at(all_units, tx, ty + 1, pid) else 0
+        left = 1 if _find_wall_at(all_units, tx - 1, ty, pid) else 0
+        right = 1 if _find_wall_at(all_units, tx + 1, ty, pid) else 0
+
+        return _WALL_VARIANT.get((up, down, left, right), "wall6")
+
+    def _refresh_wall_and_neighbors(all_units, wall: Wall) -> None:
+        """Recompute variant for wall and its 4-neighbors (same player)."""
+        tx, ty = _tile_of(wall)
+        pid = wall.player_id
+
+        candidates = [wall]
+        for dx, dy in ((0, -1), (0, 1), (-1, 0), (1, 0)):
+            w2 = _find_wall_at(all_units, tx + dx, ty + dy, pid)
+            if w2:
+                candidates.append(w2)
+
+        for w in candidates:
+            v = _compute_wall_variant(all_units, w)
+            w.set_variant(v)
+
     current_player = players[1]
 
 
@@ -258,6 +322,7 @@ def run_game() -> int:
                                     current_player.milk -= building_to_place.milk_cost
                                     current_player.wood -= building_to_place.wood_cost
 
+                                    # They fade in via alpha and also "build up" HP from 1 -> max_hp over production_time.
                                     new_building = building_to_place(building_pos.x, building_pos.y, current_player.player_id, current_player.color)
                                     # Start buildings under construction.
                                     # They fade in via alpha and also "build up" HP from 1 -> max_hp over production_time.
@@ -266,6 +331,10 @@ def run_game() -> int:
                                     current_player.add_unit(new_building)
                                     all_units.add(new_building)
                                     spatial_grid.add_unit(new_building)
+
+                                    # --- Wall auto-connect: update this wall + adjacent walls (same player) ---
+                                    if isinstance(new_building, Wall):
+                                        _refresh_wall_and_neighbors(all_units, new_building)
 
                                     # Paint area to dirt (same as your old placement code)
                                     # (Skip for tile-sized walls so they don't leave a dirt "footprint".)
