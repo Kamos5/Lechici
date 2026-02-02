@@ -118,14 +118,14 @@ def ensure_dirs(path: str) -> None:
 
 def load_tree_editor_image(variant: str, desired_px: int) -> Optional[pygame.Surface]:
     """
-    Loads assets/{variant}.png (e.g. assets/tree0.png), scaled to desired_px.
+    Loads assets/units/tree/{variant}.png (e.g. assets/units/tree/tree0.png), scaled to desired_px.
     Cached by (variant, desired_px).
     """
     key = (variant, desired_px)
     if key in _TREE_EDITOR_IMAGES:
         return _TREE_EDITOR_IMAGES[key]
 
-    path = f"assets/{variant}.png"
+    path = f"assets/units/tree/{variant}.png"
     try:
         img = pygame.image.load(path).convert_alpha()
         scale = desired_px / max(img.get_width(), img.get_height())

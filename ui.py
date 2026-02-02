@@ -4,7 +4,7 @@ from pygame.math import Vector2
 from typing import Optional
 
 from constants import *
-from units import Unit, Building, Barn, Barracks, TownCenter, Axeman, Archer, Knight, Cow, ShamansHut, KnightsEstate, WarriorsLodge, Ruin, Wall
+from units import Unit, Building, Barn, Barracks, TownCenter, Axeman, Archer, Knight, Cow, ShamansHut, KnightsEstate, WarriorsLodge, Ruin, Wall, Tree
 
 
 def load_ui_icons():
@@ -844,10 +844,18 @@ def draw_selected_unit_panel(
     screen.blit(font.render(name, True, BLACK), (left.x, left.y))
 
     cls_name = unit.__class__.__name__
-    icon = Unit._unit_icons.get(cls_name)
-    if icon is None:
-        Unit.load_images(cls_name, UNIT_SIZE)
+
+    # Trees: icon must match the instance variant (not the default "Tree" icon).
+    if isinstance(unit, Tree):
+        # Ensure the variant icon exists
+        if unit.variant not in Tree._variant_icons or Tree._variant_icons.get(unit.variant) is None:
+            Tree.load_image(unit.variant)
+        icon = Tree._variant_icons.get(unit.variant)
+    else:
         icon = Unit._unit_icons.get(cls_name)
+        if icon is None:
+            Unit.load_images(cls_name, UNIT_SIZE)
+            icon = Unit._unit_icons.get(cls_name)
 
     icon_size = 54
     icon_rect = pygame.Rect(left.x, left.y + 28, icon_size, icon_size)
@@ -877,6 +885,9 @@ def draw_selected_unit_panel(
 
         hp_text = f"{int(hp)}/{int(max_hp)}"
         screen.blit(small_font.render(hp_text, True, BLACK), (bar_x, bar_y + bar_h + 4))
+
+    if isinstance(unit, Tree):
+        return
 
     # STATS (to the right of the icon, AoE2-ish)
     stats_lines: list[str] = []

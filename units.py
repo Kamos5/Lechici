@@ -351,7 +351,8 @@ class Unit:
         self.name = None
         self.worldObject = False
         cls_name = self.__class__.__name__
-        if cls_name != "Tree" and cls_name not in Unit._images:
+        # Trees also need their base icon available in Unit._unit_icons (used by UI).
+        if cls_name not in Unit._images:
             self.load_images(cls_name, size)
         self.alpha = 255
         self.path = []  # Store pathfinding waypoints
@@ -378,13 +379,21 @@ class Unit:
             "KnightsEstate", "WarriorsLodge", "Ruin", "Wall",
         }
 
-        if is_building:
+        # Tree is a variant-based world object (similar to Wall), but we still
+        # want a default sprite + icon in the shared Unit caches.
+        is_tree = (cls_name == "Tree")
+
+        if is_building or is_tree:
             base = f"assets/units/buildings/{cls_name.lower()}"
             if cls_name == "Wall":
                 # Wall sprites are variant-based: wall1.png ... wall12.png
                 base = "assets/units/buildings/wall6"
+            elif cls_name == "Tree":
+                # Tree sprites are variant-based and live in assets/units/tree/
+                # Default to tree6 if nothing else is specified.
+                base = "assets/units/tree/tree6"
             sprite_path = f"{base}.png"
-            icon_path = sprite_path  # building_icon = building (for now)
+            icon_path = sprite_path  # ..._icon kept intentionally (future-proof)
             underbuilding_path = f"{base}_c.png"
         else:
             # Units: standardized to assets/units/{unit}/walk_M.gif
@@ -426,7 +435,7 @@ class Unit:
                 )
             except (pygame.error, FileNotFoundError) as e:
                 print(f"Failed to load {underbuilding_path}: {e}")
-                cls._underbuilding_images[cls_name] = None
+                cls._underbuilding_images[cls_name] = cls._images.get(cls_name)
 
     def should_highlight(self, current_time):
         return self in context.highlight_times and context.current_time - context.highlight_times[self] <= 0.4
@@ -811,46 +820,49 @@ class Tree(Unit):
     # per-variant caches
     _images = {}          # variant -> base image surface
     _tinted_images = {}   # (variant, color_index) -> tinted image
+    _variant_icons = {}   # variant -> icon surface (scaled from sprite)
+    _c_images = {}  # variant -> construction sprite (variant_c) or base if missing
 
     _selected = False
     _last_color_change_time = 0
     _color_index = 0
     _colors = [RED, GREEN, BLUE, YELLOW]
 
-    # define your variants in one place (sprites + stats)
+    # Define variants in one place (sprites + stats).
+    # Sprites are expected under assets/units/tree/ (e.g. assets/units/tree/tree0.png).
     VARIANTS = {
         "tree0": {
-            "sprite": "assets/tree0.png",
+            "sprite": "assets/units/tree/tree0.png",
             "hp": 900,
             "max_hp": 900,
         },
         "tree1": {
-            "sprite": "assets/tree1.png",
+            "sprite": "assets/units/tree/tree1.png",
             "hp": 900,
             "max_hp": 900,
         },
         "tree2": {
-            "sprite": "assets/tree2.png",
+            "sprite": "assets/units/tree/tree2.png",
             "hp": 900,
             "max_hp": 900,
         },
         "tree3": {
-            "sprite": "assets/tree3.png",
+            "sprite": "assets/units/tree/tree3.png",
             "hp": 900,
             "max_hp": 900,
         },
         "tree4": {
-            "sprite": "assets/tree4.png",
+            "sprite": "assets/units/tree/tree4.png",
             "hp": 900,
             "max_hp": 900,
         },
         "tree5": {
-            "sprite": "assets/tree5.png",
+            "sprite": "assets/units/tree/tree5.png",
             "hp": 900,
             "max_hp": 900,
         },
         "tree6": {
-            "sprite": "assets/tree6.png",
+            "sprite": "assets/units/tree/tree6.png",
             "hp": 900,
             "max_hp": 900,
         }
@@ -894,6 +906,23 @@ class Tree(Unit):
 
             cls._images[variant] = img
 
+            # Optional construction sprite (variant_c). If missing, use the base sprite.
+            c_path = path[:-4] + "_c.png"
+            try:
+                c_img = pygame.image.load(c_path).convert_alpha()
+                scale_factor_c = min(TILE_SIZE / c_img.get_width(), TILE_SIZE / c_img.get_height())
+                new_size_c = (int(c_img.get_width() * scale_factor_c), int(c_img.get_height() * scale_factor_c))
+                c_img = pygame.transform.scale(c_img, new_size_c)
+                cls._c_images[variant] = c_img
+            except (pygame.error, FileNotFoundError):
+                cls._c_images[variant] = img
+
+            # Miniature/icon for UI: use the SAME sprite of this variant (no separate icon assets)
+            try:
+                cls._variant_icons[variant] = pygame.transform.smoothscale(img, (ICON_SIZE, ICON_SIZE))
+            except Exception:
+                cls._variant_icons[variant] = img
+
             # build tinted versions for targeting animation
             for i, color in enumerate(cls._colors):
                 tinted = img.copy()
@@ -905,6 +934,7 @@ class Tree(Unit):
         except (pygame.error, FileNotFoundError) as e:
             print(f"Failed to load {path}: {e}")
             cls._images[variant] = None
+            cls._variant_icons[variant] = None
 
     def draw(self, screen, camera_x, camera_y, axemen_targets):
         if (self.pos.x < camera_x - TILE_SIZE or self.pos.x > camera_x + VIEW_WIDTH + TILE_SIZE or
@@ -951,6 +981,21 @@ class Tree(Unit):
 
     def set_selected(self, selected):
         self._selected = selected
+        # When selecting a specific tree variant, keep the UI icon consistent
+        # with the actual sprite used for this instance.
+        if selected:
+            icon = Tree._variant_icons.get(self.variant)
+            if icon is not None:
+                Unit._unit_icons["Tree"] = icon
+        # Make sure the UI icon matches the selected tree variation.
+        # (UI caches icons by class name only, so we update it on selection.)
+        if selected:
+            icon = Tree._variant_icons.get(self.variant)
+            if icon is None and self.variant not in Tree._images:
+                Tree.load_image(self.variant)
+                icon = Tree._variant_icons.get(self.variant)
+            if icon is not None:
+                Unit._unit_icons["Tree"] = icon
 
     def move(self, units, spatial_grid=None, waypoint_graph=None):
         pass
