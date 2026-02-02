@@ -59,7 +59,7 @@ done:
 todo:
 
 CORE FEATURES:
-+ roads (zrobic budowe)
++ roads (zrobic budowe) - allow selection
 - fire animation
 - start screen
 - end screen (objectives)
