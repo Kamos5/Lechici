@@ -6,9 +6,6 @@ from typing import Optional
 from constants import *
 from units import Unit, Building, Barn, Barracks, TownCenter, Axeman, Archer, Knight, Cow, ShamansHut, KnightsEstate, WarriorsLodge, Ruin, Wall
 
-# XP/level progression (kept separate for easier tuning)
-import progression
-
 
 def load_ui_icons():
     """Load and scale UI icons. Falls back to colored squares if missing."""
@@ -623,6 +620,46 @@ def _hp_color(pct: float) -> tuple[int, int, int]:
     return (r, g, 0)
 
 
+def draw_level_pluses(
+    screen: pygame.Surface,
+    unit,
+    *,
+    x: int,
+    y: int,
+    font: pygame.font.Font,
+    pad: int = 2,
+) -> None:
+    """Draw small '+' markers in the top-left of a unit miniature based on its level.
+
+    Level mapping:
+    - novice (0): none
+    - regular (1): 1 plus (blue)
+    - veteran (2): 2 pluses (blue, yellow)
+    - hero (3): 3 pluses (blue, yellow, red)
+    """
+
+    if unit is None or not hasattr(unit, "level"):
+        return
+
+    lvl = int(getattr(unit, "level", 0) or 0)
+    count = max(0, min(3, lvl))  # lvl 0..3 -> 0..3 pluses
+    if count <= 0:
+        return
+
+    colors = [
+        (0, 120, 255),   # blue
+        (255, 220, 0),   # yellow
+        (255, 60, 60),   # red
+    ]
+
+    plus_h = font.get_height()
+    # Stack vertically with small spacing; keep inside icon with padding.
+    for i in range(count):
+        surf = font.render("+", True, colors[i])
+        screen.blit(surf, (x + pad, y + i * (plus_h - 2)))
+
+
+
 def draw_selected_building_panel(
     screen: pygame.Surface,
     building: Building,
@@ -818,6 +855,10 @@ def draw_selected_unit_panel(
     if icon:
         img = pygame.transform.smoothscale(icon, (icon_size, icon_size))
         screen.blit(img, icon_rect.topleft)
+        # Level markers (+) on the unit miniature
+        # Slightly bigger plus markers in the portrait icon
+        portrait_plus_font = pygame.font.SysFont(None, 22)
+        draw_level_pluses(screen, unit, x=icon_rect.x, y=icon_rect.y, font=portrait_plus_font, pad=2)
 
     # HP bar (only if hp fields exist)
     if hasattr(unit, "hp") and hasattr(unit, "max_hp"):
@@ -839,6 +880,32 @@ def draw_selected_unit_panel(
 
     # STATS (to the right of the icon, AoE2-ish)
     stats_lines: list[str] = []
+
+    # Progression (Level / XP)
+    if hasattr(unit, "level") or hasattr(unit, "xp"):
+        try:
+            from progression import level_name_from_index, XP_THRESHOLDS
+        except Exception:
+            level_name_from_index = None
+            XP_THRESHOLDS = (0,)
+
+        if hasattr(unit, "level"):
+            lvl_idx = int(getattr(unit, "level", 0) or 0)
+            lvl_name = level_name_from_index(lvl_idx) if level_name_from_index else str(lvl_idx)
+            stats_lines.append(f"Level: {lvl_name}")
+
+        if hasattr(unit, "xp"):
+            xp_val = int(getattr(unit, "xp", 0) or 0)
+            # Show progress to next threshold when possible
+            next_total = None
+            if hasattr(unit, "level"):
+                lvl_idx = int(getattr(unit, "level", 0) or 0)
+                if isinstance(XP_THRESHOLDS, (list, tuple)) and lvl_idx + 1 < len(XP_THRESHOLDS):
+                    next_total = int(XP_THRESHOLDS[lvl_idx + 1])
+            if next_total is not None:
+                stats_lines.append(f"XP: {xp_val}/{next_total}")
+            else:
+                stats_lines.append(f"XP: {xp_val}")
 
     # Common combat/movement stats (only if present)
     for label, attr in [
@@ -871,12 +938,6 @@ def draw_selected_unit_panel(
             stats_lines.append(f"Mana: {int(mana)}/{int(max_mana)}")
         else:
             stats_lines.append(f"Mana: {int(mana)}")
-
-    # Progression (XP + level)
-    if hasattr(unit, "xp") and hasattr(unit, "level"):
-        lvl_idx = int(getattr(unit, "level", 0) or 0)
-        stats_lines.append(f"Level: {progression.level_name_from_index(lvl_idx)}")
-        stats_lines.append(f"XP: {int(getattr(unit, 'xp', 0) or 0)}")
 
     sx = icon_rect.right + 12
     sy = icon_rect.y
@@ -934,8 +995,14 @@ def draw_selected_entity_panel(
         unit_icon_img = Unit._unit_icons.get(cls_name)
         if unit_icon_img:
             screen.blit(unit_icon_img, (icon_x, icon_y))
+            # Level markers (+) on the small selection miniature
+            draw_level_pluses(screen, unit, x=icon_x, y=icon_y, font=small_font, pad=2)
         else:
             pygame.draw.rect(screen, WHITE, (icon_x, icon_y, icon_size, icon_size))
+            draw_level_pluses(screen, unit, x=icon_x, y=icon_y, font=small_font, pad=2)
+
+        # Level markers (+) on miniature (top-left)
+        draw_level_pluses(screen, unit, x=icon_x, y=icon_y, font=small_font, pad=2)
 
         if len(selected) == 1:
             display_text = f"{getattr(unit, 'name', '') or cls_name} - {cls_name}"
