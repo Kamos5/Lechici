@@ -37,6 +37,39 @@ def load_ui_icons():
         building_icon = pygame.transform.scale(building_icon, (20, 20))
         death_icon = pygame.transform.scale(death_icon, (20, 20))
 
+        stop_icon = (
+            pygame.image.load("assets/icons/icon12.png").convert_alpha()
+            if pygame.image.get_extended() else pygame.Surface((20, 20), pygame.SRCALPHA)
+        )
+        attack_icon = (
+            pygame.image.load("assets/icons/attack.png").convert_alpha()
+            if pygame.image.get_extended() else pygame.Surface((20, 20), pygame.SRCALPHA)
+        )
+        repair_icon = (
+            pygame.image.load("assets/icons/icon25.png").convert_alpha()
+            if pygame.image.get_extended() else pygame.Surface((20, 20), pygame.SRCALPHA)
+        )
+        stop_icon = pygame.transform.scale(stop_icon, (20, 20))
+        attack_icon = pygame.transform.scale(attack_icon, (20, 20))
+        repair_icon = pygame.transform.scale(repair_icon, (20, 20))
+
+        patrol_icon = (
+            pygame.image.load("assets/icons/icon1.png").convert_alpha()
+            if pygame.image.get_extended() else pygame.Surface((20, 20), pygame.SRCALPHA)
+        )
+        move_icon = (
+            pygame.image.load("assets/icons/move.png").convert_alpha()
+            if pygame.image.get_extended() else pygame.Surface((20, 20), pygame.SRCALPHA)
+        )
+        harvest_icon = (
+            pygame.image.load("assets/icons/icon4.png").convert_alpha()
+            if pygame.image.get_extended() else pygame.Surface((20, 20), pygame.SRCALPHA)
+        )
+        patrol_icon = pygame.transform.scale(patrol_icon, (20, 20))
+        move_icon = pygame.transform.scale(move_icon, (20, 20))
+        harvest_icon = pygame.transform.scale(harvest_icon, (20, 20))
+
+
         # Totem separator icon (scaled down, keep aspect ratio)
         w, h = totem_icon.get_size()
         target_h = 180
@@ -66,6 +99,12 @@ def load_ui_icons():
         "unit": unit_icon,
         "building": building_icon,
         "death": death_icon,
+        "stop": stop_icon,
+        "attack": attack_icon,
+        "repair": repair_icon,
+        "patrol": patrol_icon,
+        "move": move_icon,
+        "harvest": harvest_icon,
         "totem": totem_icon,
     }
 
@@ -504,6 +543,14 @@ def draw_grid_buttons(screen, grid_buttons, current_player, all_units, productio
                     # Use hotkeys + hover tooltip for details.
                     label="",
                     hotkey=hotkeys.get((r, c)),
+                    icon={
+                        "Stop": icons.get("stop"),
+                        "Attack": icons.get("attack"),
+                        "Patrol": icons.get("patrol"),
+                        "Move": icons.get("move"),
+                        "Harvest": icons.get("harvest"),
+                        "Repair": icons.get("repair"),
+                    }.get(label, None),
                     description={
                         'Patrol': 'Move in formation between points (TODO).',
                         'Move': 'Issue a move order (right-click also works).',
@@ -515,7 +562,11 @@ def draw_grid_buttons(screen, grid_buttons, current_player, all_units, productio
                 )
                 hov = ui_btn.hovered(mouse_pos)
                 ui_btn.draw_base(screen, hovered=hov)
-                # For action buttons we currently have no icons: show the hotkey letter centered.
+
+                # Draw icon if available (Stop/Attack/Repair), otherwise just show hotkey badge.
+                if ui_btn.icon:
+                    ui_btn.draw_icon_fill(screen, icon_pad=4)
+
                 ui_btn.draw_hotkey_badge(screen, fonts.get("button_font") or small_font)
                 if hov:
                     hovered_tooltip = (label, ui_btn.description, None, None)
