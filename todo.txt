@@ -48,12 +48,13 @@ done:
 + fix: units get stuck on corners
 + dodging arrow/projectiles?
 + hp of build and units better displayed
++ walls (auto łączenie)
 
 todo:
 
 
 + roads (zrobic budowe)
-+ walls (auto łączenie)
+- fire
 - start screen
 - end screen (objectives)
 - a-move

@@ -1041,6 +1041,10 @@ def draw_game_ui(
         tx = VIEW_MARGIN_LEFT - (totem.get_width() // 2) + 250
         ty = PANEL_Y + (PANEL_HEIGHT - totem.get_height()) // 2
         screen.blit(totem, (tx, ty))
+        tx = VIEW_MARGIN_LEFT - (totem.get_width() // 2) + 1275
+        ty = PANEL_Y + (PANEL_HEIGHT - totem.get_height()) // 2
+        screen.blit(totem, (tx, ty))
+
 
     draw_selected_entity_panel(
         screen,
