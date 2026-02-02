@@ -27,10 +27,15 @@ def load_ui_icons():
             if pygame.image.get_extended() else pygame.Surface((20, 20))
         )
 
+        death_icon = (
+            pygame.image.load("assets/icons/death.png").convert_alpha()
+            if pygame.image.get_extended() else pygame.Surface((20, 20), pygame.SRCALPHA)
+        )
         wood_icon = pygame.transform.scale(wood_icon, (20, 20))
         milk_icon = pygame.transform.scale(milk_icon, (20, 20))
         unit_icon = pygame.transform.scale(unit_icon, (20, 20))
         building_icon = pygame.transform.scale(building_icon, (20, 20))
+        death_icon = pygame.transform.scale(death_icon, (20, 20))
 
         # Totem separator icon (scaled down, keep aspect ratio)
         w, h = totem_icon.get_size()
@@ -50,6 +55,9 @@ def load_ui_icons():
         unit_icon.fill(LIGHT_GRAY)
         building_icon.fill(LIGHT_GRAY)
 
+        death_icon = pygame.Surface((20, 20), pygame.SRCALPHA)
+        death_icon.fill((200, 50, 50, 255))
+
         totem_icon = pygame.Surface((50, 100), pygame.SRCALPHA)
         totem_icon.fill(LIGHT_GRAY)
     return {
@@ -57,6 +65,7 @@ def load_ui_icons():
         "milk": milk_icon,
         "unit": unit_icon,
         "building": building_icon,
+        "death": death_icon,
         "totem": totem_icon,
     }
 
@@ -72,7 +81,6 @@ def create_fonts():
         "tooltip_body_font": pygame.font.SysFont(None, 30),
         "end_button_font": pygame.font.Font(None, 36),
     }
-
 
 
 # ---------------------------------------------------------------------------
@@ -113,14 +121,14 @@ def wrap_text(font: pygame.font.Font, text: str, max_width: int) -> list[str]:
 
 
 def draw_tooltip_panel(
-    screen: pygame.Surface,
-    *,
-    name: str,
-    description: str,
-    milk_cost: int | None,
-    wood_cost: int | None,
-    icons: dict,
-    fonts: dict,
+        screen: pygame.Surface,
+        *,
+        name: str,
+        description: str,
+        milk_cost: int | None,
+        wood_cost: int | None,
+        icons: dict,
+        fonts: dict,
 ):
     """Draw bottom-left tooltip panel (20% width/height of the window)."""
     w = int(SCREEN_WIDTH * 0.20)
@@ -197,16 +205,16 @@ class UIButton:
     """A minimal hoverable UI button for grids and action panels."""
 
     def __init__(
-        self,
-        rect: pygame.Rect,
-        *,
-        enabled: bool = True,
-        label: str = "",
-        hotkey: str | None = None,
-        icon: pygame.Surface | None = None,
-        milk_cost: int | None = None,
-        wood_cost: int | None = None,
-        description: str = "",
+            self,
+            rect: pygame.Rect,
+            *,
+            enabled: bool = True,
+            label: str = "",
+            hotkey: str | None = None,
+            icon: pygame.Surface | None = None,
+            milk_cost: int | None = None,
+            wood_cost: int | None = None,
+            description: str = "",
     ):
         self.rect = rect
         self.enabled = enabled
@@ -232,10 +240,10 @@ class UIButton:
             pygame.draw.rect(screen, WHITE, self.rect, 2)
 
     def draw_icon_fill(
-        self,
-        screen: pygame.Surface,
-        *,
-        icon_pad: int = 4,
+            self,
+            screen: pygame.Surface,
+            *,
+            icon_pad: int = 4,
     ):
         """Draw the icon centered, scaled to fill the button with a small padding border."""
         if not self.icon:
@@ -391,7 +399,6 @@ def draw_panels(screen):
 
 
 def draw_grid_buttons(screen, grid_buttons, current_player, all_units, production_queues, current_time, icons, fonts):
-
     small_font = fonts["small_font"]
     mouse_pos = pygame.mouse.get_pos()
     hovered_tooltip = None  # (name, desc, milk_cost, wood_cost)
@@ -429,8 +436,15 @@ def draw_grid_buttons(screen, grid_buttons, current_player, all_units, productio
     can_harvest = has_axeman or has_cow  # only cows + axemen
     can_repair = has_axeman  # only axemen
 
+    # Grid hotkeys (4x3): q w e r / a s d f / z x c v
+    hotkeys = {
+        (0, 0): "q", (0, 1): "w", (0, 2): "e", (0, 3): "r",
+        (1, 0): "a", (1, 1): "s", (1, 2): "d", (1, 3): "f",
+        (2, 0): "z", (2, 1): "x", (2, 2): "c", (2, 3): "v",
+    }
+
     # Helper: draw a labeled button (fast + simple)
-    def draw_label(btn_rect, label, enabled=True, hotkey_text= None):
+    def draw_label(btn_rect, label, enabled=True, hotkey_text=None):
         txt = small_font.render(label, True, BLACK)
         screen.blit(txt, (btn_rect.x + 2, btn_rect.y + 2))
 
@@ -466,12 +480,6 @@ def draw_grid_buttons(screen, grid_buttons, current_player, all_units, productio
             pygame.draw.rect(screen, LIGHT_GRAY, grid_buttons[row][col])
 
     if show_unit_commands:
-        # Grid hotkeys (4x3): q w e r / a s d f / z x c v
-        hotkeys = {
-            (0, 0): "q", (0, 1): "w", (0, 2): "e", (0, 3): "r",
-            (1, 0): "a", (1, 1): "s", (1, 2): "d", (1, 3): "f",
-            (2, 0): "z", (2, 1): "x", (2, 2): "c", (2, 3): "v",
-        }
 
         # Always visible unit buttons:
         # - Patrol, Move, Attack, Stop = always enabled
@@ -512,6 +520,27 @@ def draw_grid_buttons(screen, grid_buttons, current_player, all_units, productio
                 if hov:
                     hovered_tooltip = (label, ui_btn.description, None, None)
 
+        # KILL button (V) always in bottom-right when anything is selected (units/buildings).
+        # One click kills ONE selected unit/building (handled in grid_actions).
+        if selected:
+            r, c = (2, 3)
+            if r < len(grid_buttons) and c < len(grid_buttons[r]):
+                btn = grid_buttons[r][c]
+                ui_btn = UIButton(
+                    btn,
+                    enabled=True,
+                    label="",
+                    hotkey=hotkeys.get((r, c)),
+                    icon=icons.get("death"),
+                    description="Kills selected unit/building.",
+                )
+                hov = ui_btn.hovered(mouse_pos)
+                ui_btn.draw_base(screen, hovered=hov)
+                ui_btn.draw_icon_fill(screen, icon_pad=4)
+                ui_btn.draw_hotkey_badge(screen, fonts.get("button_font") or small_font)
+                if hov:
+                    hovered_tooltip = ("Kill", ui_btn.description, None, None)
+
     else:
         # Production mode (only buildings selected)
         # We pack production options from top-left across 4 columns, then next row.
@@ -539,10 +568,14 @@ def draw_grid_buttons(screen, grid_buttons, current_player, all_units, productio
                 ("Wall", Wall, selected_town_center),
             ])
 
-        # Draw options into the 4x3 grid
+        # Draw options into the 4x3 grid (reserve bottom-right for KILL)
         idx = 0
         for row in range(len(grid_buttons)):
             for col in range(len(grid_buttons[row])):
+                # bottom-right is reserved for KILL
+                if (row, col) == (2, 3):
+                    continue
+
                 if idx >= len(options):
                     continue
 
@@ -567,7 +600,7 @@ def draw_grid_buttons(screen, grid_buttons, current_player, all_units, productio
                     enabled=enabled,
                     # No text on production/build buttons; icon + tooltip only.
                     label="",
-                    hotkey=None,
+                    hotkey=hotkeys.get((row, col)),
                     icon=None,
                     milk_cost=getattr(cls, 'milk_cost', 0),
                     wood_cost=getattr(cls, 'wood_cost', 0),
@@ -589,6 +622,9 @@ def draw_grid_buttons(screen, grid_buttons, current_player, all_units, productio
                 # Center-fill the icon, covering the whole button with a small border.
                 ui_btn.draw_icon_fill(screen, icon_pad=4)
 
+                # Hotkey badge in top-right for all used buttons
+                ui_btn.draw_hotkey_badge(screen, fonts.get("button_font") or small_font)
+
                 # Costs are shown in the tooltip panel, not on the button.
                 draw_progress(btn, owner, cls)
 
@@ -597,6 +633,26 @@ def draw_grid_buttons(screen, grid_buttons, current_player, all_units, productio
 
                 idx += 1
 
+    # KILL button (V) always in bottom-right when anything is selected (units/buildings).
+    # One click kills ONE selected unit/building (handled in grid_actions).
+    if (not show_unit_commands) and selected:
+        r, c = (2, 3)
+        if r < len(grid_buttons) and c < len(grid_buttons[r]):
+            btn = grid_buttons[r][c]
+            ui_btn = UIButton(
+                btn,
+                enabled=True,
+                label="",
+                hotkey=hotkeys.get((r, c)),
+                icon=icons.get("death"),
+                description="Kills ONE selected unit/building per click.",
+            )
+            hov = ui_btn.hovered(mouse_pos)
+            ui_btn.draw_base(screen, hovered=hov)
+            ui_btn.draw_icon_fill(screen, icon_pad=4)
+            ui_btn.draw_hotkey_badge(screen, fonts.get("button_font") or small_font)
+            if hov:
+                hovered_tooltip = ("Kill", ui_btn.description, None, None)
 
     # Tooltip panel (bottom-left)
     if hovered_tooltip:
@@ -621,13 +677,13 @@ def _hp_color(pct: float) -> tuple[int, int, int]:
 
 
 def draw_level_pluses(
-    screen: pygame.Surface,
-    unit,
-    *,
-    x: int,
-    y: int,
-    font: pygame.font.Font,
-    pad: int = 2,
+        screen: pygame.Surface,
+        unit,
+        *,
+        x: int,
+        y: int,
+        font: pygame.font.Font,
+        pad: int = 2,
 ) -> None:
     """Draw small '+' markers in the top-left of a unit miniature based on its level.
 
@@ -647,9 +703,9 @@ def draw_level_pluses(
         return
 
     colors = [
-        (0, 120, 255),   # blue
-        (255, 220, 0),   # yellow
-        (255, 60, 60),   # red
+        (0, 120, 255),  # blue
+        (255, 220, 0),  # yellow
+        (255, 60, 60),  # red
     ]
 
     plus_h = font.get_height()
@@ -659,15 +715,14 @@ def draw_level_pluses(
         screen.blit(surf, (x + pad, y + i * (plus_h - 2)))
 
 
-
 def draw_selected_building_panel(
-    screen: pygame.Surface,
-    building: Building,
-    *,
-    production_queues: dict,
-    building_animations: Optional[dict] = None,
-    current_time: float,
-    fonts: dict,
+        screen: pygame.Surface,
+        building: Building,
+        *,
+        production_queues: dict,
+        building_animations: Optional[dict] = None,
+        current_time: float,
+        fonts: dict,
 ):
     """AoE2-like info panel for a single selected building."""
     font = fonts.get("font") or pygame.font.SysFont(None, 24)
@@ -815,10 +870,10 @@ def draw_selected_building_panel(
 
 
 def draw_selected_unit_panel(
-    screen: pygame.Surface,
-    unit: Unit,
-    *,
-    fonts: dict,
+        screen: pygame.Surface,
+        unit: Unit,
+        *,
+        fonts: dict,
 ):
     """AoE2-like info panel for a single selected unit."""
     font = fonts.get("font") or pygame.font.SysFont(None, 24)
@@ -957,18 +1012,17 @@ def draw_selected_unit_panel(
         sy += small_font.get_height() + 4
 
 
-
 def draw_selected_entity_panel(
-    screen: pygame.Surface,
-    all_units: list,
-    current_player,
-    production_queues: dict,
-    building_animations: Optional[dict],
-    current_time: float,
-    fonts: dict,
-    *,
-    icon_size: int = 32,
-    icon_margin: int = 5,
+        screen: pygame.Surface,
+        all_units: list,
+        current_player,
+        production_queues: dict,
+        building_animations: Optional[dict],
+        current_time: float,
+        fonts: dict,
+        *,
+        icon_size: int = 32,
+        icon_margin: int = 5,
 ):
     """Draw selected info: AoE2-like building panel when one building is selected, else fallback icons."""
     if not current_player:
@@ -1102,19 +1156,19 @@ def draw_end_screen(screen, mode_text, quit_button, fonts):
 
 
 def draw_game_ui(
-    screen,
-    grid_buttons,
-    current_player,
-    production_queues,
-    building_animations,
-    current_time,
-    all_units,
-    icons,
-    fonts,
-    fps,
-    *,
-    grass_tiles,
-    camera,
+        screen,
+        grid_buttons,
+        current_player,
+        production_queues,
+        building_animations,
+        current_time,
+        all_units,
+        icons,
+        fonts,
+        fps,
+        *,
+        grass_tiles,
+        camera,
 ):
     draw_panels(screen)
     draw_grid_buttons(screen, grid_buttons, current_player, all_units, production_queues, current_time, icons, fonts)
@@ -1132,7 +1186,6 @@ def draw_game_ui(
         ty = PANEL_Y + (PANEL_HEIGHT - totem.get_height()) // 2
         screen.blit(totem, (tx, ty))
 
-
     draw_selected_entity_panel(
         screen,
         all_units,
@@ -1147,6 +1200,7 @@ def draw_game_ui(
     draw_resources_and_limits(screen, current_player, icons, fonts)
     draw_fps(screen, fps, fonts)
     # draw_selected_count(screen, all_units, current_player, fonts)
+
 
 def _minimap_rect():
     # Right panel bounds: x in [SCREEN_WIDTH - VIEW_MARGIN_RIGHT, SCREEN_WIDTH)
@@ -1213,6 +1267,7 @@ def _minimap_base_surface(grass_tiles, size):
     _minimap_base_surface._cache[key] = surf
     return surf
 
+
 def minimap_screen_to_world(pos) -> Vector2 | None:
     """
     If `pos` (screen pixels) is inside the minimap, return the corresponding
@@ -1236,6 +1291,7 @@ def minimap_screen_to_world(pos) -> Vector2 | None:
     wx = max(0.0, min(float(MAP_WIDTH), nx * MAP_WIDTH))
     wy = max(0.0, min(float(MAP_HEIGHT), ny * MAP_HEIGHT))
     return Vector2(wx, wy)
+
 
 def draw_minimap(screen, *, grass_tiles, all_units, camera, current_player):
     mm = _minimap_rect()

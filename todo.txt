@@ -51,12 +51,14 @@ done:
 + walls (auto łączenie)
 + unit leveling up
 + units should have level (militia, professional, veteran)
++? fix: without selected player selection boarders clicks are remember
++ button to kill units and buildings
 
 todo:
 
 
 + roads (zrobic budowe)
-- fire
+- fire animation
 - start screen
 - end screen (objectives)
 - a-move
@@ -69,7 +71,6 @@ todo:
 - repair
 - animations (archer done, cow done, axeman done, knight done)
 - rest of units
-- fix: without selected player selection boarders clicks are remember
 - self learning AI?
 - idle units?
 - fix: when selected with building wrong order (first unit then building)
@@ -81,7 +82,7 @@ todo:
 - dmg only after animation is finished (dmg)
 - FIX: error with COW when she targets enemy unit (building included)
 
-- button to kill units and buildings
+
 - build only near roads
 - road -> cost 10 wood
 

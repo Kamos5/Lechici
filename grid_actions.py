@@ -116,10 +116,29 @@ def execute_grid_cell(
                     u.path_index = 0
             return True, placing_building, building_to_place
 
+        # Kill (V) — bottom-right (2,3). One click kills ONE selected unit/building.
+        if (r, c) == (2, 3):
+            if selected_owned:
+                victim = selected_owned[0]
+                victim.hp = 0
+                victim.selected = False
+                return True, placing_building, building_to_place
+            return False, placing_building, building_to_place
+
         return False, placing_building, building_to_place
 
     # ---- PRODUCTION MODE ----
     selected_barn, selected_barracks, selected_town_center, selected_shamans_hut, selected_warriors_lodge_hut, selected_knights_estate = _get_selected_buildings(current_player)
+
+    # Kill (V) — bottom-right (2,3). One click kills ONE selected unit/building.
+    if (r, c) == (2, 3):
+        if selected_owned:
+            victim = selected_owned[0]
+            victim.hp = 0
+            victim.selected = False
+            return True, placing_building, building_to_place
+        return False, placing_building, building_to_place
+
 
     options = []
     if selected_barn:
@@ -142,8 +161,12 @@ def execute_grid_cell(
             (Wall, selected_town_center, "building"),
         ])
 
-    # (r,c) -> linear idx in packed grid
-    idx = r * len(grid_buttons[0]) + c
+    # (r,c) -> linear idx in packed grid, reserving bottom-right for KILL
+    cols = len(grid_buttons[0])
+    rows = len(grid_buttons)
+    idx = r * cols + c
+    if idx >= cols * rows - 1:
+        return False, placing_building, building_to_place
     if not (0 <= idx < len(options)):
         return False, placing_building, building_to_place
 
