@@ -3,8 +3,10 @@ from pygame.math import Vector2
 
 from typing import Optional
 
+from world_objects import Road
+
 from constants import *
-from units import Unit, Building, Barn, Barracks, TownCenter, Axeman, Archer, Knight, Cow, ShamansHut, KnightsEstate, WarriorsLodge, Ruin, Wall, Tree
+from units import Unit, Building, Barn, Barracks, TownCenter, Axeman, Archer, Knight, Cow, ShamansHut, KnightsEstate, WarriorsLodge, Wall, Tree
 
 
 def load_ui_icons():
@@ -646,7 +648,7 @@ def draw_grid_buttons(screen, grid_buttons, current_player, all_units, productio
                     ('ShamansHut', ShamansHut, active_buildings),
                     ('KnightsEstate', KnightsEstate, active_buildings),
                     ('WarriorsLodge', WarriorsLodge, active_buildings),
-                    ('Ruin', Ruin, active_buildings),
+                    ('Road', Road, active_buildings),
                     ('Wall', Wall, active_buildings),
                 ])
 
@@ -693,13 +695,18 @@ def draw_grid_buttons(screen, grid_buttons, current_player, all_units, productio
                 ui_btn.draw_base(screen, hovered=hov)
 
                 # Ensure icon is loaded even if no instance exists yet
-                if cls.__name__ not in Unit._unit_icons or Unit._unit_icons.get(cls.__name__) is None:
-                    Unit.load_images(
-                        cls.__name__,
-                        BUILDING_SIZE if issubclass(cls, Building) else UNIT_SIZE,
-                    )
-
-                icon = Unit._unit_icons.get(cls.__name__)
+                if cls is Road:
+                    # World-object icon: use the default standalone road tile
+                    if "road10" not in Road._variant_images or Road._variant_images.get("road10") is None:
+                        Road._variant_images["road10"] = Road._load_variant_image("road10")
+                    icon = Road._variant_images.get("road10")
+                else:
+                    if cls.__name__ not in Unit._unit_icons or Unit._unit_icons.get(cls.__name__) is None:
+                        Unit.load_images(
+                            cls.__name__,
+                            BUILDING_SIZE if issubclass(cls, Building) else UNIT_SIZE,
+                        )
+                    icon = Unit._unit_icons.get(cls.__name__)
                 ui_btn.icon = icon
                 # Center-fill the icon, covering the whole button with a small border.
                 ui_btn.draw_icon_fill(screen, icon_pad=4)

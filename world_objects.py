@@ -18,12 +18,30 @@ class WorldObject:
         raise NotImplementedError
 
 class Road(WorldObject):
-    _variant_images: dict[str, pygame.Surface | None] = {}
-    DEFAULT_VARIANT = "road1"
+    """A passable, tile-aligned world object built by players.
 
-    def __init__(self, x, y, *, variant: str | None = None, passable: bool = True):
+    Notes:
+      - x,y are TOP-LEFT tile coords (like tiles), not tile center.
+      - Roads are passable (they don't block movement).
+      - player_id is used to keep road networks separate per player and to enforce
+        placement rules (must connect back to that player's TownCenter).
+    """
+
+    # Build costs (used by the same UI/production system as buildings)
+    milk_cost = 0
+    wood_cost = 5
+
+    _variant_images: dict[str, pygame.Surface | None] = {}
+
+    # Default should be the "no adjacent road" tile per your rules
+    DEFAULT_VARIANT = "road10"
+    VARIANT_MIN = 1
+    VARIANT_MAX = 15
+
+    def __init__(self, x, y, *, variant: str | None = None, passable: bool = True, player_id: int | None = None):
         # Roads should be passable by default
         super().__init__(x, y, passable=passable)
+        self.player_id = player_id
         self.variant = self._sanitize_variant(variant) or self.DEFAULT_VARIANT
         if self.variant not in Road._variant_images:
             Road._variant_images[self.variant] = Road._load_variant_image(self.variant)
@@ -36,7 +54,13 @@ class Road(WorldObject):
             idx = int(v[len("road"):])
         except Exception:
             return None
-        return v if 1 <= idx <= 15 else None
+        return v if Road.VARIANT_MIN <= idx <= Road.VARIANT_MAX else None
+
+    def set_variant(self, variant: str) -> None:
+        v = self._sanitize_variant(variant) or self.DEFAULT_VARIANT
+        self.variant = v
+        if v not in Road._variant_images:
+            Road._variant_images[v] = Road._load_variant_image(v)
 
     @classmethod
     def _load_variant_image(cls, variant: str) -> pygame.Surface | None:

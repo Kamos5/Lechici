@@ -18,7 +18,7 @@ from utils import is_tile_occupied, find_valid_spawn_tiles
 from worldgen import init_game_world
 from world_objects import Bridge, Road
 from tiles import GrassTile, Dirt, River
-from units import Unit, Tree, Building, Barn, TownCenter, Barracks, KnightsEstate, WarriorsLodge, Ruin, Axeman, Knight, Archer, Cow, ShamansHut, Wall
+from units import Unit, Tree, Building, Barn, TownCenter, Barracks, KnightsEstate, WarriorsLodge, Axeman, Knight, Archer, Cow, ShamansHut, Wall
 from player import Player, PlayerAI
 from pathfinding import SpatialGrid, WaypointGraph
 import ui
@@ -150,6 +150,10 @@ def run_game() -> int:
     # Building footprint is class-defined (Building.SIZE_TILES == 3 by default).
     # Walls override it to 1.
     def _placement_size_for(cls) -> int:
+        # Roads are tile-sized world objects
+        if cls is Road:
+            return TILE_SIZE
+
         size_tiles = int(getattr(cls, "SIZE_TILES", max(1, int(BUILDING_SIZE // TILE_SIZE))))
         return size_tiles * TILE_SIZE
 
@@ -217,6 +221,139 @@ def run_game() -> int:
             v = _compute_wall_variant(all_units, w)
             w.set_variant(v)
 
+    # --- Road auto-connect (like Wall) ---
+    # Map (U, D, L, R) -> road variant (road1..road15)
+    _ROAD_VARIANT = {
+        (0, 0, 0, 0): "road10",  # no adjacent
+        (0, 0, 0, 1): "road1",  # right
+        (0, 0, 1, 0): "road2",  # left
+        (0, 1, 0, 0): "road3",  # down
+        (1, 0, 0, 0): "road4",  # up
+
+        (1, 0, 0, 1): "road5",  # up + left
+        (1, 1, 0, 0): "road6",  # up + down
+        (0, 1, 0, 1): "road7",  # right + down
+        (1, 1, 0, 1): "road8",  # up + right + down
+        (1, 0, 1, 0): "road9",  # up + right
+
+        (0, 0, 1, 1): "road10",  # left + right
+        (1, 0, 1, 1): "road11",  # left + up + right
+        (0, 1, 1, 0): "road12",  # left + down
+        (1, 1, 1, 0): "road13",  # up + down + left
+        (0, 1, 1, 1): "road14",  # left + right + down
+        (1, 1, 1, 1): "road15",  # all 4
+    }
+
+    def _tile_of_world_object(obj) -> tuple[int, int]:
+        return (int(obj.pos.x // TILE_SIZE), int(obj.pos.y // TILE_SIZE))
+
+    def _find_road_at(world_objects, tx: int, ty: int, player_id: int):
+        # roads are stored in context.world_objects
+        for o in world_objects:
+            if isinstance(o, Road) and getattr(o, 'player_id', None) == player_id:
+                ox, oy = _tile_of_world_object(o)
+                if ox == tx and oy == ty:
+                    return o
+        return None
+
+    def _compute_road_variant(world_objects, road: Road) -> str:
+        tx, ty = _tile_of_world_object(road)
+        pid = getattr(road, 'player_id', None)
+        if pid is None:
+            pid = -1
+
+        up = 1 if _find_road_at(world_objects, tx, ty - 1, pid) else 0
+        down = 1 if _find_road_at(world_objects, tx, ty + 1, pid) else 0
+        left = 1 if _find_road_at(world_objects, tx - 1, ty, pid) else 0
+        right = 1 if _find_road_at(world_objects, tx + 1, ty, pid) else 0
+
+        return _ROAD_VARIANT.get((up, down, left, right), "road10")
+
+    def _refresh_road_and_neighbors(world_objects, road: Road) -> None:
+        """Recompute variant for road and its 4-neighbors (same player)."""
+        tx, ty = _tile_of_world_object(road)
+        pid = getattr(road, 'player_id', None)
+        if pid is None:
+            pid = -1
+
+        candidates = [road]
+        for dx, dy in ((0, -1), (0, 1), (-1, 0), (1, 0)):
+            r2 = _find_road_at(world_objects, tx + dx, ty + dy, pid)
+            if r2:
+                candidates.append(r2)
+
+        for r in candidates:
+            v = _compute_road_variant(world_objects, r)
+            r.set_variant(v)
+
+    def _building_footprint_tiles(b) -> set[tuple[int, int]]:
+        size_tiles = int(getattr(b, 'SIZE_TILES', max(1, int(b.size // TILE_SIZE))))
+        cx = int(b.pos.x // TILE_SIZE)
+        cy = int(b.pos.y // TILE_SIZE)
+        half = size_tiles // 2
+        out = set()
+        for dy in range(-half, half + 1):
+            for dx in range(-half, half + 1):
+                out.add((cx + dx, cy + dy))
+        return out
+
+    def _road_can_place(player, world_objects, all_units, tx: int, ty: int) -> bool:
+        """Road must connect to this player's TownCenter (directly adjacent) or via an existing connected road chain."""
+        if not player:
+            return False
+
+        pid = player.player_id
+        town_centers = [u for u in all_units if isinstance(u, TownCenter) and u.player_id == pid and getattr(u, 'alpha', 255) == 255]
+        if not town_centers:
+            return False
+
+        # Adjacent to any town center footprint => ok
+        for tc in town_centers:
+            fp = _building_footprint_tiles(tc)
+            for fx, fy in fp:
+                if abs(fx - tx) + abs(fy - ty) == 1:
+                    return True
+
+        # Build a dict of this player's roads by tile
+        roads = {}
+        for o in world_objects:
+            if isinstance(o, Road) and getattr(o, 'player_id', None) == pid:
+                rx, ry = _tile_of_world_object(o)
+                roads[(rx, ry)] = o
+
+        if not roads:
+            return False
+
+        # Seed BFS with all roads adjacent to TC footprints
+        seeds = []
+        for tc in town_centers:
+            fp = _building_footprint_tiles(tc)
+            for fx, fy in fp:
+                for dx, dy in ((0, -1), (0, 1), (-1, 0), (1, 0)):
+                    k = (fx + dx, fy + dy)
+                    if k in roads:
+                        seeds.append(k)
+
+        if not seeds:
+            return False
+
+        visited = set(seeds)
+        stack = list(seeds)
+        while stack:
+            x, y = stack.pop()
+            for dx, dy in ((0, -1), (0, 1), (-1, 0), (1, 0)):
+                nk = (x + dx, y + dy)
+                if nk in roads and nk not in visited:
+                    visited.add(nk)
+                    stack.append(nk)
+
+        # New road must be adjacent to some connected road
+        for dx, dy in ((0, -1), (0, 1), (-1, 0), (1, 0)):
+            if (tx + dx, ty + dy) in visited:
+                return True
+
+        return False
+
     current_player = players[1]
 
     # --- Multi-selection grouping helpers (UI/stat-screen style) ---
@@ -259,7 +396,7 @@ def run_game() -> int:
         if not groups:
             idx = 0
         else:
-            idx = max(0, min(idx, len(groups)-1))
+            idx = max(0, min(idx, len(groups) - 1))
         setattr(p, "active_selection_group_index", idx)
 
     def _cycle_selection_group(p):
@@ -447,50 +584,89 @@ def run_game() -> int:
                                     break
 
                             if valid_placement and building_to_place:
-                                # Deduct NOW (only on successful placement)
-                                if current_player.milk < building_to_place.milk_cost or current_player.wood < building_to_place.wood_cost:
-                                    print("Not enough resources to place building.")
+                                # Special-case: Road is a tile-sized world object
+                                if building_to_place is Road:
+                                    world_objects = getattr(context, "world_objects", None)
+                                    if world_objects is None:
+                                        context.world_objects = []
+                                        world_objects = context.world_objects
+
+                                    # road placement uses TOP-LEFT coords
+                                    # extra rule: must connect to player's TownCenter via a road chain
+
+                                    if isinstance(context.grass_tiles[tile_y][tile_x], River):
+                                        print("Cannot place Road on River.")
+                                        valid_placement = False
+
+                                    if not valid_placement:
+                                        print("Invalid placement position: occupied or out of bounds")
+                                    elif _find_road_at(world_objects, tile_x, tile_y, current_player.player_id):
+                                        print("There is already a road here.")
+                                    elif not _road_can_place(current_player, world_objects, all_units, tile_x, tile_y):
+                                        print("Road must connect (directly or indirectly) to your TownCenter.")
+                                    elif current_player.milk < Road.milk_cost or current_player.wood < Road.wood_cost:
+                                        print("Not enough resources to place Road.")
+                                    else:
+                                        current_player.milk -= Road.milk_cost
+                                        current_player.wood -= Road.wood_cost
+
+                                        new_road = Road(tile_x * TILE_SIZE, tile_y * TILE_SIZE, player_id=current_player.player_id)
+                                        world_objects.append(new_road)
+
+                                        # auto-connect: update this road + adjacent roads (same player)
+                                        _refresh_road_and_neighbors(world_objects, new_road)
+
+                                        print(f"Placed Road at tile ({tile_x},{tile_y}) for Player {current_player.player_id}")
+
+                                        # Reset placement state
+                                        placing_building = False
+                                        building_to_place = None
+                                        building_pos = None
                                 else:
-                                    current_player.milk -= building_to_place.milk_cost
-                                    current_player.wood -= building_to_place.wood_cost
+                                    # Deduct NOW (only on successful placement)
+                                    if current_player.milk < building_to_place.milk_cost or current_player.wood < building_to_place.wood_cost:
+                                        print("Not enough resources to place building.")
+                                    else:
+                                        current_player.milk -= building_to_place.milk_cost
+                                        current_player.wood -= building_to_place.wood_cost
 
-                                    # They fade in via alpha and also "build up" HP from 1 -> max_hp over production_time.
-                                    new_building = building_to_place(building_pos.x, building_pos.y, current_player.player_id, current_player.color)
-                                    # Start buildings under construction.
-                                    # They fade in via alpha and also "build up" HP from 1 -> max_hp over production_time.
-                                    new_building.alpha = 0
-                                    new_building.hp = 1
-                                    current_player.add_unit(new_building)
-                                    all_units.add(new_building)
-                                    spatial_grid.add_unit(new_building)
+                                        # They fade in via alpha and also "build up" HP from 1 -> max_hp over production_time.
+                                        new_building = building_to_place(building_pos.x, building_pos.y, current_player.player_id, current_player.color)
+                                        # Start buildings under construction.
+                                        # They fade in via alpha and also "build up" HP from 1 -> max_hp over production_time.
+                                        new_building.alpha = 0
+                                        new_building.hp = 1
+                                        current_player.add_unit(new_building)
+                                        all_units.add(new_building)
+                                        spatial_grid.add_unit(new_building)
 
-                                    # --- Wall auto-connect: update this wall + adjacent walls (same player) ---
-                                    if isinstance(new_building, Wall):
-                                        _refresh_wall_and_neighbors(all_units, new_building)
+                                        # --- Wall auto-connect: update this wall + adjacent walls (same player) ---
+                                        if isinstance(new_building, Wall):
+                                            _refresh_wall_and_neighbors(all_units, new_building)
 
-                                    # Paint area to dirt (same as your old placement code)
-                                    # (Skip for tile-sized walls so they don't leave a dirt "footprint".)
-                                    if getattr(building_to_place, "__name__", "") != "Wall":
-                                        for row in range(tile_y - building_size_tiles // 2, tile_y + building_size_tiles // 2 + 1):
-                                            for col in range(tile_x - building_size_tiles // 2, tile_x + building_size_tiles // 2 + 1):
-                                                if 0 <= row < GRASS_ROWS and 0 <= col < GRASS_COLS:
-                                                    grass_tiles[row][col] = Dirt(col * TILE_SIZE, row * TILE_SIZE)
+                                        # Paint area to dirt (same as your old placement code)
+                                        # (Skip for tile-sized walls so they don't leave a dirt "footprint".)
+                                        if getattr(building_to_place, "__name__", "") != "Wall":
+                                            for row in range(tile_y - building_size_tiles // 2, tile_y + building_size_tiles // 2 + 1):
+                                                for col in range(tile_x - building_size_tiles // 2, tile_x + building_size_tiles // 2 + 1):
+                                                    if 0 <= row < GRASS_ROWS and 0 <= col < GRASS_COLS:
+                                                        grass_tiles[row][col] = Dirt(col * TILE_SIZE, row * TILE_SIZE)
 
-                                    highlight_times[new_building] = current_time
-                                    building_animations[new_building] = {
-                                        'start_time': current_time,
-                                        'alpha': 0,
-                                        'town_center': None,
-                                        # used to make construction HP progression frame-rate independent
-                                        'last_time': current_time,
-                                    }
+                                        highlight_times[new_building] = current_time
+                                        building_animations[new_building] = {
+                                            'start_time': current_time,
+                                            'alpha': 0,
+                                            'town_center': None,
+                                            # used to make construction HP progression frame-rate independent
+                                            'last_time': current_time,
+                                        }
 
-                                    print(f"Placed {building_to_place.__name__} at {building_pos} for Player {current_player.player_id}")
+                                        print(f"Placed {building_to_place.__name__} at {building_pos} for Player {current_player.player_id}")
 
-                                    # Reset placement state
-                                    placing_building = False
-                                    building_to_place = None
-                                    building_pos = None
+                                        # Reset placement state
+                                        placing_building = False
+                                        building_to_place = None
+                                        building_pos = None
                             else:
                                 print("Invalid placement position: occupied or out of bounds")
 
@@ -943,17 +1119,13 @@ def run_game() -> int:
                 end_y = anim['end_pos'].y - camera.y + VIEW_MARGIN_TOP
                 pygame.draw.line(screen, anim['color'], (start_x, start_y), (end_x, end_y), 2)
 
-            # Draw building preview during placement
+            # Draw building/road preview during placement
             if placing_building and building_pos:
-                temp_building = building_to_place(building_pos.x, building_pos.y, current_player.player_id, current_player.color)
-                cls_name = building_to_place.__name__
-                image = Unit._images.get(cls_name)
                 building_size = _placement_size_for(building_to_place)
                 tile_x = int(building_pos.x // TILE_SIZE)
                 tile_y = int(building_pos.y // TILE_SIZE)
-                snapped_building_pos = Vector2(tile_x * TILE_SIZE + TILE_HALF, tile_y * TILE_SIZE + TILE_HALF)
-                x = snapped_building_pos.x - camera.x + VIEW_MARGIN_LEFT
-                y = snapped_building_pos.y - camera.y + VIEW_MARGIN_TOP
+
+                # compute occupancy validity (buildings use footprint; road is 1 tile)
                 valid_placement = True
                 building_size_tiles = int(building_size // TILE_SIZE)
                 for row in range(tile_y - building_size_tiles // 2, tile_y + building_size_tiles // 2 + 1):
@@ -963,19 +1135,64 @@ def run_game() -> int:
                             break
                     if not valid_placement:
                         break
-                if image:
-                    preview_image = image.copy()
-                    preview_image.set_alpha(128)
-                    image_rect = preview_image.get_rect(center=(int(x), int(y)))
-                    screen.blit(preview_image, image_rect)
+
+                if building_to_place is Road:
+                    world_objects = getattr(context, "world_objects", [])
+                    # additional rule: road must connect to TownCenter chain
+                    if valid_placement and isinstance(context.grass_tiles[tile_y][tile_x], River):
+                        valid_placement = False
+                    if valid_placement and (_find_road_at(world_objects, tile_x, tile_y, current_player.player_id) is not None):
+                        valid_placement = False
+                    if valid_placement and (not _road_can_place(current_player, world_objects, all_units, tile_x, tile_y)):
+                        valid_placement = False
+
+                    # preview uses a road variant that matches nearby placed roads
+                    tmp = Road(tile_x * TILE_SIZE, tile_y * TILE_SIZE, player_id=current_player.player_id)
+                    v = _compute_road_variant(world_objects + [tmp], tmp)
+                    tmp.set_variant(v)
+                    img = Road._variant_images.get(tmp.variant)
+                    if img is None:
+                        Road._variant_images[tmp.variant] = Road._load_variant_image(tmp.variant)
+                        img = Road._variant_images.get(tmp.variant)
+
+                    px = tmp.pos.x - camera.x + VIEW_MARGIN_LEFT
+                    py = tmp.pos.y - camera.y + VIEW_MARGIN_TOP
+
+                    if img is not None:
+                        preview_image = img.copy()
+                        preview_image.set_alpha(128)
+                        screen.blit(preview_image, (px, py))
+                    else:
+                        surf = pygame.Surface((TILE_SIZE, TILE_SIZE), pygame.SRCALPHA)
+                        surf.fill((90, 90, 90, 128))
+                        screen.blit(surf, (px, py))
+
+                    border_color = GREEN if valid_placement else RED
+                    pygame.draw.rect(screen, border_color, (px, py, TILE_SIZE, TILE_SIZE), 2)
+
                 else:
-                    preview_surface = pygame.Surface((building_size, building_size), pygame.SRCALPHA)
-                    preview_surface.fill(temp_building.color[:3] + (128,))
-                    screen.blit(preview_surface, (x - building_size / 2, y - building_size / 2))
-                border_color = GREEN if valid_placement else RED
-                snapped_x = snapped_building_pos.x - camera.x + VIEW_MARGIN_LEFT
-                snapped_y = snapped_building_pos.y - camera.y + VIEW_MARGIN_TOP
-                pygame.draw.rect(screen, border_color, (snapped_x - building_size / 2, snapped_y - building_size / 2, building_size, building_size), 2)
+                    # building preview (existing behavior)
+                    temp_building = building_to_place(building_pos.x, building_pos.y, current_player.player_id, current_player.color)
+                    cls_name = building_to_place.__name__
+                    image = Unit._images.get(cls_name)
+                    snapped_building_pos = Vector2(tile_x * TILE_SIZE + TILE_HALF, tile_y * TILE_SIZE + TILE_HALF)
+                    x = snapped_building_pos.x - camera.x + VIEW_MARGIN_LEFT
+                    y = snapped_building_pos.y - camera.y + VIEW_MARGIN_TOP
+
+                    if image:
+                        preview_image = image.copy()
+                        preview_image.set_alpha(128)
+                        image_rect = preview_image.get_rect(center=(int(x), int(y)))
+                        screen.blit(preview_image, image_rect)
+                    else:
+                        preview_surface = pygame.Surface((building_size, building_size), pygame.SRCALPHA)
+                        preview_surface.fill(temp_building.color[:3] + (128,))
+                        screen.blit(preview_surface, (x - building_size / 2, y - building_size / 2))
+
+                    border_color = GREEN if valid_placement else RED
+                    snapped_x = snapped_building_pos.x - camera.x + VIEW_MARGIN_LEFT
+                    snapped_y = snapped_building_pos.y - camera.y + VIEW_MARGIN_TOP
+                    pygame.draw.rect(screen, border_color, (snapped_x - building_size / 2, snapped_y - building_size / 2, building_size, building_size), 2)
 
             # Draw selection rectangle
             if selecting and selection_start and selection_end and current_player:
