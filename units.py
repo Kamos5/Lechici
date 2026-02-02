@@ -13,6 +13,9 @@ from constants import *
 import context
 from tiles import GrassTile, Dirt
 
+# XP/level progression (kept separate for easier tuning)
+import progression
+
 # --- Team-color mask swap (shared by game + editor) ---
 
 # Which color(s) in each sprite should be replaced with player_color.
@@ -357,6 +360,15 @@ class Unit:
         self.attackers = []  # List of (attacker, timestamp) tuples
         self.attacker_timeout = 5.0  # Remove attackers after 5 seconds
 
+        # --- Progression (XP + levels) ---
+        # Starts at novice (level 0) with 0 XP.
+        self.xp: int = 0
+        self.level: int = 0
+        # Base stats are snapshotted lazily on first XP gain (see progression.ensure_base_stats)
+        self.base_max_hp: int | None = None
+        self.base_attack_damage: int | None = None
+        self._progression_base_initialized: bool = False
+
     @classmethod
     def load_images(cls, cls_name, size):
         # Buildings: assets/units/buildings/{buildingname}.png
@@ -675,7 +687,10 @@ class Unit:
                     'start_time': context.current_time
                 })
                 damage = max(0, self.attack_damage - target.armor)
+                hp_before = float(getattr(target, "hp", 0))
                 target.hp -= damage
+                # Progression XP: 1 per damaging hit, bonus on kill/destroy.
+                progression.award_combat_xp(self, target, damage=damage, target_hp_before=hp_before)
                 self.last_attack_time = context.current_time
                 print(f"{self.__class__.__name__} at {self.pos} attacked {target.__class__.__name__} at {target.pos}, dealing {damage} damage")
                 # Notify target of attack for defensive behavior
@@ -1501,7 +1516,10 @@ class Axeman(Unit):
 
         # do normal damage + aggro logic
         damage = max(0, self.attack_damage - target.armor)
+        hp_before = float(getattr(target, "hp", 0))
         target.hp -= damage
+        # Progression XP: 1 per damaging hit, bonus on kill/destroy.
+        progression.award_combat_xp(self, target, damage=damage, target_hp_before=hp_before)
         self.last_attack_time = context.current_time
         print(f"{self.__class__.__name__} at {self.pos} attacked {target.__class__.__name__} at {target.pos}, dealing {damage} damage")
 
@@ -1587,7 +1605,10 @@ class Knight(Unit):
 
         # deal damage (melee = immediate)
         damage = max(0, self.attack_damage - target.armor)
+        hp_before = float(getattr(target, "hp", 0))
         target.hp -= damage
+        # Progression XP: 1 per damaging hit, bonus on kill/destroy.
+        progression.award_combat_xp(self, target, damage=damage, target_hp_before=hp_before)
         self.last_attack_time = context.current_time
         print(f"{self.__class__.__name__} at {self.pos} attacked {target.__class__.__name__} at {target.pos}, dealing {damage} damage")
 
@@ -1745,7 +1766,10 @@ class Archer(Unit):
                 # print(f"Arrow missed {target.__class__.__name__}: impact={impact_point}, target_now={target.pos}")
                 return
 
+            hp_before = float(getattr(target, "hp", 0))
             target.hp -= damage
+            # Progression XP: 1 per damaging hit, bonus on kill/destroy.
+            progression.award_combat_xp(self, target, damage=damage, target_hp_before=hp_before)
             print(f"Arrow hit {target.__class__.__name__} at {target.pos}, dealing {damage} damage")
 
         # Spawn arrow effect roughly mid-animation

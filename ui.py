@@ -6,6 +6,9 @@ from typing import Optional
 from constants import *
 from units import Unit, Building, Barn, Barracks, TownCenter, Axeman, Archer, Knight, Cow, ShamansHut, KnightsEstate, WarriorsLodge, Ruin, Wall
 
+# XP/level progression (kept separate for easier tuning)
+import progression
+
 
 def load_ui_icons():
     """Load and scale UI icons. Falls back to colored squares if missing."""
@@ -868,6 +871,12 @@ def draw_selected_unit_panel(
             stats_lines.append(f"Mana: {int(mana)}/{int(max_mana)}")
         else:
             stats_lines.append(f"Mana: {int(mana)}")
+
+    # Progression (XP + level)
+    if hasattr(unit, "xp") and hasattr(unit, "level"):
+        lvl_idx = int(getattr(unit, "level", 0) or 0)
+        stats_lines.append(f"Level: {progression.level_name_from_index(lvl_idx)}")
+        stats_lines.append(f"XP: {int(getattr(unit, 'xp', 0) or 0)}")
 
     sx = icon_rect.right + 12
     sy = icon_rect.y

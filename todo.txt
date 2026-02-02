@@ -49,6 +49,7 @@ done:
 + dodging arrow/projectiles?
 + hp of build and units better displayed
 + walls (auto łączenie)
++ unit leveling up
 
 todo:
 
@@ -61,6 +62,7 @@ todo:
 - control groups
 - fullscreen
 - fog of war
+
 - sounds?
 - upgrade units
 - repair
