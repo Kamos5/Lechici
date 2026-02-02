@@ -53,6 +53,7 @@ done:
 + units should have level (militia, professional, veteran)
 +? fix: without selected player selection boarders clicks are remember
 + button to kill units and buildings
++ icons for actions/buildings (done)
 
 todo:
 
@@ -66,6 +67,8 @@ todo:
 - fullscreen
 - fog of war
 
+- rework selection box + screen (not mixing units and buildings + only buttons/skills of first unit group in array (tab changes to the next))
+- fix: units gating stuck together
 - sounds?
 - upgrade units
 - repair
