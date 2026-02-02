@@ -24,6 +24,7 @@ from pathfinding import SpatialGrid, WaypointGraph
 import ui
 from camera import Camera
 
+
 def run_game() -> int:
     """
     Runs the RTS game.
@@ -126,6 +127,12 @@ def run_game() -> int:
     # --- NEW: minimap drag state ---
     minimap_dragging = False
 
+    # --- NEW: right-mouse camera drag (pan) state ---
+    right_mouse_down = False
+    right_mouse_dragging = False
+    right_mouse_last = None  # Vector2 (screen coords)
+    right_drag_threshold_px = 4  # pixels
+
     # UI rectangles/fonts already created via ui.build_ui_layout() and ui.create_fonts()
 
     # --- SPLIT POINT (End of Part 1) --- (End of Part 1) ---
@@ -139,6 +146,7 @@ def run_game() -> int:
     placing_building = False
     building_to_place = None
     building_pos = None
+
     # Building footprint is class-defined (Building.SIZE_TILES == 3 by default).
     # Walls override it to 1.
     def _placement_size_for(cls) -> int:
@@ -211,7 +219,75 @@ def run_game() -> int:
 
     current_player = players[1]
 
+    def _handle_right_click_command(screen_pos: tuple[int, int], current_time: float) -> None:
+        """Existing right-click behavior (move/attack/rally/cancel placement)."""
+        nonlocal placing_building, building_to_place, building_pos
 
+        mouse_pos = Vector2(screen_pos)
+
+        if placing_building:
+            print(f"Building placement canceled for {building_to_place.__name__}")
+            placing_building = False
+            building_to_place = None
+            building_pos = None
+        elif VIEW_MARGIN_LEFT <= mouse_pos.x <= VIEW_BOUNDS_X and VIEW_MARGIN_TOP <= mouse_pos.y <= VIEW_BOUNDS_Y:
+            click_pos = camera.screen_to_world(mouse_pos, view_margin_left=VIEW_MARGIN_LEFT, view_margin_top=VIEW_MARGIN_TOP)
+            tile_x = int(click_pos.x // TILE_SIZE)
+            tile_y = int(click_pos.y // TILE_SIZE)
+            snapped_pos = (tile_x * TILE_SIZE + TILE_HALF, tile_y * TILE_SIZE + TILE_HALF)
+            clicked_unit = None
+            for unit in all_units:
+                if unit.is_clicked(Vector2(mouse_pos.x - VIEW_MARGIN_LEFT, mouse_pos.y - VIEW_MARGIN_TOP), camera.x, camera.y):
+                    clicked_unit = unit
+                    break
+            selected_building = None
+            selected_non_buildings = 0
+            if current_player:
+                for unit in current_player.units:
+                    if unit.selected:
+                        if isinstance(unit, Building):
+                            if selected_building is None:
+                                selected_building = unit
+                            else:
+                                selected_building = None
+                        else:
+                            selected_non_buildings += 1
+            if selected_building and selected_non_buildings == 0 and not clicked_unit:
+                selected_building.rally_point = Vector2(snapped_pos)
+                print(f"Set rally point for {selected_building.__class__.__name__} at {selected_building.pos} to {selected_building.rally_point}")
+                move_order_times[snapped_pos] = current_time
+            else:
+                for unit in all_units:
+                    if unit.selected and not isinstance(unit, (Building, Tree)):
+                        clicked_tree = clicked_unit if isinstance(clicked_unit, Tree) and clicked_unit.player_id == 0 else None
+                        if clicked_tree and isinstance(unit, Axeman) and unit.special == 0 and not unit.depositing:
+                            unit.target = clicked_tree.pos
+                            unit.autonomous_target = False
+
+                        elif clicked_unit and not isinstance(clicked_unit, Tree) and (clicked_unit.player_id != unit.player_id or clicked_unit.player_id == 0):
+                            unit.target = clicked_unit
+                            unit.autonomous_target = False
+
+                        elif (clicked_unit
+                              and isinstance(clicked_unit, TownCenter)
+                              and clicked_unit.player_id == unit.player_id
+                              and isinstance(unit, Axeman)
+                              and unit.special > 0):
+                            # Manual deposit order: behave exactly like the automatic deposit
+                            unit.target = Vector2(clicked_unit.pos)  # IMPORTANT: use TC center, not raw click_pos
+                            unit.depositing = True
+                            unit.return_pos = None  # optional; prevents returning-to-old-tree logic
+                            unit.autonomous_target = False
+                            unit.path = waypoint_graph.get_path(unit.pos, unit.target, unit) if waypoint_graph else [unit.pos, unit.target]
+                            unit.path_index = 0
+
+                        else:
+                            # Normal move order should cancel a deposit run
+                            if isinstance(unit, Axeman):
+                                unit.depositing = False
+
+                            unit.target = Vector2(click_pos.x, click_pos.y)
+                            unit.autonomous_target = False
 
     while running:
 
@@ -394,71 +470,12 @@ def run_game() -> int:
                                         selection_start = click_pos
                                         selection_end = click_pos
                                         selecting = False
-                    elif event.button == 3:  # Right click
-                        mouse_pos = Vector2(event.pos)
-                        if placing_building:
-                            print(f"Building placement canceled for {building_to_place.__name__}")
-                            placing_building = False
-                            building_to_place = None
-                            building_pos = None
-                        elif VIEW_MARGIN_LEFT <= mouse_pos.x <= VIEW_BOUNDS_X and VIEW_MARGIN_TOP <= mouse_pos.y <= VIEW_BOUNDS_Y:
-                            click_pos = camera.screen_to_world(mouse_pos, view_margin_left=VIEW_MARGIN_LEFT, view_margin_top=VIEW_MARGIN_TOP)
-                            tile_x = int(click_pos.x // TILE_SIZE)
-                            tile_y = int(click_pos.y // TILE_SIZE)
-                            snapped_pos = (tile_x * TILE_SIZE + TILE_HALF, tile_y * TILE_SIZE + TILE_HALF)
-                            clicked_unit = None
-                            for unit in all_units:
-                                if unit.is_clicked(Vector2(mouse_pos.x - VIEW_MARGIN_LEFT, mouse_pos.y - VIEW_MARGIN_TOP), camera.x, camera.y):
-                                    clicked_unit = unit
-                                    break
-                            selected_building = None
-                            selected_non_buildings = 0
-                            if current_player:
-                                for unit in current_player.units:
-                                    if unit.selected:
-                                        if isinstance(unit, Building):
-                                            if selected_building is None:
-                                                selected_building = unit
-                                            else:
-                                                selected_building = None
-                                        else:
-                                            selected_non_buildings += 1
-                            if selected_building and selected_non_buildings == 0 and not clicked_unit:
-                                selected_building.rally_point = Vector2(snapped_pos)
-                                print(f"Set rally point for {selected_building.__class__.__name__} at {selected_building.pos} to {selected_building.rally_point}")
-                                move_order_times[snapped_pos] = current_time
-                            else:
-                                for unit in all_units:
-                                    if unit.selected and not isinstance(unit, (Building, Tree)):
-                                        clicked_tree = clicked_unit if isinstance(clicked_unit, Tree) and clicked_unit.player_id == 0 else None
-                                        if clicked_tree and isinstance(unit, Axeman) and unit.special == 0 and not unit.depositing:
-                                            unit.target = clicked_tree.pos
-                                            unit.autonomous_target = False
 
-                                        elif clicked_unit and not isinstance(clicked_unit, Tree) and (clicked_unit.player_id != unit.player_id or clicked_unit.player_id == 0):
-                                            unit.target = clicked_unit
-                                            unit.autonomous_target = False
+                    elif event.button == 3:  # Right click (hold + drag pans camera)
+                        right_mouse_down = True
+                        right_mouse_dragging = False
+                        right_mouse_last = Vector2(event.pos)
 
-                                        elif (clicked_unit
-                                              and isinstance(clicked_unit, TownCenter)
-                                              and clicked_unit.player_id == unit.player_id
-                                              and isinstance(unit, Axeman)
-                                              and unit.special > 0):
-                                            # Manual deposit order: behave exactly like the automatic deposit
-                                            unit.target = Vector2(clicked_unit.pos)  # IMPORTANT: use TC center, not raw click_pos
-                                            unit.depositing = True
-                                            unit.return_pos = None  # optional; prevents returning-to-old-tree logic
-                                            unit.autonomous_target = False
-                                            unit.path = waypoint_graph.get_path(unit.pos, unit.target, unit) if waypoint_graph else [unit.pos, unit.target]
-                                            unit.path_index = 0
-
-                                        else:
-                                            # Normal move order should cancel a deposit run
-                                            if isinstance(unit, Axeman):
-                                                unit.depositing = False
-
-                                            unit.target = Vector2(click_pos.x, click_pos.y)
-                                            unit.autonomous_target = False
             elif event.type == pygame.KEYDOWN and game_state == GameState.RUNNING:
                 cell = grid_actions.cell_from_key(event.key)
                 if cell and current_player:
@@ -474,7 +491,22 @@ def run_game() -> int:
                     )
 
             elif event.type == pygame.MOUSEBUTTONUP:
-                if game_state == GameState.RUNNING and event.button == 1:
+                if game_state == GameState.RUNNING and event.button == 3:
+                    # End right-mouse drag-pan, or execute a normal right-click command if it was just a click.
+                    if right_mouse_down:
+                        if right_mouse_dragging:
+                            right_mouse_down = False
+                            right_mouse_dragging = False
+                            right_mouse_last = None
+                            continue
+                        else:
+                            right_mouse_down = False
+                            right_mouse_dragging = False
+                            right_mouse_last = None
+                            _handle_right_click_command(event.pos, current_time)
+                            continue
+
+                elif game_state == GameState.RUNNING and event.button == 1:
                     # Finish box-select
                     # --- NEW: end minimap drag ---
                     if minimap_dragging:
@@ -549,6 +581,24 @@ def run_game() -> int:
                             camera.center_on(mm_world)
                         continue  # don't let minimap drag turn into box select / placement updates
 
+                    # --- NEW: right-mouse drag pans camera ---
+                    if right_mouse_down and right_mouse_last is not None:
+                        now = Vector2(event.pos)
+                        delta = now - right_mouse_last
+
+                        # Decide if this is a drag (vs a click) once we move a little.
+                        if (not right_mouse_dragging) and delta.length_squared() >= (right_drag_threshold_px * right_drag_threshold_px):
+                            right_mouse_dragging = True
+
+                        if right_mouse_dragging:
+                            # Camera moves with mouse movement (drag right -> camera moves right).
+                            camera.pan(-delta.x, -delta.y)
+                            right_mouse_last = now
+                            continue  # don't let camera drag interfere with selection/placement updates
+                        else:
+                            # Not yet a drag: keep updating last position so delta is measured from latest.
+                            right_mouse_last = now
+
                     # If we have a pending click, turn it into a box-select once we move far enough.
                     if pending_click and not selecting and mouse_down_screen is not None:
                         delta = Vector2(event.pos) - mouse_down_screen
@@ -579,7 +629,7 @@ def run_game() -> int:
         if game_state == GameState.RUNNING:
             # Update camera
             mouse_pos_screen = pygame.mouse.get_pos()
-            if not minimap_dragging:
+            if not minimap_dragging and not right_mouse_dragging:
                 camera.update(mouse_pos_screen)
 
             # Check for building selection
@@ -594,7 +644,7 @@ def run_game() -> int:
             dx = (keys[pygame.K_RIGHT] - keys[pygame.K_LEFT]) * CAMERA_KEY_SPEED
             dy = (keys[pygame.K_DOWN] - keys[pygame.K_UP]) * CAMERA_KEY_SPEED
 
-            if dx or dy:
+            if (dx or dy) and not right_mouse_dragging:
                 camera.x = max(0, min(camera.x + dx, MAP_WIDTH - VIEW_WIDTH))
                 camera.y = max(0, min(camera.y + dy, MAP_HEIGHT - VIEW_HEIGHT))
 
@@ -902,6 +952,7 @@ def run_game() -> int:
     # pygame.quit()
     return 1 if game_state == GameState.VICTORY else 0
     # sys.exit()
+
 
 if __name__ == "__main__":
     result = run_game()

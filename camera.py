@@ -55,6 +55,21 @@ class Camera:
                 self.y += self.scroll_speed
             self.y = self._clamp_axis(self.y, self.view_height, self.map_height)
 
+
+    def pan(self, dx: float, dy: float) -> None:
+        """Pan camera by (dx, dy) in world pixels, clamped to map bounds."""
+        # X axis
+        if self.map_width <= self.view_width:
+            self.x = self._center_axis(self.view_width, self.map_width)
+        else:
+            self.x = self._clamp_axis(self.x + float(dx), self.view_width, self.map_width)
+
+        # Y axis
+        if self.map_height <= self.view_height:
+            self.y = self._center_axis(self.view_height, self.map_height)
+        else:
+            self.y = self._clamp_axis(self.y + float(dy), self.view_height, self.map_height)
+
     def screen_to_world(self, screen_pos: Vector2, *, view_margin_left: int, view_margin_top: int) -> Vector2:
         """Convert screen coords (pixels) to world coords, considering view margins and camera offset."""
         return Vector2(screen_pos.x - view_margin_left + self.x, screen_pos.y - view_margin_top + self.y)
