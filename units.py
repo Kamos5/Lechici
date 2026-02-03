@@ -198,6 +198,43 @@ ATTACK_D_USES_LD = {"Axeman", "Knight"}
 
 ATTACK_NO_SCALE = {"Axeman", "Knight"}
 
+# ------------------ Sprite debug border + per-unit attack offsets ------------------
+
+# Draw a 1px border around the *actual sprite surface rect* (not the tile).
+# Useful when aligning oversized GIF frames.
+SPRITE_BORDER_ENABLED: bool = True
+SPRITE_BORDER_WIDTH: int = 1
+SPRITE_BORDER_COLOR: Tuple[int, int, int] = (255, 0, 255)  # magenta for visibility
+
+# Per-unit, per-facing attack animation offsets in "base pixels" (SCALE=1).
+# Positive x -> right, positive y -> down.
+# These offsets are automatically multiplied by SCALE at draw time.
+#
+# You can tweak these by hand for any unit if needed:
+#   ATTACK_ANIM_OFFSETS["Axeman"]["D"] = (3, -2)
+ATTACK_ANIM_OFFSETS: Dict[str, Dict[str, Tuple[float, float]]] = {
+    # Defaults (all zero). Add/override per unit & facing as you tune.
+    "Axeman": {"M": (0, 0), "D": (-2, 2), "U": (0, -3), "L": (6, 6), "R": (-6, 6),
+               "LD": (6, -6), "RD": (-6, -6), "LU": (6, 6), "RU": (-6, 6)},
+    "Knight": {"M": (0, 0), "D": (-2, 4), "U": (3, -3), "L": (-2, -1), "R": (2, -1),
+               "LD": (0, 0), "RD": (0, 0), "LU": (0, 0), "RU": (0, 0)},
+    "Archer": {"M": (0, 0), "D": (0, 0), "U": (0, 0), "L": (0, 0), "R": (0, 0),
+               "LD": (0, 0), "RD": (0, 0), "LU": (0, 0), "RU": (0, 0)},
+}
+
+def _scaled_attack_offset(cls_name: str, facing: str) -> Tuple[int, int]:
+    """Return (dx, dy) for attack animation in screen pixels, auto-scaled by SCALE."""
+    facing = facing or "D"
+    per_unit = ATTACK_ANIM_OFFSETS.get(cls_name, {})
+    ox, oy = per_unit.get(facing, per_unit.get("D", (0, 0)))
+    return (int(round(float(ox) * SCALE)), int(round(float(oy) * SCALE)))
+
+def _blit_sprite_with_border(screen: pygame.Surface, surf: pygame.Surface, rect: pygame.Rect) -> None:
+    """Blit surf and optionally draw a 1px border around its rect."""
+    screen.blit(surf, rect)
+    if SPRITE_BORDER_ENABLED and SPRITE_BORDER_WIDTH > 0:
+        pygame.draw.rect(screen, SPRITE_BORDER_COLOR, rect, SPRITE_BORDER_WIDTH)
+
 def unit_walk_gif_path(cls_name: str, facing: str) -> str:
     # assets/units/{unit}/walk_<facing>.gif
     return os.path.join("assets", "units", cls_name.lower(), f"walk_{facing}.gif")
@@ -507,7 +544,7 @@ class Unit:
             image_surface = image.copy()
             image_surface.set_alpha(self.alpha)
             image_rect = image_surface.get_rect(center=(int(x), int(y)))
-            screen.blit(image_surface, image_rect)
+            _blit_sprite_with_border(screen, image_surface, image_rect)
         if self.selected:
             pygame.draw.rect(screen, self.player_color, (x - self.size / 2, y - self.size / 2, self.size, self.size), 1)
         if self.should_highlight(context.current_time):
@@ -961,7 +998,7 @@ class Tree(Unit):
                 img_to_draw = img
 
             rect = img_to_draw.get_rect(center=(int(x), int(y)))
-            screen.blit(img_to_draw, rect)
+            _blit_sprite_with_border(screen, img_to_draw, rect)
 
             if self.should_highlight(context.current_time):
                 pygame.draw.rect(screen, WHITE, (x - TILE_HALF, y - TILE_HALF, TILE_SIZE, TILE_SIZE), 1)
@@ -1136,7 +1173,7 @@ class Wall(Building):
             image_surface = img.copy()
             image_surface.set_alpha(self.alpha)
             rect = image_surface.get_rect(center=(int(x), int(y)))
-            screen.blit(image_surface, rect)
+            _blit_sprite_with_border(screen, image_surface, rect)
         else:
             surface = pygame.Surface((self.size, self.size), pygame.SRCALPHA)
             surface.fill((60, 60, 60, int(self.alpha)))
@@ -1346,7 +1383,12 @@ class Axeman(Unit):
         else:
             image_rect = image_surface.get_rect(center=(int(x), int(y)))
 
-        screen.blit(image_surface, image_rect)
+        # Per-unit manual offset for ATTACK animations (auto-scaled by SCALE)
+        if now < self._attacking_until:
+            dx, dy = _scaled_attack_offset("Axeman", facing)
+            image_rect.move_ip(dx, dy)
+
+        _blit_sprite_with_border(screen, image_surface, image_rect)
 
         if self.selected:
             pygame.draw.rect(screen, self.player_color,
@@ -1583,7 +1625,7 @@ class Knight(Unit):
     wood_cost = 400
 
     _WALK_FRAME_TIME = 0.5
-    _ATTACK_FRAME_TIME = 0.12  # attack speed; change if you want faster/slower
+    _ATTACK_FRAME_TIME = 0.4  # attack speed; change if you want faster/slower
     _IDLE_SPEED_EPS2 = 0.05
 
     def __init__(self, x, y, player_id, player_color):
@@ -1698,7 +1740,12 @@ class Knight(Unit):
         image_surface = image.copy()
         image_surface.set_alpha(self.alpha)
         rect = image_surface.get_rect(center=(int(x), int(y)))
-        screen.blit(image_surface, rect)
+        # Per-unit manual offset for ATTACK animations (auto-scaled by SCALE)
+        if now < self._attacking_until:
+            dx, dy = _scaled_attack_offset("Knight", facing)
+            rect.move_ip(dx, dy)
+
+        _blit_sprite_with_border(screen, image_surface, rect)
 
         if self.selected:
             pygame.draw.rect(screen, self.player_color, (x - self.size / 2, y - self.size / 2, self.size, self.size), 1)
@@ -1884,7 +1931,12 @@ class Archer(Unit):
         image_surface = image.copy()
         image_surface.set_alpha(self.alpha)
         rect = image_surface.get_rect(center=(int(x), int(y)))
-        screen.blit(image_surface, rect)
+        # Per-unit manual offset for ATTACK animations (auto-scaled by SCALE)
+        if now < self._attacking_until:
+            dx, dy = _scaled_attack_offset("Archer", facing)
+            rect.move_ip(dx, dy)
+
+        _blit_sprite_with_border(screen, image_surface, rect)
 
         if self.selected:
             pygame.draw.rect(screen, self.player_color, (x - self.size / 2, y - self.size / 2, self.size, self.size), 1)
@@ -2126,7 +2178,7 @@ class Cow(Unit):
         image_surface = image.copy()
         image_surface.set_alpha(self.alpha)
         rect = image_surface.get_rect(center=(int(x), int(y)))
-        screen.blit(image_surface, rect)
+        _blit_sprite_with_border(screen, image_surface, rect)
 
         if self.selected:
             pygame.draw.rect(screen, self.player_color,

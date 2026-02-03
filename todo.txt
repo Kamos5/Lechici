@@ -78,6 +78,7 @@ CORE FEATURES:
 
 - death animation should linger
 - sounds?
+- fix animation attack offset
 - animations (archer done, cow done, axeman done, knight done - move,attack, die)
 - rest of units
 - idle units?
