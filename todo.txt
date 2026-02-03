@@ -64,6 +64,7 @@ done:
 todo:
 
 CORE FEATURES:
+- double clicking the same unit select all that are sees in camera
 - fire animation
 - start screen
 - end screen (objectives)
@@ -72,6 +73,7 @@ CORE FEATURES:
 - fog of war
 - pause menu
 - menu
+- script to set up custom maps
 
 - death animation should linger
 - sounds?
@@ -81,7 +83,6 @@ CORE FEATURES:
 - other misc world_obj pass + impassible
 - chopping sync with axeman animation
 - dmg only after animation is finished (dmg)
-- double clicking the same unit select all that are sees in camera
 - buildings destroy roads build over it
 
 
