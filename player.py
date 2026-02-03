@@ -7,10 +7,11 @@ import pygame
 from pygame.math import Vector2
 
 from constants import *
-from tiles import GrassTile, Dirt
+from tiles import GrassTile, Dirt, River
 from units import Archer, Axeman, Barn, Barracks, Building, Cow, Knight, TownCenter, Tree, Unit, ShamansHut, WarriorsLodge, KnightsEstate, Wall
 import context
 from utils import is_tile_occupied
+from world_objects import Road
 
 
 class Player:
@@ -144,15 +145,255 @@ class PlayerAI:
         self.detection_interval = 1.0  # Check every 1 second for performance
         self.last_detection_time = 0
 
-    def find_valid_building_position(self, center_pos):
-        # Unchanged
+
+    # --- Roads & connectivity (AI) ---
+    _ROAD_VARIANT = {
+        (0, 0, 0, 0): "road10",
+        (0, 0, 0, 1): "road1",
+        (0, 0, 1, 0): "road2",
+        (0, 1, 0, 0): "road3",
+        (1, 0, 0, 0): "road4",
+        (1, 0, 0, 1): "road5",
+        (1, 1, 0, 0): "road6",
+        (0, 1, 0, 1): "road7",
+        (1, 1, 0, 1): "road8",
+        (1, 0, 1, 0): "road9",
+        (0, 0, 1, 1): "road10",
+        (1, 0, 1, 1): "road11",
+        (0, 1, 1, 0): "road12",
+        (1, 1, 1, 0): "road13",
+        (0, 1, 1, 1): "road14",
+        (1, 1, 1, 1): "road15",
+    }
+
+    def _tile_of_world_object(self, obj) -> tuple[int, int]:
+        return (int(obj.pos.x // TILE_SIZE), int(obj.pos.y // TILE_SIZE))
+
+    def _find_road_at(self, tx: int, ty: int) -> Road | None:
+        for o in getattr(self.context, 'world_objects', []):
+            if isinstance(o, Road):
+                ox, oy = self._tile_of_world_object(o)
+                if ox == tx and oy == ty:
+                    return o
+        return None
+
+    def _building_footprint_tiles(self, center_tx: int, center_ty: int, size_tiles: int) -> list[tuple[int, int]]:
+        half = size_tiles // 2
+        out = []
+        for dy in range(-half, half + 1):
+            for dx in range(-half, half + 1):
+                out.append((center_tx + dx, center_ty + dy))
+        return out
+
+    def _connected_road_tiles(self) -> set[tuple[int, int]]:
+        """Road tiles reachable from this player's TownCenter via 4-neighbor road chain.
+
+        Roads are ownership-less: any Road may be used.
+        """
+        world_objects = getattr(self.context, 'world_objects', [])
+        all_roads = set()
+        for o in world_objects:
+            if isinstance(o, Road):
+                all_roads.add(self._tile_of_world_object(o))
+        if not all_roads:
+            return set()
+
+        town_centers = [u for u in self.context.all_units if isinstance(u, TownCenter) and u.player_id == self.player.player_id and getattr(u, 'alpha', 255) == 255]
+        if not town_centers:
+            return set()
+
+        # seed from any road adjacent to TC footprint
+        seeds = []
+        for tc in town_centers:
+            tc_tx, tc_ty = int(tc.pos.x // TILE_SIZE), int(tc.pos.y // TILE_SIZE)
+            fp = self._building_footprint_tiles(tc_tx, tc_ty, self.building_size_tiles)
+            for fx, fy in fp:
+                for dx, dy in ((0,-1),(0,1),(-1,0),(1,0)):
+                    k = (fx+dx, fy+dy)
+                    if k in all_roads:
+                        seeds.append(k)
+        if not seeds:
+            return set()
+
+        visited = set(seeds)
+        stack = list(seeds)
+        while stack:
+            x, y = stack.pop()
+            for dx, dy in ((0,-1),(0,1),(-1,0),(1,0)):
+                nk = (x+dx, y+dy)
+                if nk in all_roads and nk not in visited:
+                    visited.add(nk)
+                    stack.append(nk)
+        return visited
+
+    def _is_near_connected_road(self, center_tx: int, center_ty: int, size_tiles: int) -> bool:
+        connected = self._connected_road_tiles()
+        if not connected:
+            return False
+        for fx, fy in self._building_footprint_tiles(center_tx, center_ty, size_tiles):
+            for dx, dy in ((0,-1),(0,1),(-1,0),(1,0)):
+                if (fx+dx, fy+dy) in connected:
+                    return True
+        return False
+
+    def _compute_road_variant(self, road: Road) -> str:
+        tx, ty = self._tile_of_world_object(road)
+        up = 1 if self._find_road_at(tx, ty-1) else 0
+        down = 1 if self._find_road_at(tx, ty+1) else 0
+        left = 1 if self._find_road_at(tx-1, ty) else 0
+        right = 1 if self._find_road_at(tx+1, ty) else 0
+        return self._ROAD_VARIANT.get((up, down, left, right), 'road10')
+
+    def _refresh_road_and_neighbors(self, road: Road) -> None:
+        tx, ty = self._tile_of_world_object(road)
+        candidates = [road]
+        for dx, dy in ((0,-1),(0,1),(-1,0),(1,0)):
+            r2 = self._find_road_at(tx+dx, ty+dy)
+            if r2:
+                candidates.append(r2)
+        for r in candidates:
+            r.set_variant(self._compute_road_variant(r))
+
+    def _road_tile_placeable(self, tx: int, ty: int) -> bool:
+        if not (0 <= tx < GRASS_COLS and 0 <= ty < GRASS_ROWS):
+            return False
+        if self._find_road_at(tx, ty):
+            return False
+        # don't allow roads on rivers
+        if isinstance(self.context.grass_tiles[ty][tx], River):
+            return False
+        if is_tile_occupied(ty, tx, self.context.all_units, self.context.grass_tiles):
+            return False
+        return True
+
+    def _place_road_tile(self, tx: int, ty: int) -> bool:
+        if not self._road_tile_placeable(tx, ty):
+            return False
+        if self.player.milk < Road.milk_cost or self.player.wood < Road.wood_cost:
+            return False
+
+        self.player.milk -= Road.milk_cost
+        self.player.wood -= Road.wood_cost
+
+        if not hasattr(self.context, 'world_objects') or self.context.world_objects is None:
+            self.context.world_objects = []
+
+        r = Road(tx * TILE_SIZE, ty * TILE_SIZE, player_id=self.player.player_id)
+        self.context.world_objects.append(r)
+        self._refresh_road_and_neighbors(r)
+        return True
+
+    def _ensure_initial_road_from_tc(self) -> None:
+        """If we have a TC but zero connected roads, try to place 1 road adjacent to it."""
+        if self._connected_road_tiles():
+            return
+        town_centers = [u for u in self.context.all_units if isinstance(u, TownCenter) and u.player_id == self.player.player_id and getattr(u, 'alpha', 255) == 255]
+        if not town_centers:
+            return
+        tc = town_centers[0]
+        tc_tx, tc_ty = int(tc.pos.x // TILE_SIZE), int(tc.pos.y // TILE_SIZE)
+        fp = self._building_footprint_tiles(tc_tx, tc_ty, self.building_size_tiles)
+        # try any adjacent tile
+        for fx, fy in fp:
+            for dx, dy in ((0,-1),(0,1),(-1,0),(1,0)):
+                if self._place_road_tile(fx+dx, fy+dy):
+                    return
+
+    def _build_road_to_build_site(self, center_tx: int, center_ty: int, size_tiles: int) -> None:
+        """Build a Manhattan-shortest road from the existing connected network (or TC) to a tile adjacent to the build footprint."""
+        self._ensure_initial_road_from_tc()
+        connected = self._connected_road_tiles()
+
+        # pick target adjacent tile around building footprint that is placeable
+        targets = []
+        for fx, fy in self._building_footprint_tiles(center_tx, center_ty, size_tiles):
+            for dx, dy in ((0,-1),(0,1),(-1,0),(1,0)):
+                tx, ty = fx+dx, fy+dy
+                if self._road_tile_placeable(tx, ty):
+                    targets.append((tx, ty))
+        if not targets:
+            return
+
+        # choose nearest start tile from connected (or a TC-adjacent road we just placed)
+        if not connected:
+            return
+
+        def manh(a,b):
+            return abs(a[0]-b[0]) + abs(a[1]-b[1])
+
+        best = None
+        for t in targets:
+            for s in connected:
+                d = manh(s, t)
+                if best is None or d < best[0]:
+                    best = (d, s, t)
+        if not best:
+            return
+        _, s, t = best
+
+        # lay an L-shaped path (x then y), falling back to y then x if blocked
+        def lay_path(path):
+            for px, py in path:
+                # skip tiles already road
+                if self._find_road_at(px, py):
+                    continue
+                if not self._place_road_tile(px, py):
+                    return False
+            return True
+
+        sx, sy = s
+        tx, ty = t
+        path1 = []
+        # step x
+        step = 1 if tx >= sx else -1
+        for x in range(sx, tx + step, step):
+            path1.append((x, sy))
+        # step y
+        step = 1 if ty >= sy else -1
+        for y in range(sy, ty + step, step):
+            path1.append((tx, y))
+
+        path2 = []
+        step = 1 if ty >= sy else -1
+        for y in range(sy, ty + step, step):
+            path2.append((sx, y))
+        step = 1 if tx >= sx else -1
+        for x in range(sx, tx + step, step):
+            path2.append((x, ty))
+
+        if not lay_path(path1):
+            lay_path(path2)
+
+    def _ensure_roads_around_building(self, building) -> None:
+        center_tx, center_ty = int(building.pos.x // TILE_SIZE), int(building.pos.y // TILE_SIZE)
+        fp = self._building_footprint_tiles(center_tx, center_ty, self.building_size_tiles)
+        # place roads on the ring around the footprint (4-neighbor)
+        for fx, fy in fp:
+            for dx, dy in ((0,-1),(0,1),(-1,0),(1,0)):
+                tx, ty = fx+dx, fy+dy
+                # only build if it would be connected (we just built to the site) and placeable
+                if self._road_tile_placeable(tx, ty):
+                    self._place_road_tile(tx, ty)
+
+
+
+    def find_valid_building_position(self, center_pos, require_road: bool = True):
+        """Find a clear building center position near center_pos.
+
+        If require_road=True, the chosen position must touch a road tile that is connected to this AI player's TownCenter.
+        """
         center_tile_x = int(center_pos.x // TILE_SIZE)
         center_tile_y = int(center_pos.y // TILE_SIZE)
-        search_radius = 5
+        search_radius = 8
         for dr in range(-search_radius, search_radius + 1):
             for dc in range(-search_radius, search_radius + 1):
                 tile_x = center_tile_x + dc
                 tile_y = center_tile_y + dr
+
+                # optional road constraint
+                if require_road and not self._is_near_connected_road(tile_x, tile_y, self.building_size_tiles):
+                    continue
+
                 valid = True
                 for row in range(tile_y - self.building_size_tiles // 2, tile_y + self.building_size_tiles // 2 + 1):
                     for col in range(tile_x - self.building_size_tiles // 2, tile_x + self.building_size_tiles // 2 + 1):
@@ -416,7 +657,14 @@ class PlayerAI:
         if (barn_count < self.max_barns and
                 self.player.milk >= Barn.milk_cost and self.player.wood >= Barn.wood_cost and
                 (self.player.building_limit is None or self.player.building_count < self.player.building_limit)):
-            pos = self.find_valid_building_position(town_center.pos)
+            pos = self.find_valid_building_position(town_center.pos, require_road=True)
+            if not pos:
+                # try again without road constraint, then build road path to it
+                pos = self.find_valid_building_position(town_center.pos, require_road=False)
+                if pos:
+                    self._build_road_to_build_site(int(pos.x // TILE_SIZE), int(pos.y // TILE_SIZE), self.building_size_tiles)
+            if pos and not self._is_near_connected_road(int(pos.x // TILE_SIZE), int(pos.y // TILE_SIZE), self.building_size_tiles):
+                pos = None
             if pos:
                 new_building = Barn(pos.x, pos.y, self.player.player_id, self.player.color)
                 new_building.alpha = 0
@@ -440,9 +688,17 @@ class PlayerAI:
                 self.player.milk -= Barn.milk_cost
                 self.player.wood -= Barn.wood_cost
                 print(f"AI: Placed Barn at {pos} for Player {self.player.player_id} (Barn count: {barn_count + 1}/{self.max_barns})")
+                self._ensure_roads_around_building(new_building)
         elif (self.player.milk >= Barracks.milk_cost and self.player.wood >= Barracks.wood_cost and
               (self.player.building_limit is None or self.player.building_count < self.player.building_limit)):
-            pos = self.find_valid_building_position(town_center.pos)
+            pos = self.find_valid_building_position(town_center.pos, require_road=True)
+            if not pos:
+                # try again without road constraint, then build road path to it
+                pos = self.find_valid_building_position(town_center.pos, require_road=False)
+                if pos:
+                    self._build_road_to_build_site(int(pos.x // TILE_SIZE), int(pos.y // TILE_SIZE), self.building_size_tiles)
+            if pos and not self._is_near_connected_road(int(pos.x // TILE_SIZE), int(pos.y // TILE_SIZE), self.building_size_tiles):
+                pos = None
             if pos:
                 new_building = Barracks(pos.x, pos.y, self.player.player_id, self.player.color)
                 new_building.alpha = 0
@@ -466,6 +722,7 @@ class PlayerAI:
                 self.player.milk -= Barracks.milk_cost
                 self.player.wood -= Barracks.wood_cost
                 print(f"AI: Placed Barracks at {pos} for Player {self.player.player_id}")
+                self._ensure_roads_around_building(new_building)
 
     def manage_unit_production(self, current_time):
         """Manage unit production with context.current_time passed."""

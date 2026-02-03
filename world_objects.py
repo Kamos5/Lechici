@@ -29,7 +29,7 @@ class Road(WorldObject):
 
     # Build costs (used by the same UI/production system as buildings)
     milk_cost = 0
-    wood_cost = 5
+    wood_cost = 10
 
     _variant_images: dict[str, pygame.Surface | None] = {}
 

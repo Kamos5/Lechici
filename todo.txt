@@ -56,6 +56,9 @@ done:
 + icons for actions/buildings (done)
 + rework selection box + screen (not mixing units and buildings + only buttons/skills of first unit group in array (tab changes to the next))
 +? roads (zrobic budowe) - ?allow selection?
++ fix: when selected with building wrong order (first unit then building)
++ build only near roads
++ road -> cost 10 wood
 
 todo:
 
@@ -77,6 +80,9 @@ CORE FEATURES:
 - other misc world_obj pass + impassible
 - chopping sync with axeman animation
 - dmg only after animation is finished (dmg)
+- double clicking the same unit select all that are sees in camera
+- buildings destroy roads build over it
+
 
 NICE TO HAVE:
 - behaviour (passive, neutral, aggressive)
@@ -87,14 +93,12 @@ NICE TO HAVE:
 
 BUGS:
 - fix: units gating stuck together
-- fix: when selected with building wrong order (first unit then building)
 - fix: cow stuck in empty of grass field dont move and wait for regrow (do something)
 - FIX: error with COW when she targets enemy unit (building included)
 
 
 CORE 2:
-- build only near roads
-- road -> cost 10 wood
+
 
 -> townhall lvl 1 -> only barracks and barn + roads + walls
 -> townhall lvl 2 -> shamans hut (only lady) + warriors lodge
