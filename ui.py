@@ -1322,8 +1322,31 @@ def get_visible_control_group_bookmarks(current_player, all_units) -> dict:
     return visible
 
 
+
+def _control_group_is_selected(current_player, all_units, idx: int) -> bool:
+    """Return True if the player's current selection exactly matches the saved group idx."""
+    groups = getattr(current_player, "control_groups", None)
+    if not isinstance(groups, dict) or idx not in groups:
+        return False
+
+    # Keep only alive/owned entities (mirrors pruning)
+    alive = set(all_units)
+    ents = [u for u in (groups.get(idx) or []) if u in alive and getattr(u, "player_id", None) == current_player.player_id]
+    if not ents:
+        return False
+
+    selected = [u for u in all_units if getattr(u, "selected", False) and getattr(u, "player_id", None) == current_player.player_id]
+    if not selected:
+        return False
+
+    return set(selected) == set(ents)
+
+
 def draw_control_group_bookmarks(screen, current_player, all_units, fonts):
-    """Draw small rectangles with digits for saved control groups."""
+    """Draw small rectangles with digits for saved control groups.
+
+    If a control group is currently selected, its bookmark is drawn taller.
+    """
     if not current_player:
         return
 
@@ -1335,20 +1358,20 @@ def draw_control_group_bookmarks(screen, current_player, all_units, fonts):
 
     order = [1, 2, 3, 4, 5, 6, 7, 8, 9, 0]
     for idx in order:
-        r = visible.get(idx)
-        if not r:
+        base = visible.get(idx)
+        if not base:
             continue
-        pygame.draw.rect(screen, (210, 210, 210), r)
-        pygame.draw.rect(screen, (60, 60, 60), r, 1)
-        txt = font.render(str(idx), True, BLACK)
-        tr = txt.get_rect(center=r.center)
-        screen.blit(txt, tr.topleft)
-    for idx in [1, 2, 3, 4, 5, 6, 7, 8, 9, 0]:
-        r = visible.get(idx)
-        if not r:
-            continue
+
+        # Active group: increase height (grow upwards)
+        r = base.copy()
+        if _control_group_is_selected(current_player, all_units, idx):
+            extra = 8
+            r.y -= extra
+            r.h += extra
+
         pygame.draw.rect(screen, (210, 210, 210), r)
         pygame.draw.rect(screen, (80, 80, 80), r, 2)
+
         txt = font.render(str(idx), True, BLACK)
         tr = txt.get_rect(center=r.center)
         screen.blit(txt, tr.topleft)

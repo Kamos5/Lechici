@@ -533,6 +533,8 @@ def run_game() -> int:
         cg = getattr(p, "control_groups")
         ents = cg.get(idx)
         if not ents:
+            # Clear active marker if group doesn't exist
+            setattr(p, "active_control_group_idx", None)
             return
 
         # Deselect everything first
@@ -545,11 +547,19 @@ def run_game() -> int:
         _normalize_selection_for_player(p)
         _update_player_selection_groups(p)
 
+        # Track which control group is currently active (used by UI)
+        setattr(p, "active_control_group_idx", idx)
+
         if center and ents:
             first = ents[0]
-            # Center camera on top of the first unit in the group
-            camera.x = first.pos.x - VIEW_WIDTH / 2
-            camera.y = first.pos.y - VIEW_HEIGHT / 2
+            # Center camera on the first unit/building in the group,
+            # clamped to world bounds (so borders block as close as possible).
+            target_x = float(first.pos.x) - (VIEW_WIDTH / 2)
+            target_y = float(first.pos.y) - (VIEW_HEIGHT / 2)
+
+            camera.x = max(0, min(target_x, MAP_WIDTH - VIEW_WIDTH))
+            camera.y = max(0, min(target_y, MAP_HEIGHT - VIEW_HEIGHT))
+
 
     def _handle_right_click_command(screen_pos: tuple[int, int], current_time: float) -> None:
         """Existing right-click behavior (move/attack/rally/cancel placement)."""
@@ -890,7 +900,7 @@ def run_game() -> int:
                     _normalize_selection_for_player(current_player)
                     continue
 
-                # Control groups: Ctrl+1..0 saves current selection; 1..0 recalls
+                # Control groups: Ctrl+1..0 saves current selection; 1..0 recalls (double-tap centers camera)
                 if current_player and event.key in (
                     pygame.K_0, pygame.K_1, pygame.K_2, pygame.K_3, pygame.K_4,
                     pygame.K_5, pygame.K_6, pygame.K_7, pygame.K_8, pygame.K_9,
@@ -904,8 +914,16 @@ def run_game() -> int:
                     if idx is not None:
                         if pygame.key.get_mods() & pygame.KMOD_CTRL:
                             _save_control_group(current_player, idx)
+                            # Saving a group also marks it as the "active" one for bookmark highlighting.
+                            setattr(current_player, "active_control_group_idx", idx)
                         else:
-                            _recall_control_group(current_player, idx)
+                            # Double-tap digit -> center camera on first unit in that group.
+                            last = getattr(current_player, "_control_group_last_keypress", {})
+                            last_t = float(last.get(idx, -9999.0))
+                            is_double = (current_time - last_t) <= 0.35
+                            _recall_control_group(current_player, idx, center=is_double)
+                            last[idx] = float(current_time)
+                            setattr(current_player, "_control_group_last_keypress", last)
                         continue
 
                 cell = grid_actions.cell_from_key(event.key)

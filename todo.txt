@@ -59,6 +59,7 @@ done:
 + fix: when selected with building wrong order (first unit then building)
 + build only near roads
 + road -> cost 10 wood
++ control groups (simple done)
 
 todo:
 
@@ -67,7 +68,6 @@ CORE FEATURES:
 - start screen
 - end screen (objectives)
 - grid actions (a-move, move etc, repair)
-- control groups (simple done)
 - fullscreen
 - fog of war
 - pause menu
@@ -75,7 +75,7 @@ CORE FEATURES:
 
 - death animation should linger
 - sounds?
-- animations (archer done, cow done, axeman done, knight done)
+- animations (archer done, cow done, axeman done, knight done - move,attack, die)
 - rest of units
 - idle units?
 - other misc world_obj pass + impassible
@@ -88,9 +88,10 @@ CORE FEATURES:
 NICE TO HAVE:
 - behaviour (passive, neutral, aggressive)
 - magic?
-- upgrade units
+- upgrades (eco, units etc)
 - self learning AI?
 - different grass types (season based?)
+- update map edit
 
 BUGS:
 - fix: units gating stuck together
