@@ -1253,6 +1253,107 @@ def draw_fps(screen, fps, fonts):
     screen.blit(fonts["font"].render(f"FPS: {int(fps)}", True, WHITE), (VIEW_MARGIN_LEFT + VIEW_WIDTH - 80, VIEW_MARGIN_TOP + 10))
 
 
+# ---------------------------------------------------------------------------
+# Control groups (RTS-style): 10 bookmarks (1..9,0) above the bottom stat panel
+# ---------------------------------------------------------------------------
+
+def _control_group_base_rect() -> pygame.Rect:
+    """Base rect we treat as the "stat screen" width for bookmarks.
+
+    Mirrors the main selected-entity panel rect (between build grid and right panel).
+    """
+    pad = 8
+    x0 = VIEW_MARGIN_LEFT + 270
+    y0 = PANEL_Y + pad
+    w = VIEW_WIDTH - 500
+    h = PANEL_HEIGHT - 2 * pad
+    return pygame.Rect(x0, y0, w, h)
+
+
+def compute_control_group_bookmark_rects() -> dict:
+    """Return {group_idx: rect} for all 10 bookmark slots.
+
+    group_idx uses 1..9 and 0.
+    """
+    base = _control_group_base_rect()
+    bookmark_h = 14
+    y = base.y - bookmark_h - 4  # just above the bottom stat panel
+
+    # Divide width into 10 segments, add padding inside each segment
+    seg_w = base.w / 10.0
+    inner_pad = 5
+    rects: dict[int, pygame.Rect] = {}
+    for i in range(10):
+        idx = (i + 1) if i < 9 else 0
+        x = base.x + int(round(i * seg_w)) + inner_pad
+        w = max(6, int(round(seg_w)) - 2 * inner_pad)
+        rects[idx] = pygame.Rect(x, y, w, bookmark_h)
+    return rects
+
+
+def get_visible_control_group_bookmarks(current_player, all_units) -> dict:
+    """Return {group_idx: rect} for bookmarks that should be visible.
+
+    A bookmark is visible only when the group has at least one *existing* unit.
+    Also prunes empty groups (e.g., all units killed).
+    """
+    if not current_player:
+        return {}
+
+    rects = compute_control_group_bookmark_rects()
+    groups = getattr(current_player, "control_groups", None)
+    if not isinstance(groups, dict):
+        return {}
+
+    alive = set(all_units)
+    visible: dict[int, pygame.Rect] = {}
+    to_delete = []
+    for idx, ents in list(groups.items()):
+        kept = [u for u in (ents or []) if u in alive and getattr(u, "player_id", None) == current_player.player_id]
+        if kept:
+            groups[idx] = kept
+            if idx in rects:
+                visible[idx] = rects[idx]
+        else:
+            to_delete.append(idx)
+    for idx in to_delete:
+        groups.pop(idx, None)
+
+    return visible
+
+
+def draw_control_group_bookmarks(screen, current_player, all_units, fonts):
+    """Draw small rectangles with digits for saved control groups."""
+    if not current_player:
+        return
+
+    visible = get_visible_control_group_bookmarks(current_player, all_units)
+    if not visible:
+        return
+
+    font = fonts.get("small_font") or pygame.font.SysFont(None, 16)
+
+    order = [1, 2, 3, 4, 5, 6, 7, 8, 9, 0]
+    for idx in order:
+        r = visible.get(idx)
+        if not r:
+            continue
+        pygame.draw.rect(screen, (210, 210, 210), r)
+        pygame.draw.rect(screen, (60, 60, 60), r, 1)
+        txt = font.render(str(idx), True, BLACK)
+        tr = txt.get_rect(center=r.center)
+        screen.blit(txt, tr.topleft)
+    for idx in [1, 2, 3, 4, 5, 6, 7, 8, 9, 0]:
+        r = visible.get(idx)
+        if not r:
+            continue
+        pygame.draw.rect(screen, (210, 210, 210), r)
+        pygame.draw.rect(screen, (80, 80, 80), r, 2)
+        txt = font.render(str(idx), True, BLACK)
+        tr = txt.get_rect(center=r.center)
+        screen.blit(txt, tr.topleft)
+
+
 def draw_selected_count(screen, all_units, current_player, fonts):
     if not current_player:
         return
@@ -1296,6 +1397,8 @@ def draw_game_ui(
         camera,
 ):
     draw_panels(screen)
+    # Control group bookmarks (shown only when a group is saved)
+    draw_control_group_bookmarks(screen, current_player, all_units, fonts)
     draw_grid_buttons(screen, grid_buttons, current_player, all_units, production_queues, current_time, icons, fonts)
 
     # --- NEW: minimap bottom-right (inside right panel) ---

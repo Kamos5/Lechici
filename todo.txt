@@ -66,14 +66,15 @@ CORE FEATURES:
 - fire animation
 - start screen
 - end screen (objectives)
-- a-move
-- control groups
+- grid actions (a-move, move etc, repair)
+- control groups (simple done)
 - fullscreen
 - fog of war
+- pause menu
+- menu
 
 - death animation should linger
 - sounds?
-- repair
 - animations (archer done, cow done, axeman done, knight done)
 - rest of units
 - idle units?

@@ -472,6 +472,85 @@ def run_game() -> int:
         setattr(p, "selection_groups", groups)
         setattr(p, "active_selection_group_index", idx)
 
+
+    # --- Control groups (Ctrl+1..0 to save, 1..0 to recall) ---
+    def _ensure_control_groups(p):
+        if not p:
+            return
+        if not isinstance(getattr(p, "control_groups", None), dict):
+            setattr(p, "control_groups", {})
+
+    def _prune_control_groups(p):
+        """Remove dead/invalid units from saved groups (and delete empty groups)."""
+        if not p:
+            return
+        _ensure_control_groups(p)
+        cg = getattr(p, "control_groups")
+        alive = set(all_units)
+        to_del = []
+        for idx, ents in list(cg.items()):
+            kept = [u for u in (ents or []) if u in alive and getattr(u, "player_id", None) == p.player_id]
+            if kept:
+                cg[idx] = kept
+            else:
+                to_del.append(idx)
+        for idx in to_del:
+            cg.pop(idx, None)
+
+    def _save_control_group(p, idx: int):
+        """Save current selection into group idx (1..9,0). Units can be in only one group."""
+        if not p:
+            return
+        _ensure_control_groups(p)
+        cg = getattr(p, "control_groups")
+
+        selected = [u for u in p.units if getattr(u, "selected", False)]
+        # Empty selection clears the group
+        if not selected:
+            cg.pop(idx, None)
+            return
+
+        # Remove these units from all other groups (units can be only in one group)
+        for k, ents in list(cg.items()):
+            cg[k] = [u for u in (ents or []) if u not in selected]
+            if not cg[k]:
+                cg.pop(k, None)
+
+        # Save (preserve order, unique)
+        seen = set()
+        saved = []
+        for u in selected:
+            if u not in seen:
+                seen.add(u)
+                saved.append(u)
+        cg[idx] = saved
+
+    def _recall_control_group(p, idx: int, *, center: bool = False):
+        if not p:
+            return
+        _ensure_control_groups(p)
+        _prune_control_groups(p)
+        cg = getattr(p, "control_groups")
+        ents = cg.get(idx)
+        if not ents:
+            return
+
+        # Deselect everything first
+        for u in all_units:
+            u.selected = False
+
+        for u in ents:
+            u.selected = True
+
+        _normalize_selection_for_player(p)
+        _update_player_selection_groups(p)
+
+        if center and ents:
+            first = ents[0]
+            # Center camera on top of the first unit in the group
+            camera.x = first.pos.x - VIEW_WIDTH / 2
+            camera.y = first.pos.y - VIEW_HEIGHT / 2
+
     def _handle_right_click_command(screen_pos: tuple[int, int], current_time: float) -> None:
         """Existing right-click behavior (move/attack/rally/cancel placement)."""
         nonlocal placing_building, building_to_place, building_pos
@@ -582,6 +661,33 @@ def run_game() -> int:
                     if event.button == 1:  # Left click
                         mouse_pos = Vector2(event.pos)
                         clicked_something = False
+
+                        # --- Control group bookmarks (above bottom stat panel) ---
+                        if current_player:
+                            visible_bookmarks = ui.get_visible_control_group_bookmarks(current_player, all_units)
+                            clicked_idx = None
+                            for idx, rect in visible_bookmarks.items():
+                                if rect.collidepoint(event.pos):
+                                    clicked_idx = idx
+                                    break
+                            if clicked_idx is not None:
+                                # Double click centers camera on the first unit in the group
+                                last = getattr(current_player, "_control_group_last_click", {})
+                                last_t = float(last.get(clicked_idx, -9999.0))
+                                is_double = (current_time - last_t) <= 0.35
+                                _recall_control_group(current_player, clicked_idx, center=is_double)
+                                last[clicked_idx] = float(current_time)
+                                setattr(current_player, "_control_group_last_click", last)
+
+                                # Consume click: don't start box-select / map selection
+                                pending_click = False
+                                pending_click_unit = None
+                                mouse_down_screen = None
+                                mouse_down_world = None
+                                selecting = False
+                                selection_start = None
+                                selection_end = None
+                                continue
 
                         # --- NEW: minimap click/drag begins here ---
                         mm_world = ui.minimap_screen_to_world(mouse_pos)
@@ -783,6 +889,25 @@ def run_game() -> int:
                     _cycle_selection_group(current_player)
                     _normalize_selection_for_player(current_player)
                     continue
+
+                # Control groups: Ctrl+1..0 saves current selection; 1..0 recalls
+                if current_player and event.key in (
+                    pygame.K_0, pygame.K_1, pygame.K_2, pygame.K_3, pygame.K_4,
+                    pygame.K_5, pygame.K_6, pygame.K_7, pygame.K_8, pygame.K_9,
+                ):
+                    key_to_idx = {
+                        pygame.K_1: 1, pygame.K_2: 2, pygame.K_3: 3, pygame.K_4: 4,
+                        pygame.K_5: 5, pygame.K_6: 6, pygame.K_7: 7, pygame.K_8: 8,
+                        pygame.K_9: 9, pygame.K_0: 0,
+                    }
+                    idx = key_to_idx.get(event.key)
+                    if idx is not None:
+                        if pygame.key.get_mods() & pygame.KMOD_CTRL:
+                            _save_control_group(current_player, idx)
+                        else:
+                            _recall_control_group(current_player, idx)
+                        continue
+
                 cell = grid_actions.cell_from_key(event.key)
                 if cell and current_player:
                     r, c = cell
@@ -1116,6 +1241,10 @@ def run_game() -> int:
                 all_units.discard(unit)
                 spatial_grid.remove_unit(unit)
                 print(f"Unit {unit.__class__.__name__} at {unit.pos} destroyed")
+
+            # Keep control groups clean (hide bookmarks when groups are empty)
+            if current_player:
+                _prune_control_groups(current_player)
 
         # Rendering
         screen.fill((0, 0, 0))  # Clear screen
