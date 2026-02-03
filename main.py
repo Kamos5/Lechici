@@ -247,10 +247,10 @@ def run_game() -> int:
     def _tile_of_world_object(obj) -> tuple[int, int]:
         return (int(obj.pos.x // TILE_SIZE), int(obj.pos.y // TILE_SIZE))
 
-    def _find_road_at(world_objects, tx: int, ty: int, player_id: int):
-        # roads are stored in context.world_objects
+    def _find_road_at(world_objects, tx: int, ty: int):
+        """Return the Road at (tx,ty) regardless of ownership (roads are shared)."""
         for o in world_objects:
-            if isinstance(o, Road) and getattr(o, 'player_id', None) == player_id:
+            if isinstance(o, Road):
                 ox, oy = _tile_of_world_object(o)
                 if ox == tx and oy == ty:
                     return o
@@ -258,27 +258,21 @@ def run_game() -> int:
 
     def _compute_road_variant(world_objects, road: Road) -> str:
         tx, ty = _tile_of_world_object(road)
-        pid = getattr(road, 'player_id', None)
-        if pid is None:
-            pid = -1
 
-        up = 1 if _find_road_at(world_objects, tx, ty - 1, pid) else 0
-        down = 1 if _find_road_at(world_objects, tx, ty + 1, pid) else 0
-        left = 1 if _find_road_at(world_objects, tx - 1, ty, pid) else 0
-        right = 1 if _find_road_at(world_objects, tx + 1, ty, pid) else 0
+        up = 1 if _find_road_at(world_objects, tx, ty - 1) else 0
+        down = 1 if _find_road_at(world_objects, tx, ty + 1) else 0
+        left = 1 if _find_road_at(world_objects, tx - 1, ty) else 0
+        right = 1 if _find_road_at(world_objects, tx + 1, ty) else 0
 
         return _ROAD_VARIANT.get((up, down, left, right), "road10")
 
     def _refresh_road_and_neighbors(world_objects, road: Road) -> None:
-        """Recompute variant for road and its 4-neighbors (same player)."""
+        """Recompute variant for road and its 4-neighbors (roads are shared)."""
         tx, ty = _tile_of_world_object(road)
-        pid = getattr(road, 'player_id', None)
-        if pid is None:
-            pid = -1
 
         candidates = [road]
         for dx, dy in ((0, -1), (0, 1), (-1, 0), (1, 0)):
-            r2 = _find_road_at(world_objects, tx + dx, ty + dy, pid)
+            r2 = _find_road_at(world_objects, tx + dx, ty + dy)
             if r2:
                 candidates.append(r2)
 
@@ -298,33 +292,41 @@ def run_game() -> int:
         return out
 
     def _road_can_place(player, world_objects, all_units, tx: int, ty: int) -> bool:
-        """Road must connect to this player's TownCenter (directly adjacent) or via an existing connected road chain."""
+        """Road placement rule (shared roads, no ownership):
+
+        A new road may be placed if it connects (directly or indirectly) to *this player's* TownCenter
+        footprint via the existing global road network. Any road (including enemy-built or map-preplaced)
+        can be used as part of that connection.
+        """
         if not player:
             return False
 
         pid = player.player_id
-        town_centers = [u for u in all_units if isinstance(u, TownCenter) and u.player_id == pid and getattr(u, 'alpha', 255) == 255]
+        town_centers = [
+            u for u in all_units
+            if isinstance(u, TownCenter) and u.player_id == pid and getattr(u, "alpha", 255) == 255
+        ]
         if not town_centers:
             return False
 
-        # Adjacent to any town center footprint => ok
+        # Adjacent to any TownCenter footprint => ok
         for tc in town_centers:
             fp = _building_footprint_tiles(tc)
             for fx, fy in fp:
                 if abs(fx - tx) + abs(fy - ty) == 1:
                     return True
 
-        # Build a dict of this player's roads by tile
+        # All roads are shared (no ownership)
         roads = {}
         for o in world_objects:
-            if isinstance(o, Road) and getattr(o, 'player_id', None) == pid:
+            if isinstance(o, Road):
                 rx, ry = _tile_of_world_object(o)
                 roads[(rx, ry)] = o
 
         if not roads:
             return False
 
-        # Seed BFS with all roads adjacent to TC footprints
+        # Seed BFS with all roads adjacent to this player's TownCenter footprints
         seeds = []
         for tc in town_centers:
             fp = _building_footprint_tiles(tc)
@@ -600,7 +602,7 @@ def run_game() -> int:
 
                                     if not valid_placement:
                                         print("Invalid placement position: occupied or out of bounds")
-                                    elif _find_road_at(world_objects, tile_x, tile_y, current_player.player_id):
+                                    elif _find_road_at(world_objects, tile_x, tile_y):
                                         print("There is already a road here.")
                                     elif not _road_can_place(current_player, world_objects, all_units, tile_x, tile_y):
                                         print("Road must connect (directly or indirectly) to your TownCenter.")
@@ -610,7 +612,7 @@ def run_game() -> int:
                                         current_player.milk -= Road.milk_cost
                                         current_player.wood -= Road.wood_cost
 
-                                        new_road = Road(tile_x * TILE_SIZE, tile_y * TILE_SIZE, player_id=current_player.player_id)
+                                        new_road = Road(tile_x * TILE_SIZE, tile_y * TILE_SIZE)
                                         world_objects.append(new_road)
 
                                         # auto-connect: update this road + adjacent roads (same player)
@@ -636,7 +638,11 @@ def run_game() -> int:
                                         # They fade in via alpha and also "build up" HP from 1 -> max_hp over production_time.
                                         new_building.alpha = 0
                                         new_building.hp = 1
+                                        bc_before = getattr(current_player, 'building_count', 0)
                                         current_player.add_unit(new_building)
+                                        if isinstance(new_building, Wall):
+                                            # Walls should never count towards building_count
+                                            current_player.building_count = bc_before
                                         all_units.add(new_building)
                                         spatial_grid.add_unit(new_building)
 
@@ -956,7 +962,7 @@ def run_game() -> int:
                 if elapsed >= building.production_time:
                     building.alpha = 255
                     player = next(p for p in players if p.player_id == building.player_id)
-                    if building not in player.units or building.alpha < 255:
+                    if not isinstance(building, Wall):
                         player.building_count += 1
                     if isinstance(building, Barn):
                         player.barns = [u for u in player.units if isinstance(u, Barn) and u.alpha == 255]
@@ -1042,7 +1048,10 @@ def run_game() -> int:
                 for player in players:
                     if unit in player.units:
                         print(f"Removing unit {unit.__class__.__name__} at {unit.pos} for Player {unit.player_id}, building_count before: {player.building_count}")
+                        bc_before = getattr(player, 'building_count', 0)
                         player.remove_unit(unit)
+                        if isinstance(unit, Wall):
+                            player.building_count = bc_before
                         print(f"After removing {unit.__class__.__name__}, building_count now: {player.building_count}")
                 all_units.discard(unit)
                 spatial_grid.remove_unit(unit)
@@ -1141,13 +1150,13 @@ def run_game() -> int:
                     # additional rule: road must connect to TownCenter chain
                     if valid_placement and isinstance(context.grass_tiles[tile_y][tile_x], River):
                         valid_placement = False
-                    if valid_placement and (_find_road_at(world_objects, tile_x, tile_y, current_player.player_id) is not None):
+                    if valid_placement and (_find_road_at(world_objects, tile_x, tile_y) is not None):
                         valid_placement = False
                     if valid_placement and (not _road_can_place(current_player, world_objects, all_units, tile_x, tile_y)):
                         valid_placement = False
 
                     # preview uses a road variant that matches nearby placed roads
-                    tmp = Road(tile_x * TILE_SIZE, tile_y * TILE_SIZE, player_id=current_player.player_id)
+                    tmp = Road(tile_x * TILE_SIZE, tile_y * TILE_SIZE)
                     v = _compute_road_variant(world_objects + [tmp], tmp)
                     tmp.set_variant(v)
                     img = Road._variant_images.get(tmp.variant)

@@ -501,7 +501,7 @@ def init_game_world(random_world: bool = False):
 
             # recompute counts/limits bookkeeping
             p.unit_count = sum(1 for u in p.units if (u.__class__.__name__ != "Tree" and not isinstance(u, Building)) ) # or whatever your rule is
-            p.building_count = sum(1 for u in p.units if isinstance(u, Building) and getattr(u, "alpha", 255) == 255)
+            p.building_count = sum(1 for u in p.units if isinstance(u, Building) and not isinstance(u, Wall) and getattr(u, "alpha", 255) == 255)
 
     else:
         # ---- Existing random generation (as before) ----

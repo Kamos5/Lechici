@@ -23,8 +23,8 @@ class Road(WorldObject):
     Notes:
       - x,y are TOP-LEFT tile coords (like tiles), not tile center.
       - Roads are passable (they don't block movement).
-      - player_id is used to keep road networks separate per player and to enforce
-        placement rules (must connect back to that player's TownCenter).
+      - Roads have NO ownership: player_id is optional and ignored by placement/connection logic.
+        Any player may connect to any existing road network.
     """
 
     # Build costs (used by the same UI/production system as buildings)

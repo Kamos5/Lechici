@@ -55,11 +55,11 @@ done:
 + button to kill units and buildings
 + icons for actions/buildings (done)
 + rework selection box + screen (not mixing units and buildings + only buttons/skills of first unit group in array (tab changes to the next))
++? roads (zrobic budowe) - ?allow selection?
 
 todo:
 
 CORE FEATURES:
-+ roads (zrobic budowe) - allow selection
 - fire animation
 - start screen
 - end screen (objectives)
