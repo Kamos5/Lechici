@@ -60,6 +60,7 @@ done:
 + build only near roads
 + road -> cost 10 wood
 + control groups (simple done)
++ pause menu
 
 todo:
 
@@ -71,7 +72,7 @@ CORE FEATURES:
 - grid actions (a-move, move etc, repair)
 - fullscreen
 - fog of war
-- pause menu
+
 - menu
 - script to set up custom maps
 

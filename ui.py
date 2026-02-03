@@ -1404,6 +1404,70 @@ def draw_end_screen(screen, mode_text, quit_button, fonts):
     screen.blit(quit_text, quit_rect)
 
 
+
+
+# ---------------------------------------------------------------------------
+# Pause overlay
+# ---------------------------------------------------------------------------
+
+def draw_pause_overlay(
+        screen: pygame.Surface,
+        *,
+        player_id: int,
+        fonts: dict,
+) -> pygame.Rect:
+    """Draw a centered pause overlay and return the Resume button rect (screen coords)."""
+    # Darken the whole screen
+    overlay = pygame.Surface((SCREEN_WIDTH, SCREEN_HEIGHT), pygame.SRCALPHA)
+    overlay.fill((0, 0, 0, 150))
+    screen.blit(overlay, (0, 0))
+
+    title_font = fonts.get("end_button_font") or fonts.get("tooltip_title_font") or fonts.get("font")
+    body_font = fonts.get("button_font") or fonts.get("font")
+
+    # Panel
+    panel_w = min(560, SCREEN_WIDTH - 80)
+    panel_h = 220
+    panel = pygame.Rect(
+        (SCREEN_WIDTH - panel_w) // 2,
+        (SCREEN_HEIGHT - panel_h) // 2,
+        panel_w,
+        panel_h,
+    )
+
+    # Panel background + border
+    pygame.draw.rect(screen, (40, 40, 40), panel, border_radius=14)
+    pygame.draw.rect(screen, (220, 220, 220), panel, 2, border_radius=14)
+
+    # Title text
+    title = f"Player {player_id} paused the game"
+    title_surf = title_font.render(title, True, (255, 255, 255))
+    title_rect = title_surf.get_rect(center=(panel.centerx, panel.y + 70))
+    screen.blit(title_surf, title_rect)
+
+    # Resume button
+    btn_w = 220
+    btn_h = 50
+    resume_rect = pygame.Rect(0, 0, btn_w, btn_h)
+    resume_rect.center = (panel.centerx, panel.y + 150)
+
+    mouse_pos = pygame.mouse.get_pos()
+    hovered = resume_rect.collidepoint(mouse_pos)
+
+    btn_color = (180, 180, 180) if not hovered else (210, 210, 210)
+    pygame.draw.rect(screen, btn_color, resume_rect, border_radius=10)
+    pygame.draw.rect(screen, (20, 20, 20), resume_rect, 2, border_radius=10)
+
+    label = body_font.render("Resume", True, (0, 0, 0))
+    label_rect = label.get_rect(center=resume_rect.center)
+    screen.blit(label, label_rect)
+
+    hint = body_font.render("or press Pause/Break again", True, (230, 230, 230))
+    hint_rect = hint.get_rect(center=(panel.centerx, resume_rect.bottom + 22))
+    screen.blit(hint, hint_rect)
+
+    return resume_rect
+
 def draw_game_ui(
         screen,
         grid_buttons,

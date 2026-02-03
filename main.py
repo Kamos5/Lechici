@@ -86,6 +86,15 @@ def run_game() -> int:
     # Initialize game state
     game_state = GameState.RUNNING
 
+    # Pause state (Pause/Break toggles)
+    paused = False
+    paused_by_player_id = None
+    resume_button_rect = None
+
+    # Simulation time that does NOT advance while paused
+    game_time = 0.0
+
+
     # Fonts
     fonts = ui.create_fonts()
     font = fonts["font"]
@@ -633,14 +642,16 @@ def run_game() -> int:
 
     while running:
 
-        current_time = pygame.time.get_ticks() / 1000
-        context.current_time = current_time
         dt = clock.get_time() / 1000  # Delta time for frame-rate independent updates
-
-        update_effects(getattr(context, "effects", []), current_time, dt)
+        if (not paused) and game_state == GameState.RUNNING:
+            game_time += dt
+        current_time = game_time
+        context.current_time = current_time
+        if (not paused) and game_state == GameState.RUNNING:
+            update_effects(getattr(context, "effects", []), current_time, dt)
 
         # Check for Defeat or Victory conditions
-        if game_state == GameState.RUNNING:
+        if (not paused) and game_state == GameState.RUNNING:
             player1 = next((p for p in players if p.player_id == 1), None)
             player2 = next((p for p in players if p.player_id == 2), None)
 
@@ -660,6 +671,32 @@ def run_game() -> int:
                 running = False
                 pygame.quit()
                 sys.exit()
+
+            # Pause/Break toggles pause even while paused (only during active gameplay)
+            if event.type == pygame.KEYDOWN:
+                pause_keys = {pygame.K_PAUSE}
+                if hasattr(pygame, "K_BREAK"):
+                    pause_keys.add(pygame.K_BREAK)
+                if event.key in pause_keys and game_state == GameState.RUNNING:
+                    paused = not paused
+                    if paused:
+                        paused_by_player_id = (getattr(current_player, "player_id", None) or 1)
+                    else:
+                        paused_by_player_id = None
+                        resume_button_rect = None
+                    continue
+
+                # While paused: ignore all other key input
+                if paused:
+                    continue
+
+            # While paused: only allow clicking Resume
+            if paused and event.type == pygame.MOUSEBUTTONDOWN and event.button == 1:
+                if resume_button_rect and resume_button_rect.collidepoint(event.pos):
+                    paused = False
+                    paused_by_player_id = None
+                    resume_button_rect = None
+                continue
             elif event.type == pygame.MOUSEBUTTONDOWN:
                 if game_state in (GameState.DEFEAT, GameState.VICTORY):
                     # Check if Quit button is clicked
@@ -1090,7 +1127,7 @@ def run_game() -> int:
                             tile_y = int(click_pos.y // TILE_SIZE)
                             building_pos = Vector2(tile_x * TILE_SIZE + TILE_HALF, tile_y * TILE_SIZE + TILE_HALF)
 
-        if game_state == GameState.RUNNING:
+        if game_state == GameState.RUNNING and (not paused):
             _normalize_selection_for_player(current_player)
             _update_player_selection_groups(current_player)
             # Update camera
@@ -1462,6 +1499,13 @@ def run_game() -> int:
                 fonts=fonts,
             )
             running = False
+        # Pause overlay (drawn on top of everything)
+        if paused and game_state == GameState.RUNNING:
+            resume_button_rect = ui.draw_pause_overlay(
+                screen,
+                player_id=(paused_by_player_id or (getattr(current_player, 'player_id', None) or 1)),
+                fonts=fonts,
+            )
 
         pygame.display.flip()
         clock.tick(60)
