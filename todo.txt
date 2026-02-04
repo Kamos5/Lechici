@@ -79,9 +79,9 @@ CORE FEATURES:
 - death animation should linger
 - sounds?
 - fix animation attack offset
-- animations (archer done, cow done, axeman done, knight done, bear done: TODO Priestess, Shaman, Strzyga, Spearman, Swordsman DEATH ANIMATION)
-- rest of units
-- idle units?
+- animations (archer done, cow done, axeman done, knight done, bear done: TODO Priestess, Shaman, Spearman, Swordsman + DEATH ANIMATION ALL)
+- rest of units (TODO Priestess, Shaman, Spearman, Swordsman)
+- idle units? - make their animations a bit different
 - other misc world_obj pass + impassible
 - chopping sync with axeman animation
 - dmg only after animation is finished (dmg)

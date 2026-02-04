@@ -8,7 +8,7 @@ from pygame.math import Vector2
 
 from constants import *
 from tiles import GrassTile, Dirt, River
-from units import Archer, Axeman, Barn, Barracks, Building, Cow, Bear, Knight, TownCenter, Tree, Unit, ShamansHut, WarriorsLodge, KnightsEstate, Wall
+from units import Archer, Axeman, Barn, Barracks, Building, Cow, Knight, Bear, Strzyga, TownCenter, Tree, Unit, ShamansHut, WarriorsLodge, KnightsEstate, Wall
 import context
 from utils import is_tile_occupied
 from world_objects import Road
@@ -29,7 +29,7 @@ class Player:
         self.unit_count = 0
         self.building_limit = None if player_id == 0 else 5
         self.building_count = 0
-        self.used_male_names = set()  # Track used male names for Axeman, Archer, Knight
+        self.used_male_names = set()  # Track used male names for Axeman, Archer, Knight, Bear, Strzyga
         self.used_female_names = set()  # Track used female names for Cow
         offset_x = start_x * SCALE
         offset_y = start_y * SCALE
@@ -53,8 +53,8 @@ class Player:
 
     def add_unit(self, unit):
         self.units.append(unit)
-        # Assign a unique name to Axeman, Archer, Knight, or Cow
-        if isinstance(unit, (Axeman, Archer, Knight, Cow, Bear)) and unit.name is None:
+        # Assign a unique name to Axeman, Archer, Knight, Bear, Strzyga, or Cow
+        if isinstance(unit, (Axeman, Archer, Knight, Bear, Strzyga, Cow)) and unit.name is None:
             if isinstance(unit, Cow):
                 # Assign female name to Cow
                 available_names = [name for name in FEMALE_NAMES if name not in self.used_female_names]
@@ -67,7 +67,7 @@ class Player:
                     self.used_female_names.add(unit.name)
                     print(f"No female names available, assigned {unit.name} to Cow for Player {self.player_id}")
             else:
-                # Assign male name to Axeman, Archer, Knight
+                # Assign male name to Axeman, Archer, Knight, Bear, Strzyga
                 available_names = [name for name in UNIQUE_MALE_NAMES if name not in self.used_male_names]
                 if available_names:
                     unit.name = random.choice(available_names)
@@ -97,7 +97,7 @@ class Player:
                 if isinstance(unit, Cow) and unit.name in self.used_female_names:
                     self.used_female_names.remove(unit.name)
                     print(f"Removed female name {unit.name} from Player {self.player_id}")
-                elif isinstance(unit, (Axeman, Archer, Knight)) and unit.name in self.used_male_names:
+                elif isinstance(unit, (Axeman, Archer, Knight, Bear, Strzyga)) and unit.name in self.used_male_names:
                     self.used_male_names.remove(unit.name)
                     print(f"Removed male name {unit.name} from Player {self.player_id}")
             if isinstance(unit, Wall):
@@ -460,7 +460,7 @@ class PlayerAI:
 
         # Wave 2: After 90 seconds, 2 random military units
         elif self.wave_number == 1 and elapsed_time >= 400:
-            military_units = [u for u in self.player.units if isinstance(u, (Axeman, Archer, Knight, Bear)) and u not in self.attack_units]
+            military_units = [u for u in self.player.units if isinstance(u, (Axeman, Archer, Knight, Bear, Strzyga)) and u not in self.attack_units]
             if len(military_units) >= 2:
                 selected_units = random.sample(military_units, 2)
                 for unit in selected_units:
@@ -484,7 +484,7 @@ class PlayerAI:
                 self.last_decision_time = context.current_time
 
         elif self.wave_number >= 2 and context.current_time >= self.last_decision_time + 150:
-            military_units = [u for u in self.player.units if isinstance(u, (Axeman, Archer, Knight, Bear)) and u not in self.attack_units]
+            military_units = [u for u in self.player.units if isinstance(u, (Axeman, Archer, Knight, Bear, Strzyga)) and u not in self.attack_units]
             num_units = min(random.randint(5, 10), len(military_units))
             if num_units > 0:
                 selected_units = random.sample(military_units, num_units)
@@ -542,7 +542,7 @@ class PlayerAI:
                     print(f"AI: {unit.__class__.__name__} at {unit.pos} returning to Player 1 camp at {self.target_camp_pos}")
 
         # Detect nearby enemies for idle military units
-        military_units = [u for u in self.player.units if isinstance(u, (Axeman, Archer, Knight, Bear)) and not u.target and u not in self.attack_units]
+        military_units = [u for u in self.player.units if isinstance(u, (Axeman, Archer, Knight, Bear, Strzyga)) and not u.target and u not in self.attack_units]
         for unit in military_units:
             nearby_enemies = context.spatial_grid.get_nearby_units(unit, radius=self.detection_range)
             nearby_enemies = [e for e in nearby_enemies if e in enemy_units and e.hp > 0]
@@ -733,7 +733,6 @@ class PlayerAI:
         axeman_count = len([u for u in self.player.units if isinstance(u, Axeman)])
         archer_count = len([u for u in self.player.units if isinstance(u, Archer)])
         knight_count = len([u for u in self.player.units if isinstance(u, Knight)])
-        bear_count = len([u for u in self.player.units if isinstance(u, Bear)])
         total_unit_count = self.player.unit_count
         chopping_axemen = len([a for a in self.player.units if isinstance(a, Axeman) and a.target and isinstance(a.target, Vector2)])
 
@@ -752,14 +751,13 @@ class PlayerAI:
 
         if barracks and total_unit_count < self.max_units:
             barracks = random.choice(barracks)
-            total_combat_units = axeman_count + archer_count + knight_count + bear_count
+            total_combat_units = axeman_count + archer_count + knight_count
             if total_combat_units == 0:
                 desired_axemen = desired_archers = desired_knights = 0
             else:
                 desired_axemen = int(total_combat_units * 0.4)
                 desired_archers = int(total_combat_units * 0.4)
                 desired_knights = int(total_combat_units * 0.2)
-                desired_bears = int(total_combat_units * 0)
 
             if chopping_axemen < 2 and self.player.wood < self.player.max_wood:
                 if self.player.milk >= Axeman.milk_cost and self.player.wood >= Axeman.wood_cost:
@@ -776,7 +774,6 @@ class PlayerAI:
             axeman_deficit = desired_axemen - axeman_count if total_combat_units > 0 else 1
             archer_deficit = desired_archers - archer_count if total_combat_units > 0 else 1
             knight_deficit = desired_knights - knight_count if total_combat_units > 0 else 0
-            bear_deficit = desired_bears - bear_count if total_combat_units > 0 else 0
 
             if axeman_deficit >= archer_deficit and axeman_deficit >= knight_deficit:
                 if self.player.milk >= Axeman.milk_cost and self.player.wood >= Axeman.wood_cost:

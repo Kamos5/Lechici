@@ -18,7 +18,7 @@ from utils import is_tile_occupied, find_valid_spawn_tiles
 from worldgen import init_game_world
 from world_objects import Bridge, Road
 from tiles import GrassTile, Dirt, River
-from units import Unit, Tree, Building, Barn, TownCenter, Barracks, KnightsEstate, WarriorsLodge, Axeman, Knight, Bear, Archer, Cow, ShamansHut, Wall
+from units import Unit, Tree, Building, Barn, TownCenter, Barracks, KnightsEstate, WarriorsLodge, Axeman, Knight, Bear, Strzyga, Archer, Cow, ShamansHut, Wall
 from player import Player, PlayerAI
 from pathfinding import SpatialGrid, WaypointGraph
 import ui
@@ -1056,7 +1056,7 @@ def run_game() -> int:
                             print(f"Selected unit {unit_clicked.__class__.__name__} at {unit_clicked.pos} (Player {unit_clicked.player_id}) via map click")
                             selected_units = [u for u in current_player.units if u.selected]
                             for selected_unit in selected_units:
-                                if isinstance(selected_unit, (Axeman, Archer, Knight, Bear)) and selected_unit != unit_clicked:
+                                if isinstance(selected_unit, (Axeman, Archer, Knight)) and selected_unit != unit_clicked:
                                     selected_unit.target = unit_clicked
                                     selected_unit.path = waypoint_graph.get_path(selected_unit.pos, unit_clicked.pos, selected_unit)
                                     selected_unit.path_index = 0

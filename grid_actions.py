@@ -2,7 +2,7 @@
 import pygame
 from pygame.math import Vector2
 
-from units import Building, Barn, Barracks, TownCenter, Axeman, Archer, Knight, Cow, ShamansHut, WarriorsLodge, KnightsEstate, Wall, Bear
+from units import Building, Barn, Barracks, TownCenter, Axeman, Archer, Knight, Bear, Strzyga, Cow, ShamansHut, WarriorsLodge, KnightsEstate, Wall
 from world_objects import Road
 
 # 4x3 hotkeys: q w e r / a s d f / z x c v
@@ -146,6 +146,7 @@ def execute_grid_cell(
         options.extend([
             (Cow, selected_barn, "unit"),
             (Bear, selected_barn, "unit"),
+            (Strzyga, selected_barn, "unit"),
         ])
     if selected_barracks:
         options.extend([
