@@ -22,7 +22,7 @@ import pygame
 from constants import *  # SCREEN_WIDTH/HEIGHT, TILE_SIZE, VIEW_* etc.
 from world_objects import Bridge, Road, MiscPassable
 from tiles import GrassTile, Dirt, River, Foundation, Mountain
-from units import Unit, Axeman, Knight, Archer, Cow, Bear, Strzyga, Priestess, Shaman, Tree, Barn, TownCenter, Barracks, ShamansHut, get_team_sprite, KnightsEstate, WarriorsLodge, Ruin, Wall, GIF_UNITS, get_unit_walk_frames, get_unit_walk_first_frame
+from units import Unit, Axeman, Knight, Archer, Cow, Bear, Strzyga, Priestess, Shaman, Swordsman, Spearman, Tree, Barn, TownCenter, Barracks, ShamansHut, get_team_sprite, KnightsEstate, WarriorsLodge, Ruin, Wall, GIF_UNITS, get_unit_walk_frames, get_unit_walk_first_frame
 
 # -----------------------------
 # Config
@@ -75,6 +75,8 @@ UNIT_TYPES: Dict[str, Type] = {
     "Strzyga": Strzyga,
     "Priestess": Priestess,
     "Shaman": Shaman,
+    "Swordsman": Swordsman,
+    "Spearman": Spearman,
     "Archer": Archer,
     "Cow": Cow,
     "Tree": Tree,
@@ -89,7 +91,7 @@ UNIT_TYPES: Dict[str, Type] = {
 }
 
 # UI grouping (Tree is in bottom row with buildings)
-UNIT_ROW: List[str] = ["Axeman", "Knight", "Bear", "Strzyga", "Priestess", "Shaman", "Archer", "Cow"]
+UNIT_ROW: List[str] = ["Axeman", "Knight", "Bear", "Strzyga", "Priestess", "Shaman", "Swordsman", "Spearman", "Archer", "Cow"]
 BOTTOM_ROW: List[str] = ["Tree", "Wall", "Barn", "TownCenter", "Barracks", "ShamansHut", "KnightsEstate", "WarriorsLodge", "Ruin"]
 
 # Editor players (id -> color)

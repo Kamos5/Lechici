@@ -2,7 +2,7 @@
 import pygame
 from pygame.math import Vector2
 
-from units import Building, Barn, Barracks, TownCenter, Axeman, Archer, Knight, Bear, Strzyga, Priestess, Shaman, Cow, ShamansHut, WarriorsLodge, KnightsEstate, Wall
+from units import Building, Barn, Barracks, TownCenter, Axeman, Archer, Knight, Bear, Strzyga, Priestess, Shaman, Swordsman, Spearman, Cow, ShamansHut, WarriorsLodge, KnightsEstate, Wall
 from world_objects import Road
 
 # 4x3 hotkeys: q w e r / a s d f / z x c v
@@ -169,6 +169,12 @@ def execute_grid_cell(
             (KnightsEstate, selected_town_center, "building"),
             (Road, selected_town_center, "world_object"),
             (Wall, selected_town_center, "building"),
+        ])
+
+    if selected_warriors_lodge_hut:
+        options.extend([
+            (Swordsman, selected_warriors_lodge_hut, "unit"),
+            (Spearman, selected_warriors_lodge_hut, "unit"),
         ])
 
     # (r,c) -> linear idx in packed grid, reserving bottom-right for KILL
