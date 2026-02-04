@@ -18,7 +18,7 @@ from utils import is_tile_occupied, find_valid_spawn_tiles
 from worldgen import init_game_world
 from world_objects import Bridge, Road
 from tiles import GrassTile, Dirt, River
-from units import Unit, Tree, Building, Barn, TownCenter, Barracks, KnightsEstate, WarriorsLodge, Axeman, Knight, Bear, Strzyga, Archer, Cow, ShamansHut, Wall
+from units import Unit, Tree, Building, Barn, TownCenter, Barracks, KnightsEstate, WarriorsLodge, Axeman, Knight, Bear, Strzyga, Priestess, Shaman, Archer, Cow, ShamansHut, Wall
 from player import Player, PlayerAI
 from pathfinding import SpatialGrid, WaypointGraph
 import ui

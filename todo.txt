@@ -68,7 +68,8 @@ CORE FEATURES:
 - double clicking the same unit select all that are sees in camera
 - fire animation
 - start screen
-- end screen (objectives)
+- objectvies
+- end screen (sum up - all the death, killed, who survived etc)
 - grid actions (a-move, move etc, repair)
 - fullscreen
 - fog of war
@@ -79,8 +80,8 @@ CORE FEATURES:
 - death animation should linger
 - sounds?
 - fix animation attack offset
-- animations (archer done, cow done, axeman done, knight done, bear done: TODO Priestess, Shaman, Spearman, Swordsman + DEATH ANIMATION ALL)
-- rest of units (TODO Priestess, Shaman, Spearman, Swordsman)
+- animations (archer done, cow done, axeman done, knight done, bear done: TODO Spearman, Swordsman + DEATH ANIMATION ALL)
+- rest of units (TODO Spearman, Swordsman)
 - idle units? - make their animations a bit different
 - other misc world_obj pass + impassible
 - chopping sync with axeman animation

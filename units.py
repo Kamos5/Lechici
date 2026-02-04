@@ -30,6 +30,8 @@ TEAM_MASKS: Dict[str, List[str]] = {
     "Knight": ["#700000"],
     "Bear": ["#700000"],
     "Strzyga": ["#700000"],
+    "Priestess": ["#700000"],
+    "Shaman": ["#700000"],
     "Archer": ["#700000"],
     # "Cow": ["#6f0000"],
     "ShamansHut": ["#700000"],
@@ -194,11 +196,11 @@ def _get_team_anim_frames(
 
 # ------------------ Standard unit GIF paths (walk_M.gif) ------------------
 
-GIF_UNITS = {"Axeman", "Archer", "Knight", "Cow", "Bear", "Strzyga"}
+GIF_UNITS = {"Axeman", "Archer", "Knight", "Cow", "Bear", "Strzyga", "Priestess", "Shaman"}
 
-ATTACK_D_USES_LD = {"Axeman", "Knight", "Bear", "Strzyga"}
+ATTACK_D_USES_LD = {"Axeman", "Knight", "Bear", "Strzyga", "Priestess", "Shaman"}
 
-ATTACK_NO_SCALE = {"Axeman", "Knight", "Bear", "Strzyga"}
+ATTACK_NO_SCALE = {"Axeman", "Knight", "Bear", "Strzyga", "Priestess", "Shaman"}
 
 # ------------------ Sprite debug border + per-unit attack offsets ------------------
 
@@ -746,7 +748,7 @@ class Unit:
                 self.last_attack_time = context.current_time
                 print(f"{self.__class__.__name__} at {self.pos} attacked {target.__class__.__name__} at {target.pos}, dealing {damage} damage")
                 # Notify target of attack for defensive behavior
-                if isinstance(target, (Axeman, Archer, Knight, Bear, Strzyga)) and target.hp > 0:
+                if isinstance(target, (Axeman, Archer, Knight, Bear, Strzyga, Priestess, Shaman)) and target.hp > 0:
                     target.update_attackers(self, context.current_time)
                     # Trigger counter-attack if no target or autonomous target
                     if not target.target or target.autonomous_target:
@@ -1616,7 +1618,7 @@ class Axeman(Unit):
         self.last_attack_time = context.current_time
         print(f"{self.__class__.__name__} at {self.pos} attacked {target.__class__.__name__} at {target.pos}, dealing {damage} damage")
 
-        if isinstance(target, (Axeman, Archer, Knight, Bear, Strzyga)) and target.hp > 0:
+        if isinstance(target, (Axeman, Archer, Knight, Bear, Strzyga, Priestess, Shaman)) and target.hp > 0:
             target.update_attackers(self, context.current_time)
             if not target.target or getattr(target, "autonomous_target", False):
                 closest_attacker = target.get_closest_attacker()
@@ -1706,7 +1708,7 @@ class Knight(Unit):
         print(f"{self.__class__.__name__} at {self.pos} attacked {target.__class__.__name__} at {target.pos}, dealing {damage} damage")
 
         # Notify target of attack for defensive behavior (same as Unit.attack)
-        if isinstance(target, (Axeman, Archer, Knight, Bear, Strzyga)) and target.hp > 0:
+        if isinstance(target, (Axeman, Archer, Knight, Bear, Strzyga, Priestess, Shaman)) and target.hp > 0:
             target.update_attackers(self, context.current_time)
             if not target.target or getattr(target, "autonomous_target", False):
                 closest_attacker = target.get_closest_attacker()
@@ -1838,7 +1840,7 @@ class Bear(Unit):
         self.last_attack_time = context.current_time
         print(f"{self.__class__.__name__} at {self.pos} attacked {target.__class__.__name__} at {target.pos}, dealing {damage} damage")
 
-        if isinstance(target, (Axeman, Archer, Knight, Bear, Strzyga)) and target.hp > 0:
+        if isinstance(target, (Axeman, Archer, Knight, Bear, Strzyga, Priestess, Shaman)) and target.hp > 0:
             target.update_attackers(self, context.current_time)
             if not target.target or getattr(target, "autonomous_target", False):
                 closest_attacker = target.get_closest_attacker()
@@ -1967,7 +1969,7 @@ class Strzyga(Unit):
         self.last_attack_time = context.current_time
         print(f"{self.__class__.__name__} at {self.pos} attacked {target.__class__.__name__} at {target.pos}, dealing {damage} damage")
 
-        if isinstance(target, (Axeman, Archer, Knight, Bear, Strzyga)) and target.hp > 0:
+        if isinstance(target, (Axeman, Archer, Knight, Bear, Strzyga, Priestess, Shaman)) and target.hp > 0:
             target.update_attackers(self, context.current_time)
             if not target.target or getattr(target, "autonomous_target", False):
                 closest_attacker = target.get_closest_attacker()
@@ -2022,6 +2024,274 @@ class Strzyga(Unit):
 
 
 # Archer class
+# Priestess class (melee unit, like Knight) — produced from ShamansHut
+class Priestess(Unit):
+    # Temporary costs: buildable from ShamansHut
+    milk_cost = 10
+    wood_cost = 10
+
+    _WALK_FRAME_TIME = 0.5
+    _ATTACK_FRAME_TIME = 0.4
+    _IDLE_SPEED_EPS2 = 0.05
+
+    def __init__(self, x, y, player_id, player_color):
+        super().__init__(x, y, size=UNIT_SIZE, speed=2.5, color=BLUE, player_id=player_id, player_color=player_color)
+        # Stats like Knight (for now)
+        self.attack_damage = 17
+        self.attack_range = 20
+        self.attack_cooldown = 1.0
+        self.armor = 5
+
+        self._attacking_until = 0.0
+        self._attack_facing = "D"
+        self._last_facing = "D"
+
+    def _facing_from_velocity(self) -> str:
+        v = self.velocity
+        if v.length_squared() < self._IDLE_SPEED_EPS2:
+            return "M"
+        x, y = v.x, v.y
+        if abs(x) < 0.35 and y < 0: return "U"
+        if abs(x) < 0.35 and y > 0: return "D"
+        if abs(y) < 0.35 and x < 0: return "L"
+        if abs(y) < 0.35 and x > 0: return "R"
+        if x < 0 and y < 0: return "LU"
+        if x < 0 and y > 0: return "LD"
+        if x > 0 and y < 0: return "RU"
+        if x > 0 and y > 0: return "RD"
+        return "D"
+
+    def attack(self, target, current_time):
+        if not isinstance(target, Unit) or isinstance(target, Tree) or target.hp <= 0 or target not in context.all_units:
+            return
+
+        distance = (self.pos - target.pos).length()
+        max_range = self.attack_range + self.size / 2 + target.size / 2
+        if distance > max_range:
+            return
+
+        if context.current_time - self.last_attack_time < self.attack_cooldown:
+            return
+
+        v = (target.pos - self.pos)
+        if v.length_squared() > 1e-6:
+            x, y = v.x, v.y
+            if abs(x) < 0.35 * abs(y) and y < 0: self._attack_facing = "U"
+            elif abs(x) < 0.35 * abs(y) and y > 0: self._attack_facing = "D"
+            elif abs(y) < 0.35 * abs(x) and x < 0: self._attack_facing = "L"
+            elif abs(y) < 0.35 * abs(x) and x > 0: self._attack_facing = "R"
+            elif x < 0 and y < 0: self._attack_facing = "LU"
+            elif x < 0 and y > 0: self._attack_facing = "LD"
+            elif x > 0 and y < 0: self._attack_facing = "RU"
+            elif x > 0 and y > 0: self._attack_facing = "RD"
+            else: self._attack_facing = "D"
+        else:
+            self._attack_facing = self._last_facing or "D"
+
+        attack_frames = get_unit_attack_frames("Priestess", int(self.size), tuple(self.player_color[:3]), facing=self._attack_facing)
+        anim_len = (len(attack_frames) * self._ATTACK_FRAME_TIME) if attack_frames else 0.35
+        self._attacking_until = max(self._attacking_until, context.current_time + anim_len)
+
+        damage = max(0, self.attack_damage - target.armor)
+        hp_before = float(getattr(target, "hp", 0))
+        target.hp -= damage
+        progression.award_combat_xp(self, target, damage=damage, target_hp_before=hp_before)
+        self.last_attack_time = context.current_time
+
+        if isinstance(target, (Axeman, Archer, Knight, Bear, Strzyga, Priestess, Shaman)) and target.hp > 0:
+            target.update_attackers(self, context.current_time)
+            if not target.target or getattr(target, "autonomous_target", False):
+                closest_attacker = target.get_closest_attacker()
+                if closest_attacker:
+                    target.target = closest_attacker
+                    target.autonomous_target = True
+                    target.path = []
+                    target.path_index = 0
+
+    def draw(self, screen, camera_x, camera_y):
+        # Match Knight/Bear animation logic: walk vs attack frames
+        if (self.pos.x < camera_x - self.size / 2 or self.pos.x > camera_x + VIEW_WIDTH + self.size / 2 or
+            self.pos.y < camera_y - self.size / 2 or self.pos.y > camera_y + VIEW_HEIGHT + self.size / 2):
+            return
+
+        cls_name = self.__class__.__name__
+
+        x = self.pos.x - camera_x + VIEW_MARGIN_LEFT
+        y = self.pos.y - camera_y + VIEW_MARGIN_TOP
+
+        now = context.current_time
+
+        # Determine facing
+        facing = self._facing_from_velocity()
+        if facing != "M":
+            self._last_facing = facing
+
+        # choose frames
+        if now < self._attacking_until:
+            facing_use = self._attack_facing or self._last_facing or "D"
+            frames = get_unit_attack_frames("Priestess", int(self.size), tuple(self.player_color[:3]), facing=facing_use)
+            frame_time = self._ATTACK_FRAME_TIME
+            dx, dy = _scaled_attack_offset(cls_name, facing_use)
+        else:
+            facing_use = (self._last_facing or "D")
+            frames = get_unit_walk_frames("Priestess", int(self.size), tuple(self.player_color[:3]), facing=facing_use)
+            frame_time = self._WALK_FRAME_TIME
+            dx, dy = (0, 0)
+
+        if not frames:
+            image = get_team_sprite(cls_name, int(self.size), tuple(self.player_color[:3]))
+            if image:
+                image_surface = image.copy()
+                image_surface.set_alpha(self.alpha)
+                rect = image_surface.get_rect(center=(int(x), int(y)))
+                _blit_sprite_with_border(screen, image_surface, rect)
+            return
+
+        idx = int((now / frame_time)) % len(frames)
+        image_surface = frames[idx].copy()
+        image_surface.set_alpha(self.alpha)
+        rect = image_surface.get_rect(center=(int(x + dx), int(y + dy)))
+        _blit_sprite_with_border(screen, image_surface, rect)
+
+        if self.selected:
+            pygame.draw.rect(screen, self.player_color, (x - self.size / 2, y - self.size / 2, self.size, self.size), 1)
+        if self.should_highlight(context.current_time):
+            pygame.draw.rect(screen, WHITE, (x - self.size / 2, y - self.size / 2, self.size, self.size), 1)
+        self.draw_health_bar(screen, x, y)
+
+
+# Shaman class (melee unit, like Knight) — produced from ShamansHut
+class Shaman(Unit):
+    milk_cost = 10
+    wood_cost = 10
+
+    _WALK_FRAME_TIME = 0.5
+    _ATTACK_FRAME_TIME = 0.4
+    _IDLE_SPEED_EPS2 = 0.05
+
+    def __init__(self, x, y, player_id, player_color):
+        super().__init__(x, y, size=UNIT_SIZE, speed=2.5, color=BLUE, player_id=player_id, player_color=player_color)
+        # Stats like Knight (for now)
+        self.attack_damage = 17
+        self.attack_range = 20
+        self.attack_cooldown = 1.0
+        self.armor = 5
+
+        self._attacking_until = 0.0
+        self._attack_facing = "D"
+        self._last_facing = "D"
+
+    def _facing_from_velocity(self) -> str:
+        v = self.velocity
+        if v.length_squared() < self._IDLE_SPEED_EPS2:
+            return "M"
+        x, y = v.x, v.y
+        if abs(x) < 0.35 and y < 0: return "U"
+        if abs(x) < 0.35 and y > 0: return "D"
+        if abs(y) < 0.35 and x < 0: return "L"
+        if abs(y) < 0.35 and x > 0: return "R"
+        if x < 0 and y < 0: return "LU"
+        if x < 0 and y > 0: return "LD"
+        if x > 0 and y < 0: return "RU"
+        if x > 0 and y > 0: return "RD"
+        return "D"
+
+    def attack(self, target, current_time):
+        if not isinstance(target, Unit) or isinstance(target, Tree) or target.hp <= 0 or target not in context.all_units:
+            return
+
+        distance = (self.pos - target.pos).length()
+        max_range = self.attack_range + self.size / 2 + target.size / 2
+        if distance > max_range:
+            return
+
+        if context.current_time - self.last_attack_time < self.attack_cooldown:
+            return
+
+        v = (target.pos - self.pos)
+        if v.length_squared() > 1e-6:
+            x, y = v.x, v.y
+            if abs(x) < 0.35 * abs(y) and y < 0: self._attack_facing = "U"
+            elif abs(x) < 0.35 * abs(y) and y > 0: self._attack_facing = "D"
+            elif abs(y) < 0.35 * abs(x) and x < 0: self._attack_facing = "L"
+            elif abs(y) < 0.35 * abs(x) and x > 0: self._attack_facing = "R"
+            elif x < 0 and y < 0: self._attack_facing = "LU"
+            elif x < 0 and y > 0: self._attack_facing = "LD"
+            elif x > 0 and y < 0: self._attack_facing = "RU"
+            elif x > 0 and y > 0: self._attack_facing = "RD"
+            else: self._attack_facing = "D"
+        else:
+            self._attack_facing = self._last_facing or "D"
+
+        attack_frames = get_unit_attack_frames("Shaman", int(self.size), tuple(self.player_color[:3]), facing=self._attack_facing)
+        anim_len = (len(attack_frames) * self._ATTACK_FRAME_TIME) if attack_frames else 0.35
+        self._attacking_until = max(self._attacking_until, context.current_time + anim_len)
+
+        damage = max(0, self.attack_damage - target.armor)
+        hp_before = float(getattr(target, "hp", 0))
+        target.hp -= damage
+        progression.award_combat_xp(self, target, damage=damage, target_hp_before=hp_before)
+        self.last_attack_time = context.current_time
+
+        if isinstance(target, (Axeman, Archer, Knight, Bear, Strzyga, Priestess, Shaman)) and target.hp > 0:
+            target.update_attackers(self, context.current_time)
+            if not target.target or getattr(target, "autonomous_target", False):
+                closest_attacker = target.get_closest_attacker()
+                if closest_attacker:
+                    target.target = closest_attacker
+                    target.autonomous_target = True
+                    target.path = []
+                    target.path_index = 0
+
+    def draw(self, screen, camera_x, camera_y):
+        if (self.pos.x < camera_x - self.size / 2 or self.pos.x > camera_x + VIEW_WIDTH + self.size / 2 or
+            self.pos.y < camera_y - self.size / 2 or self.pos.y > camera_y + VIEW_HEIGHT + self.size / 2):
+            return
+
+        cls_name = self.__class__.__name__
+
+        x = self.pos.x - camera_x + VIEW_MARGIN_LEFT
+        y = self.pos.y - camera_y + VIEW_MARGIN_TOP
+
+        now = context.current_time
+
+        facing = self._facing_from_velocity()
+        if facing != "M":
+            self._last_facing = facing
+
+        if now < self._attacking_until:
+            facing_use = self._attack_facing or self._last_facing or "D"
+            frames = get_unit_attack_frames("Shaman", int(self.size), tuple(self.player_color[:3]), facing=facing_use)
+            frame_time = self._ATTACK_FRAME_TIME
+            dx, dy = _scaled_attack_offset(cls_name, facing_use)
+        else:
+            facing_use = (self._last_facing or "D")
+            frames = get_unit_walk_frames("Shaman", int(self.size), tuple(self.player_color[:3]), facing=facing_use)
+            frame_time = self._WALK_FRAME_TIME
+            dx, dy = (0, 0)
+
+        if not frames:
+            image = get_team_sprite(cls_name, int(self.size), tuple(self.player_color[:3]))
+            if image:
+                image_surface = image.copy()
+                image_surface.set_alpha(self.alpha)
+                rect = image_surface.get_rect(center=(int(x), int(y)))
+                _blit_sprite_with_border(screen, image_surface, rect)
+            return
+
+        idx = int((now / frame_time)) % len(frames)
+        image_surface = frames[idx].copy()
+        image_surface.set_alpha(self.alpha)
+        rect = image_surface.get_rect(center=(int(x + dx), int(y + dy)))
+        _blit_sprite_with_border(screen, image_surface, rect)
+
+        if self.selected:
+            pygame.draw.rect(screen, self.player_color, (x - self.size / 2, y - self.size / 2, self.size, self.size), 1)
+        if self.should_highlight(context.current_time):
+            pygame.draw.rect(screen, WHITE, (x - self.size / 2, y - self.size / 2, self.size, self.size), 1)
+        self.draw_health_bar(screen, x, y)
+
+
 class Archer(Unit):
     milk_cost = 400
     wood_cost = 200
@@ -2158,7 +2428,7 @@ class Archer(Unit):
         self.last_attack_time = context.current_time
 
         # Notify target for defensive behavior (same as Unit.attack)
-        if isinstance(target, (Axeman, Archer, Knight, Bear, Strzyga)) and target.hp > 0:
+        if isinstance(target, (Axeman, Archer, Knight, Bear, Strzyga, Priestess, Shaman)) and target.hp > 0:
             target.update_attackers(self, context.current_time)
             if not target.target or getattr(target, "autonomous_target", False):
                 closest_attacker = target.get_closest_attacker()
