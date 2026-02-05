@@ -20,7 +20,7 @@ from typing import Dict, List, Optional, Tuple, Type, Any
 import pygame
 
 from constants import *  # SCREEN_WIDTH/HEIGHT, TILE_SIZE, VIEW_* etc.
-from world_objects import Bridge, Road, MiscPassable
+from world_objects import Bridge, Road, MiscPassable, MiscImpassable
 from tiles import GrassTile, Dirt, River, Foundation, Mountain
 from units import Unit, Axeman, Knight, Archer, Cow, Bear, Strzyga, Priestess, Shaman, Swordsman, Spearman, Tree, Barn, TownCenter, Barracks, ShamansHut, get_team_sprite, KnightsEstate, WarriorsLodge, Ruin, Wall, GIF_UNITS, get_unit_walk_frames, get_unit_walk_first_frame
 
@@ -51,6 +51,9 @@ _WALL_EDITOR_IMAGES: Dict[Tuple[str, int], Optional[pygame.Surface]] = {}
 MISC_PASS_VARIANT_PREFIX = "misc_pass"
 _MISC_PASS_EDITOR_IMAGES: Dict[Tuple[str, int], Optional[pygame.Surface]] = {}
 
+MISC_IMPA_VARIANT_PREFIX = "misc_impa"
+_MISC_IMPA_EDITOR_IMAGES: Dict[Tuple[str, int], Optional[pygame.Surface]] = {}
+
 # Tiles available to paint
 TILE_TYPES = {
     "GrassTile": GrassTile,
@@ -65,6 +68,7 @@ OBJECT_TYPES: Dict[str, Type] = {
     "Bridge": Bridge,
     "Road": Road,
     "MiscPassable": MiscPassable,
+    "MiscImpassable": MiscImpassable,
 }
 
 # Units available to place (as sprites)
@@ -244,6 +248,22 @@ def load_misc_pass_editor_image(variant: str, desired_px: int) -> Optional[pygam
     except Exception as e:
         print(f"[EDITOR] Failed to load {path}: {e}")
         _MISC_PASS_EDITOR_IMAGES[key] = None
+        return None
+
+
+def load_misc_impa_editor_image(variant: str, desired_px: int) -> Optional[pygame.Surface]:
+    key = (variant, desired_px)
+    if key in _MISC_IMPA_EDITOR_IMAGES:
+        return _MISC_IMPA_EDITOR_IMAGES[key]
+    path = f"assets/worldObjects/misc_impa/{variant}.png"
+    try:
+        img = pygame.image.load(path).convert_alpha()
+        img = pygame.transform.smoothscale(img, (desired_px, desired_px))
+        _MISC_IMPA_EDITOR_IMAGES[key] = img
+        return img
+    except Exception as e:
+        print(f"[EDITOR] Failed to load {path}: {e}")
+        _MISC_IMPA_EDITOR_IMAGES[key] = None
         return None
 
 # -----------------------------
@@ -685,6 +705,7 @@ def main() -> None:
     selected_wall_index = 1  # 1..12 (wall1 default)
 
     selected_misc_pass_index = 1  # 1..15 (road1 default)
+    selected_misc_impa_index = 1  # 1..12 (misc_impa1 default)
 
     object_passable = True  # applies to both road/bridge
 
@@ -720,6 +741,9 @@ def main() -> None:
 
     def current_misc_pass_variant() -> str:
         return f"{MISC_PASS_VARIANT_PREFIX}{selected_misc_pass_index}"
+
+    def current_misc_impa_variant() -> str:
+        return f"{MISC_IMPA_VARIANT_PREFIX}{selected_misc_impa_index}"
 
     def rebuild_ui() -> None:
         buttons.clear()
@@ -845,6 +869,12 @@ def main() -> None:
                     "variant": current_misc_pass_variant(),
                     "passable": bool(object_passable),
                 }
+            elif selected_object == "MiscImpassable":
+                objects_by_cell[key] = {
+                    "type": "MiscImpassable",
+                    "variant": current_misc_impa_variant(),
+                    "passable": False,
+                }
 
         elif mode == "unit":
             fp = footprint_cells(selected_unit, row, col)
@@ -900,6 +930,8 @@ def main() -> None:
                 return load_road_editor_image(current_road_variant(), desired_px)
             if value == "MiscPassable":
                 return load_misc_pass_editor_image(current_misc_pass_variant(), desired_px)
+            if value == "MiscImpassable":
+                return load_misc_impa_editor_image(current_misc_impa_variant(), desired_px)
             return None
 
         # Units
@@ -1087,6 +1119,14 @@ def main() -> None:
                                 mode = "object"
                                 _ = load_misc_pass_editor_image(current_misc_pass_variant(), int(TILE_SIZE))
 
+                            elif b.value == "MiscImpassable":
+                                if selected_object == "MiscImpassable" and mode == "object":
+                                    selected_misc_impa_index += 1
+                                    if selected_misc_impa_index > 12:
+                                        selected_misc_impa_index = 1
+                                selected_object = "MiscImpassable"
+                                mode = "object"
+                                _ = load_misc_impa_editor_image(current_misc_impa_variant(), int(TILE_SIZE))
                         elif b.kind == "unit":
                             # Special behavior: repeated clicks on Tree cycle tree0..tree6
                             if b.value == "Tree":
@@ -1176,6 +1216,10 @@ def main() -> None:
 
             elif t == "MiscPassable":
                 obj = MiscPassable(c * TILE_SIZE, r * TILE_SIZE, variant=variant)
+                obj.draw(view_surf, camera_x, camera_y)
+
+            elif t == "MiscImpassable":
+                obj = MiscImpassable(c * TILE_SIZE, r * TILE_SIZE, variant=variant)
                 obj.draw(view_surf, camera_x, camera_y)
 
         # Borders ONLY between different tile types

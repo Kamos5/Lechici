@@ -14,7 +14,7 @@ from constants import *
 import context
 import units as units_mod
 from tiles import GrassTile, Dirt, River, Foundation, Mountain
-from world_objects import Bridge, Road, MiscPassable
+from world_objects import Bridge, Road, MiscPassable, MiscImpassable
 from units import Tree, Building, Wall
 from player import Player, PlayerAI
 from pathfinding import SpatialGrid, WaypointGraph
@@ -198,6 +198,13 @@ def load_editor_map(path: str) -> Tuple[
                     world_objects.append(MiscPassable(x, y, variant=variant))
                 except TypeError:
                     world_objects.append(MiscPassable(x, y))
+
+            elif obj_type == "MiscImpassable":
+                variant = info.get("variant")
+                try:
+                    world_objects.append(MiscImpassable(x, y, variant=variant))
+                except TypeError:
+                    world_objects.append(MiscImpassable(x, y))
 
     return grass_tiles, all_units, river_tiles, world_objects
 

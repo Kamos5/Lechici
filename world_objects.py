@@ -178,3 +178,64 @@ class MiscPassable(WorldObject):
                 (60, 60, 60),
                 (self.pos.x - camera_x, self.pos.y - camera_y, TILE_SIZE, TILE_SIZE),
             )
+
+
+class MiscImpassable(WorldObject):
+    """A tile-aligned world object that blocks movement (impassable).
+
+    Assets live in: assets/worldObjects/misc_impa/{variant}.png
+    Expected variant names: misc_impa1..misc_impa12 (adjust VARIANT_MAX if needed).
+    """
+
+    _variant_images: dict[str, pygame.Surface | None] = {}
+    DEFAULT_VARIANT = "misc_impa1"
+    VARIANT_MIN = 1
+    VARIANT_MAX = 12
+
+    def __init__(self, x, y, *, variant: str | None = None):
+        super().__init__(x, y, passable=False)
+        self.variant = self._sanitize_variant(variant) or self.DEFAULT_VARIANT
+        if self.variant not in MiscImpassable._variant_images:
+            MiscImpassable._variant_images[self.variant] = MiscImpassable._load_variant_image(self.variant)
+
+    @staticmethod
+    def _sanitize_variant(v: str | None) -> str | None:
+        if not isinstance(v, str) or not v.startswith("misc_impa"):
+            return None
+        try:
+            idx = int(v[len("misc_impa"):])
+        except Exception:
+            return None
+        return v if MiscImpassable.VARIANT_MIN <= idx <= MiscImpassable.VARIANT_MAX else None
+
+    def set_variant(self, variant: str) -> None:
+        v = self._sanitize_variant(variant) or self.DEFAULT_VARIANT
+        self.variant = v
+        if v not in MiscImpassable._variant_images:
+            MiscImpassable._variant_images[v] = MiscImpassable._load_variant_image(v)
+
+    @classmethod
+    def _load_variant_image(cls, variant: str) -> pygame.Surface | None:
+        path = f"assets/worldObjects/misc_impa/{variant}.png"
+        try:
+            img = pygame.image.load(path).convert_alpha()
+            return pygame.transform.scale(img, (TILE_SIZE, TILE_SIZE))
+        except (pygame.error, FileNotFoundError) as e:
+            print(f"Failed to load {path}: {e}")
+            return None
+
+    def draw(self, surface, camera_x, camera_y):
+        if (self.pos.x < camera_x - TILE_SIZE or self.pos.x > camera_x + VIEW_WIDTH or
+            self.pos.y < camera_y - TILE_SIZE or self.pos.y > camera_y + VIEW_HEIGHT):
+            return
+
+        img = MiscImpassable._variant_images.get(self.variant)
+        if img is not None:
+            surface.blit(img, (self.pos.x - camera_x, self.pos.y - camera_y))
+        else:
+            pygame.draw.rect(
+                surface,
+                (60, 30, 30),
+                (self.pos.x - camera_x, self.pos.y - camera_y, TILE_SIZE, TILE_SIZE),
+            )
+

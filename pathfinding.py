@@ -9,7 +9,8 @@ import pygame
 from pygame.math import Vector2
 
 from constants import *
-from world_objects import Bridge, Road, MiscPassable
+import context
+from world_objects import Bridge, Road, MiscPassable, MiscImpassable
 from tiles import Dirt, GrassTile, Foundation
 from units import Axeman, Barn, Building, Cow, TownCenter, Tree, Unit
 from world_objects import Road
@@ -32,6 +33,8 @@ class WaypointGraph:
         self.walkable_cache = {}  # Cache walkable tiles per frame
         self.frame_walkable_cache = {}  # Cache walkable tiles for current frame
         self.frame_count = 0  # Track frame for cache invalidation
+        self._world_obj_cache_frame = -1
+        self._world_obj_blocked_tiles: Set[Tuple[int, int]] = set()
 
     def is_walkable(self, tile_x, tile_y, unit):
         # Check map bounds
@@ -42,6 +45,26 @@ class WaypointGraph:
         cache_key = (tile_x, tile_y, unit.__class__.__name__, self.frame_count)
         if cache_key in self.frame_walkable_cache:
             return self.frame_walkable_cache[cache_key]
+
+        # ---- World-objects overlay blocking (from context.world_objects) ----
+        if self._world_obj_cache_frame != self.frame_count:
+            self._world_obj_cache_frame = self.frame_count
+            blocked: Set[Tuple[int, int]] = set()
+            for obj in getattr(context, "world_objects", []) or []:
+                try:
+                    if getattr(obj, "passable", False):
+                        continue
+                    ox = int(obj.pos.x // self.tile_size)
+                    oy = int(obj.pos.y // self.tile_size)
+                    blocked.add((ox, oy))
+                except Exception:
+                    continue
+            self._world_obj_blocked_tiles = blocked
+
+        if (tile_x, tile_y) in self._world_obj_blocked_tiles:
+            self.frame_walkable_cache[cache_key] = False
+            return False
+
 
         # Check tile type
         if not isinstance(self.grass_tiles[tile_y][tile_x], (GrassTile, Dirt, Bridge, Road, Foundation, MiscPassable)):

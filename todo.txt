@@ -64,6 +64,7 @@ done:
 + rest of units
 + Fix: Player can select units of other players
 + Fix: when boxing and moving outside the borders boxe don't behave good
++ other misc world_obj pass + impassible
 
 todo:
 
@@ -86,7 +87,6 @@ CORE FEATURES:
 - fix animation attack offset
 - animations (archer done, cow done, axeman done, knight done, bear done: TODO DEATH ANIMATION ALL)
 - idle units? - make their animations a bit different
-- other misc world_obj pass + impassible
 - chopping sync with axeman animation
 - dmg only after animation is finished (dmg)
 - buildings destroy roads build over it
