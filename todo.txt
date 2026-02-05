@@ -99,6 +99,7 @@ NICE TO HAVE:
 - self learning AI?
 - different grass types (season based?)
 - update map edit
+- map clock for script
 
 BUGS:
 - fix: units gating stuck together

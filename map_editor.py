@@ -939,6 +939,8 @@ def main() -> None:
             active = True
         elif b.kind == "tile" and (mode == "tile") and b.value == selected_tile:
             active = True
+        elif b.kind == "object" and (mode == "object") and b.value == selected_object:
+            active = True
         elif b.kind == "unit" and (mode == "unit") and b.value == selected_unit:
             active = True
         elif b.kind == "player" and int(b.value) == selected_player:
