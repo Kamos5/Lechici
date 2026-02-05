@@ -65,7 +65,10 @@ done:
 + Fix: Player can select units of other players
 + Fix: when boxing and moving outside the borders boxe don't behave good
 + other misc world_obj pass + impassible
-+???? grid actions implemented list [move]
++ grid actions implemented list [move]
++ basic behaviour to attack enemy when seen
+
+
 
 todo:
 

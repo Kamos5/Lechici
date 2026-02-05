@@ -388,7 +388,8 @@ class Unit:
         self.velocity = Vector2(0, 0)
         self.damping = 0.95
         self.hp = 50
-        self.view_distance = 5
+        self.view_distance = 6
+        self.aggro_distance = 5
         self.max_hp = 50
         self.mana = 0
         self.special = 0
@@ -409,6 +410,13 @@ class Unit:
         self.last_target = None
         self.attackers = []  # List of (attacker, timestamp) tuples
         self.attacker_timeout = 5.0  # Remove attackers after 5 seconds
+
+        # --- Basic autonomous combat behavior (guard stance) ---
+        # If True, current self.target was acquired automatically (not a direct player order).
+        self.autonomous_target: bool = False
+        # Small throttle to avoid reacquiring targets every frame (prevents path/position jitter).
+        self._last_auto_acquire_time: float = -1e9
+        self._auto_acquire_cooldown: float = 0.30
 
         # --- Progression (XP + levels) ---
         # Starts at novice (level 0) with 0 XP.
@@ -531,6 +539,97 @@ class Unit:
         # Outline
         pygame.draw.rect(screen, BLACK, (bar_x, bar_y, bar_w, bar_h), 1)
 
+    # ---------------- Guard stance / autonomous targeting ----------------
+
+    def _can_guard_auto_acquire(self) -> bool:
+        """Return True when this unit should auto-acquire enemy targets (guard stance)."""
+        # World objects and non-combat units (e.g., buildings) should never auto-acquire.
+        if isinstance(self, (Building, Tree)):
+            return False
+        if getattr(self, "attack_damage", 0) <= 0:
+            return False
+
+        cls_name = self.__class__.__name__
+        # Cows are explicitly excluded.
+        if cls_name == "Cow":
+            return False
+
+        # Axemen: excluded only while doing worker-ish tasks (wood harvesting / repairing).
+        # - harvesting wood is identified by having a Vector2 target that matches a Tree pos
+        # - depositing/returning also counts as busy
+        # TODO: when repairing is implemented, add a flag/state check here to disable guard while repairing.
+        if cls_name == "Axeman":
+            if getattr(self, "depositing", False):
+                return False
+            if isinstance(getattr(self, "target", None), Vector2):
+                tpos = getattr(self, "target", None)
+                if tpos is not None:
+                    # If currently chopping a tree, don't auto-acquire.
+                    for u in getattr(context, "all_units", []) or []:
+                        if isinstance(u, Tree) and u.player_id == 0 and u.pos == tpos:
+                            return False
+
+        # Normal move command: target is Vector2 and this wasn't an autonomous target.
+        if isinstance(getattr(self, "target", None), Vector2) and not getattr(self, "autonomous_target", False):
+            return False
+
+        return True
+
+    def _guard_auto_acquire(self, units) -> None:
+        """If idle (no target), pick a nearby enemy within aggro_distance and start chasing/attacking."""
+        if self.target is not None:
+            return
+
+        if not self._can_guard_auto_acquire():
+            return
+
+        now = float(getattr(context, "current_time", 0.0) or 0.0)
+        if (now - getattr(self, "_last_auto_acquire_time", -1e9)) < getattr(self, "_auto_acquire_cooldown", 0.30):
+            return
+        self._last_auto_acquire_time = now
+
+        # Only use spatial grid if available; otherwise fall back to scanning.
+        radius_px = float(getattr(self, "aggro_distance", 0)) * TILE_SIZE
+        if radius_px <= 0:
+            return
+
+        grid = getattr(context, "spatial_grid", None)
+        candidates = []
+        if grid is not None:
+            nearby = grid.get_nearby_units(self, radius=radius_px)
+        else:
+            nearby = units
+
+        for u in nearby:
+            if u is self:
+                continue
+            if not isinstance(u, Unit) or isinstance(u, (Tree, Building)):
+                continue
+            if getattr(u, "hp", 0) <= 0 or u not in units:
+                continue
+
+            # Ignore Gaia (player0) unless the player explicitly orders an attack.
+            if getattr(u, "player_id", None) == 0:
+                continue
+
+            if getattr(u, "player_id", None) == getattr(self, "player_id", None):
+                continue
+
+            d = self.pos.distance_to(u.pos)
+            if d <= radius_px:
+                candidates.append((d, u))
+
+        if not candidates:
+            return
+
+        candidates.sort(key=lambda t: t[0])
+        target = candidates[0][1]
+        self.target = target
+        self.autonomous_target = True
+        self.path = []
+        self.path_index = 0
+        self.last_target = None
+
     def draw(self, screen, camera_x, camera_y):
         if (self.pos.x < camera_x - self.size / 2 or self.pos.x > camera_x + VIEW_WIDTH + self.size / 2 or
             self.pos.y < camera_y - self.size / 2 or self.pos.y > camera_y + VIEW_HEIGHT + self.size / 2):
@@ -570,11 +669,33 @@ class Unit:
             # pygame.draw.lines(screen, WHITE, False, points, 1)
 
     def move(self, units, spatial_grid=None, waypoint_graph=None):
+        # Guard stance: if idle and allowed, auto-acquire a nearby enemy.
+        if not self.target:
+            self._guard_auto_acquire(units)
+
+        # If still no target, remain idle.
         if not self.target:
             self.path = []
             self.path_index = 0
             self.velocity = Vector2(0, 0)
             return
+
+        # If this was an autonomous chase and the target is far beyond view_distance,
+        # stop following (prevents chasing across the whole map).
+        if (
+            getattr(self, "autonomous_target", False)
+            and isinstance(self.target, Unit)
+            and not isinstance(self.target, Tree)
+        ):
+            view_px = float(getattr(self, "view_distance", 0)) * TILE_SIZE
+            if view_px > 0 and self.pos.distance_to(self.target.pos) > view_px:
+                self.target = None
+                self.autonomous_target = False
+                self.path = []
+                self.path_index = 0
+                self.last_target = None
+                self.velocity = Vector2(0, 0)
+                return
 
         # Determine target position and stop distance
         if isinstance(self.target, Unit) and not isinstance(self.target, Tree):
@@ -1424,7 +1545,10 @@ class Axeman(Unit):
 
         # Idle state: No target, remain idle unless commanded
         if not self.target and not self.depositing:
-            return  # Do not automatically target trees unless commanded
+            # Guard stance (Axeman only when not chopping wood / depositing).
+            self._guard_auto_acquire(units)
+            if not self.target:
+                return  # Do not automatically target trees unless commanded
 
         # Depositing state: Move to TownCenter to deposit wood
         if self.depositing and self.target:
