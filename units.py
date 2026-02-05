@@ -208,7 +208,7 @@ ATTACK_NO_SCALE = {"Axeman", "Knight", "Bear", "Strzyga", "Priestess", "Shaman",
 
 # Draw a 1px border around the *actual sprite surface rect* (not the tile).
 # Useful when aligning oversized GIF frames.
-SPRITE_BORDER_ENABLED: bool = True
+SPRITE_BORDER_ENABLED: bool = False
 SPRITE_BORDER_WIDTH: int = 1
 SPRITE_BORDER_COLOR: Tuple[int, int, int] = (255, 0, 255)  # magenta for visibility
 

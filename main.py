@@ -608,7 +608,9 @@ def run_game() -> int:
                 print(f"Set rally point for {len(selected_buildings)} building(s) to {snapped_pos}")
                 move_order_times[snapped_pos] = current_time
             else:
-                for unit in all_units:
+                # Issue commands ONLY to the current player's selected controllable units.
+                # Enemy/neutral units may be selectable (for inspection), but must not receive orders.
+                for unit in (current_player.units if current_player else []):
                     if unit.selected and not isinstance(unit, (Building, Tree)):
                         clicked_tree = clicked_unit if isinstance(clicked_unit, Tree) and clicked_unit.player_id == 0 else None
                         if clicked_tree and isinstance(unit, Axeman) and unit.special == 0 and not unit.depositing:
