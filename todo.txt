@@ -63,19 +63,21 @@ done:
 + pause menu
 + rest of units
 + Fix: Player can select units of other players
++ Fix: when boxing and moving outside the borders boxe don't behave good
 
 todo:
 
 CORE FEATURES:
-- double clicking the same unit select all that are sees in camera
-- fire animation
-- start screen
-- objectvies
-- end screen (sum up - all the death, killed, who survived etc)
-- grid actions (a-move, move etc, repair)
-- fullscreen
-- fog of war
+- double clicking the same unit select all that are sees in camera MINOR
+- fire animation MINOR
+- start screen MAJOR
+- objectvies MAJOR
+- end screen (sum up - all the death, killed, who survived etc) MAJOR
+- grid actions (a-move, move etc, repair) CRITICAL
+- fullscreen CRITICAL
+- fog of war CRITICAL
 
+- zoom?
 - menu
 - script to set up custom maps
 
@@ -102,7 +104,6 @@ BUGS:
 - fix: units gating stuck together
 - fix: cow stuck in empty of grass field dont move and wait for regrow (do something)
 - FIX: error with COW when she targets enemy unit (building included)
-- Fix: when boxing and moving outside the borders boxe don't behave good
 
 CORE 2:
 

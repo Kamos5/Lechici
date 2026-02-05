@@ -1002,26 +1002,40 @@ def run_game() -> int:
                         continue
 
                     if selecting and current_player:
+                        # End box-select even if the mouse is released over UI or outside the view.
                         mouse_pos = Vector2(event.pos)
-                        if VIEW_MARGIN_LEFT <= mouse_pos.x <= VIEW_BOUNDS_X and VIEW_MARGIN_TOP <= mouse_pos.y <= VIEW_BOUNDS_Y:
-                            selection_end = camera.screen_to_world(mouse_pos, view_margin_left=VIEW_MARGIN_LEFT, view_margin_top=VIEW_MARGIN_TOP)
-                            selecting = False
-                            # Shift+box adds; otherwise replace selection
-                            if not (pygame.key.get_mods() & pygame.KMOD_SHIFT):
-                                for player in players:
-                                    player.deselect_all_units()
-                                _update_player_selection_groups(current_player)
 
+                        # Clamp the release position to the main view rectangle so we can always convert to world coords.
+                        clamped = Vector2(
+                            max(VIEW_MARGIN_LEFT, min(mouse_pos.x, VIEW_BOUNDS_X)),
+                            max(VIEW_MARGIN_TOP,  min(mouse_pos.y, VIEW_BOUNDS_Y)),
+                        )
+
+                        selection_end = camera.screen_to_world(
+                            clamped,
+                            view_margin_left=VIEW_MARGIN_LEFT,
+                            view_margin_top=VIEW_MARGIN_TOP,
+                        )
+                        selecting = False
+                        pygame.event.set_grab(False)
+
+                        # Shift+box adds; otherwise replace selection
+                        if not (pygame.key.get_mods() & pygame.KMOD_SHIFT):
+                            for player in players:
+                                player.deselect_all_units()
+                            _update_player_selection_groups(current_player)
+
+                        if selection_start and selection_end:
                             x1, x2 = min(selection_start.x, selection_end.x), max(selection_start.x, selection_end.x)
                             y1, y2 = min(selection_start.y, selection_end.y), max(selection_start.y, selection_end.y)
                             for unit in current_player.units:
                                 if x1 <= unit.pos.x <= x2 and y1 <= unit.pos.y <= y2:
                                     unit.selected = True
 
-                            _normalize_selection_for_player(current_player)
-                            _update_player_selection_groups(current_player)
-                            selection_start = None
-                            selection_end = None
+                        _normalize_selection_for_player(current_player)
+                        _update_player_selection_groups(current_player)
+                        selection_start = None
+                        selection_end = None
 
                         pending_click = False
                         pending_click_unit = None
@@ -1105,6 +1119,7 @@ def run_game() -> int:
                         if delta.length_squared() >= (drag_threshold_px * drag_threshold_px):
                             # Start box selecting (even if the drag began over a unit/building)
                             selecting = True
+                            pygame.event.set_grab(True)
                             pending_click = False
                             pending_click_unit = None
                             # Shift+drag-box adds to selection; normal drag-box replaces selection
