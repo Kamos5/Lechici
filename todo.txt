@@ -66,7 +66,7 @@ done:
 + Fix: when boxing and moving outside the borders boxe don't behave good
 + other misc world_obj pass + impassible
 + grid actions implemented list [move]
-+ basic behaviour to attack enemy when seen
++ basic behaviour to attack enemy when seen (aggressive stance)
 
 
 
@@ -97,7 +97,7 @@ CORE FEATURES:
 - give feedback when rightclicked to move or attack
 
 NICE TO HAVE:
-- behaviour (passive, neutral, aggressive)
+- behaviour (passive (don't move even when attack), neutral (until attacked stay))
 - magic?
 - upgrades (eco, units etc)
 - self learning AI?
