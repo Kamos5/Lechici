@@ -84,15 +84,15 @@ UNIT_TYPES: Dict[str, Type] = {
     "TownCenter": TownCenter,
     "Barracks": Barracks,
     "ShamansHut": ShamansHut,
-    "KnightsEstate": KnightsEstate,
     "WarriorsLodge": WarriorsLodge,
+    "KnightsEstate": KnightsEstate,
     "Ruin": Ruin,
     "Wall": Wall,
 }
 
 # UI grouping (Tree is in bottom row with buildings)
 UNIT_ROW: List[str] = ["Axeman", "Knight", "Bear", "Strzyga", "Priestess", "Shaman", "Swordsman", "Spearman", "Archer", "Cow"]
-BOTTOM_ROW: List[str] = ["Tree", "Wall", "Barn", "TownCenter", "Barracks", "ShamansHut", "KnightsEstate", "WarriorsLodge", "Ruin"]
+BOTTOM_ROW: List[str] = ["Tree", "Wall", "Barn", "TownCenter", "Barracks", "ShamansHut", "WarriorsLodge", "KnightsEstate", "Ruin"]
 
 # Editor players (id -> color)
 PLAYERS: List[Tuple[str, Tuple[int, int, int]]] = [
@@ -319,7 +319,7 @@ def draw_unit_sprite(
     tree_variant: Optional[str] = None,
 ) -> None:
     # Buildings bigger
-    if unit_type in ("Barn", "TownCenter", "Barracks", "ShamansHut", "KnightsEstate", "WarriorsLodge", "Ruin"):
+    if unit_type in ("Barn", "TownCenter", "Barracks", "ShamansHut", "WarriorsLodge", "KnightsEstate",  "Ruin"):
         desired = int(BUILDING_SIZE)
     elif unit_type in ("Tree", "Wall"):
         desired = int(TILE_SIZE)
@@ -584,7 +584,7 @@ def draw_scrollbars(
 # Footprints / occupancy
 # -----------------------------
 def is_building(unit_type: str) -> bool:
-    return unit_type in ("Barn", "TownCenter", "Barracks", "ShamansHut", "KnightsEstate", "WarriorsLodge", "Ruin")
+    return unit_type in ("Barn", "TownCenter", "Barracks", "ShamansHut", "WarriorsLodge", "KnightsEstate", "Ruin")
 
 
 def footprint_cells(unit_type: str, anchor_row: int, anchor_col: int) -> List[Tuple[int, int]]:

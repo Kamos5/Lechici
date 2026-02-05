@@ -61,6 +61,8 @@ done:
 + road -> cost 10 wood
 + control groups (simple done)
 + pause menu
++ rest of units
+
 
 todo:
 
@@ -80,8 +82,7 @@ CORE FEATURES:
 - death animation should linger
 - sounds?
 - fix animation attack offset
-- animations (archer done, cow done, axeman done, knight done, bear done: TODO Swordsman + DEATH ANIMATION ALL)
-- rest of units (TODO Swordsman)
+- animations (archer done, cow done, axeman done, knight done, bear done: TODO DEATH ANIMATION ALL)
 - idle units? - make their animations a bit different
 - other misc world_obj pass + impassible
 - chopping sync with axeman animation
@@ -101,7 +102,8 @@ BUGS:
 - fix: units gating stuck together
 - fix: cow stuck in empty of grass field dont move and wait for regrow (do something)
 - FIX: error with COW when she targets enemy unit (building included)
-
+- Player can select units of other players
+- Fix: when boxing and moving outside the borders boxe don't behave good
 
 CORE 2:
 

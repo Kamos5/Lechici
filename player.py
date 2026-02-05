@@ -436,7 +436,7 @@ class PlayerAI:
                 self.target_camp_pos = Vector2(150, 150)
 
         # Get all Player 1 buildings
-        enemy_buildings = [u for u in target_player.units if isinstance(u, (TownCenter, Barn, Barracks, ShamansHut, KnightsEstate, WarriorsLodge)) and u.hp > 0 and u.alpha == 255]
+        enemy_buildings = [u for u in target_player.units if isinstance(u, (TownCenter, Barn, Barracks, ShamansHut, WarriorsLodge, KnightsEstate)) and u.hp > 0 and u.alpha == 255]
 
         # Wave 1: After 30 seconds, 1 Archer
         if self.wave_number == 0 and elapsed_time >= 150:

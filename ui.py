@@ -6,7 +6,7 @@ from typing import Optional
 from world_objects import Road
 
 from constants import *
-from units import Unit, Building, Barn, Barracks, TownCenter, Axeman, Archer, Knight, Bear, Strzyga, Priestess, Shaman, Swordsman, Spearman, Cow, ShamansHut, KnightsEstate, WarriorsLodge, Wall, Tree
+from units import Unit, Building, Barn, Barracks, TownCenter, Axeman, Archer, Knight, Bear, Strzyga, Priestess, Shaman, Swordsman, Spearman, Cow, ShamansHut, WarriorsLodge, KnightsEstate, Wall, Tree
 
 
 def load_ui_icons():
@@ -650,8 +650,8 @@ def draw_grid_buttons(screen, grid_buttons, current_player, all_units, productio
                     ('Barracks', Barracks, active_buildings),
                     ('TownCenter', TownCenter, active_buildings),
                     ('ShamansHut', ShamansHut, active_buildings),
-                    ('KnightsEstate', KnightsEstate, active_buildings),
                     ('WarriorsLodge', WarriorsLodge, active_buildings),
+                    ('KnightsEstate', KnightsEstate, active_buildings),
                     ('Road', Road, active_buildings),
                     ('Wall', Wall, active_buildings),
                 ])

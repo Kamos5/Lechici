@@ -230,7 +230,7 @@ ATTACK_ANIM_OFFSETS: Dict[str, Dict[str, Tuple[float, float]]] = {
                 "LD": (0, 0), "RD": (0, 0), "LU": (0, 0), "RU": (0, 0)},
     "Archer": {"M": (0, 0), "D": (0, 0), "U": (0, 0), "L": (0, 0), "R": (0, 0),
                "LD": (0, 0), "RD": (0, 0), "LU": (0, 0), "RU": (0, 0)},
-    "Spearman": {"M": (0, 0), "D": (0, 0), "U": (0, 0), "L": (0, 0), "R": (0, 0),
+    "Swordsman": {"M": (0, 0), "D": (2, 0), "U": (3, -3), "L": (-2, -1), "R": (2, -1),
                "LD": (0, 0), "RD": (0, 0), "LU": (0, 0), "RU": (0, 0)},
 }
 
@@ -425,7 +425,7 @@ class Unit:
         # (for now) building_icon == building
         is_building = cls_name in {
             "Barn", "TownCenter", "Barracks", "ShamansHut",
-            "KnightsEstate", "WarriorsLodge", "Ruin", "Wall",
+            "WarriorsLodge", "KnightsEstate", "Ruin", "Wall",
         }
 
         # Tree is a variant-based world object (similar to Wall), but we still
