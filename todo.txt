@@ -65,6 +65,7 @@ done:
 + Fix: Player can select units of other players
 + Fix: when boxing and moving outside the borders boxe don't behave good
 + other misc world_obj pass + impassible
++???? grid actions implemented list [move]
 
 todo:
 
@@ -74,7 +75,7 @@ CORE FEATURES:
 - start screen MAJOR
 - objectvies MAJOR
 - end screen (sum up - all the death, killed, who survived etc) MAJOR
-- grid actions (a-move, move etc, repair) CRITICAL
+- grid actions (a-move, repair, stop, harvest, repair, patrol) CRITICAL
 - fullscreen CRITICAL
 - fog of war CRITICAL
 
@@ -90,7 +91,7 @@ CORE FEATURES:
 - chopping sync with axeman animation
 - dmg only after animation is finished (dmg)
 - buildings destroy roads build over it
-
+- give feedback when rightclicked to move or attack
 
 NICE TO HAVE:
 - behaviour (passive, neutral, aggressive)
