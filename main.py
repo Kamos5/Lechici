@@ -156,6 +156,9 @@ def run_game() -> int:
     building_to_place = None
     building_pos = None
 
+    # Armed command mode: when True, next LMB in world confirms a move-only order; RMB cancels.
+    move_armed = False
+
     # Building footprint is class-defined (Building.SIZE_TILES == 3 by default).
     # Walls override it to 1.
     def _placement_size_for(cls) -> int:
@@ -570,6 +573,59 @@ def run_game() -> int:
             camera.y = max(0, min(target_y, MAP_HEIGHT - VIEW_HEIGHT))
 
 
+
+
+    def _handle_move_click_command(screen_pos: tuple[int, int], current_time: float) -> None:
+        """Move-only order used by the Move button (armed): LMB confirms, RMB cancels.
+
+        This intentionally differs from right-click: it never attack-targets / harvest-targets; it just moves.
+        """
+        nonlocal move_armed, placing_building, building_to_place, building_pos
+
+        mouse_pos = Vector2(screen_pos)
+
+        # While Move is armed, RMB cancels (handled by caller). LMB confirms here.
+        if placing_building:
+            # Don't allow move-order while placing a building (building uses LMB confirm / RMB cancel).
+            return
+
+        if not (VIEW_MARGIN_LEFT <= mouse_pos.x <= VIEW_BOUNDS_X and VIEW_MARGIN_TOP <= mouse_pos.y <= VIEW_BOUNDS_Y):
+            return
+
+        if not current_player:
+            return
+
+        click_pos = camera.screen_to_world(mouse_pos, view_margin_left=VIEW_MARGIN_LEFT, view_margin_top=VIEW_MARGIN_TOP)
+        tile_x = int(click_pos.x // TILE_SIZE)
+        tile_y = int(click_pos.y // TILE_SIZE)
+        snapped_pos = Vector2(tile_x * TILE_SIZE + TILE_HALF, tile_y * TILE_SIZE + TILE_HALF)
+
+        any_ordered = False
+        for unit in current_player.units:
+            if unit.selected and not isinstance(unit, (Building, Tree)):
+                unit.target = Vector2(snapped_pos)
+                unit.autonomous_target = False
+                unit.path = []
+                unit.path_index = 0
+
+                # Cancel any special "depositing/returning" loops if present.
+                if hasattr(unit, "depositing"):
+                    unit.depositing = False
+                if hasattr(unit, "returning"):
+                    unit.returning = False
+                if hasattr(unit, "return_pos"):
+                    unit.return_pos = None
+
+                highlight_times[unit] = current_time
+                any_ordered = True
+
+        if any_ordered:
+            move_order_times[(snapped_pos.x, snapped_pos.y)] = current_time
+
+        # Disarm after confirmation
+        move_armed = False
+
+
     def _handle_right_click_command(screen_pos: tuple[int, int], current_time: float) -> None:
         """Existing right-click behavior (move/attack/rally/cancel placement)."""
         nonlocal placing_building, building_to_place, building_pos
@@ -766,7 +822,14 @@ def run_game() -> int:
                         cell = grid_actions.cell_from_mouse(grid_buttons, event.pos)
                         if cell and current_player:
                             r, c = cell
-                            handled, placing_building, building_to_place = grid_actions.execute_grid_cell(
+
+                            # Move button arms move-only mode: LMB confirms, RMB cancels (like building placement).
+                            if (r, c) == (0, 1):
+                                if any(u.selected and not isinstance(u, (Building, Tree)) for u in current_player.units):
+                                    move_armed = True
+                                grid_button_clicked = True
+                            else:
+                                handled, placing_building, building_to_place = grid_actions.execute_grid_cell(
                                 r, c,
                                 current_player=current_player,
                                 grid_buttons=grid_buttons,
@@ -899,6 +962,16 @@ def run_game() -> int:
                         else:
                             # Otherwise continue with normal map selection / pending click
                             if not grid_button_clicked and VIEW_MARGIN_LEFT <= mouse_pos.x <= VIEW_BOUNDS_X and VIEW_MARGIN_TOP <= mouse_pos.y <= VIEW_BOUNDS_Y:
+                                # If Move is armed, LMB confirms the move-only order and does NOT start selection/box-select.
+                                if move_armed and not placing_building:
+                                    _handle_move_click_command(event.pos, current_time)
+                                    pending_click = False
+                                    pending_click_unit = None
+                                    selecting = False
+                                    selection_start = None
+                                    selection_end = None
+                                    clicked_something = True
+                                    continue
                                 unit_clicked = None
                                 for unit in all_units:
                                     if unit.is_clicked(Vector2(mouse_pos.x - VIEW_MARGIN_LEFT, mouse_pos.y - VIEW_MARGIN_TOP), camera.x, camera.y):
@@ -968,6 +1041,14 @@ def run_game() -> int:
                 cell = grid_actions.cell_from_key(event.key)
                 if cell and current_player:
                     r, c = cell
+
+                    # Move button (W) arms move-only mode: LMB confirms, RMB cancels.
+                    if (r, c) == (0, 1):
+                        # Only arm if there is at least one selected controllable unit (not building/tree)
+                        if any(u.selected and not isinstance(u, (Building, Tree)) for u in current_player.units):
+                            move_armed = True
+                        continue
+
                     handled, placing_building, building_to_place = grid_actions.execute_grid_cell(
                         r, c,
                         current_player=current_player,
@@ -991,6 +1072,11 @@ def run_game() -> int:
                             right_mouse_down = False
                             right_mouse_dragging = False
                             right_mouse_last = None
+                            # If Move is armed, RMB cancels the armed order (like building placement).
+                            if move_armed and not placing_building:
+                                move_armed = False
+                                continue
+
                             _handle_right_click_command(event.pos, current_time)
                             continue
 
@@ -1317,6 +1403,13 @@ def run_game() -> int:
             # Keep control groups clean (hide bookmarks when groups are empty)
             if current_player:
                 _prune_control_groups(current_player)
+        # Auto-disarm Move if selection no longer has controllable units or if we're placing a building.
+        if placing_building:
+            move_armed = False
+        elif move_armed and current_player:
+            if not any(u.selected and not isinstance(u, (Building, Tree)) for u in current_player.units):
+                move_armed = False
+
 
         # Rendering
         screen.fill((0, 0, 0))  # Clear screen
@@ -1492,6 +1585,7 @@ def run_game() -> int:
                 all_units=all_units,
                 icons=icons,
                 fonts=fonts,
+                move_armed=move_armed,
                 fps=fps,
                 grass_tiles=grass_tiles,
                 camera=camera,
@@ -1504,6 +1598,7 @@ def run_game() -> int:
                 mode_text=("Defeat! Player 1 has lost all units.", (100, 0, 0)),
                 quit_button=quit_button,
                 fonts=fonts,
+                move_armed=move_armed,
             )
             running = False
 
@@ -1514,6 +1609,7 @@ def run_game() -> int:
                 mode_text=("Victory! Player 2 has been defeated!", (0, 100, 0)),
                 quit_button=quit_button,
                 fonts=fonts,
+                move_armed=move_armed,
             )
             running = False
         # Pause overlay (drawn on top of everything)
@@ -1522,6 +1618,7 @@ def run_game() -> int:
                 screen,
                 player_id=(paused_by_player_id or (getattr(current_player, 'player_id', None) or 1)),
                 fonts=fonts,
+                move_armed=move_armed,
             )
 
         pygame.display.flip()
