@@ -463,7 +463,7 @@ def draw_panels(screen):
     pygame.draw.rect(screen, PANEL_COLOR, (VIEW_MARGIN_LEFT, PANEL_Y, VIEW_WIDTH, PANEL_HEIGHT))
 
 
-def draw_grid_buttons(screen, grid_buttons, current_player, all_units, production_queues, current_time, icons, fonts, move_armed: bool = False):
+def draw_grid_buttons(screen, grid_buttons, current_player, all_units, production_queues, current_time, icons, fonts, move_armed: bool = False, repair_armed: bool = False):
     small_font = fonts["small_font"]
     mouse_pos = pygame.mouse.get_pos()
     hovered_tooltip = None  # (name, desc, milk_cost, wood_cost)
@@ -589,8 +589,10 @@ def draw_grid_buttons(screen, grid_buttons, current_player, all_units, productio
                 hov = ui_btn.hovered(mouse_pos)
                 ui_btn.draw_base(screen, hovered=hov)
 
-                # Orange border while Move is armed
+                # Orange border while Move/Repair is armed
                 if label == 'Move' and move_armed:
+                    pygame.draw.rect(screen, ORANGE, btn, 4)
+                if label == 'Repair' and repair_armed:
                     pygame.draw.rect(screen, ORANGE, btn, 4)
 
                 # Draw icon if available (Stop/Attack/Repair), otherwise just show hotkey badge.
@@ -618,8 +620,10 @@ def draw_grid_buttons(screen, grid_buttons, current_player, all_units, productio
                 hov = ui_btn.hovered(mouse_pos)
                 ui_btn.draw_base(screen, hovered=hov)
 
-                # Orange border while Move is armed
+                # Orange border while Move/Repair is armed
                 if label == 'Move' and move_armed:
+                    pygame.draw.rect(screen, ORANGE, btn, 4)
+                if label == 'Repair' and repair_armed:
                     pygame.draw.rect(screen, ORANGE, btn, 4)
                 ui_btn.draw_icon_fill(screen, icon_pad=4)
                 ui_btn.draw_hotkey_badge(screen, fonts.get("button_font") or small_font)
@@ -718,8 +722,10 @@ def draw_grid_buttons(screen, grid_buttons, current_player, all_units, productio
                 hov = ui_btn.hovered(mouse_pos)
                 ui_btn.draw_base(screen, hovered=hov)
 
-                # Orange border while Move is armed
+                # Orange border while Move/Repair is armed
                 if label == 'Move' and move_armed:
+                    pygame.draw.rect(screen, ORANGE, btn, 4)
+                if label == 'Repair' and repair_armed:
                     pygame.draw.rect(screen, ORANGE, btn, 4)
 
                 # Ensure icon is loaded even if no instance exists yet
@@ -1507,6 +1513,7 @@ def draw_game_ui(
         icons,
         fonts,
         move_armed: bool = False,
+        repair_armed: bool = False,
         fps=None,
         *,
         grass_tiles,
@@ -1515,7 +1522,7 @@ def draw_game_ui(
     draw_panels(screen)
     # Control group bookmarks (shown only when a group is saved)
     draw_control_group_bookmarks(screen, current_player, all_units, fonts)
-    draw_grid_buttons(screen, grid_buttons, current_player, all_units, production_queues, current_time, icons, fonts, move_armed=move_armed)
+    draw_grid_buttons(screen, grid_buttons, current_player, all_units, production_queues, current_time, icons, fonts, move_armed=move_armed, repair_armed=repair_armed)
 
     # --- NEW: minimap bottom-right (inside right panel) ---
     draw_minimap(screen, grass_tiles=grass_tiles, all_units=all_units, camera=camera, current_player=current_player)

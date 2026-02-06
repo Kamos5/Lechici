@@ -149,3 +149,11 @@ MOUNTAIN_DEFAULT_INDEX = 5  # river5 (requested default)
 BRIDGE_VARIANT_MIN = 1
 BRIDGE_VARIANT_MAX = 8
 BRIDGE_DEFAULT_INDEX = 3
+
+# -----------------------------
+# Repair tuning
+# -----------------------------
+# Repair speed = this multiplier * building construction HP/s (per axeman).
+REPAIR_SPEED_MULT = 0.5
+# How close an axeman must get to a building's edge to repair it (pixels).
+REPAIR_REACH_PADDING = 6 * SCALE

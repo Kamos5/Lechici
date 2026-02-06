@@ -1496,7 +1496,7 @@ class TownCenter(Building):
     wood_cost = 800
     def __init__(self, x, y, player_id, player_color):
         super().__init__(x, y, color=TOWN_CENTER_GRAY, player_id=player_id, player_color=player_color)
-        self.hp = 200  # High HP for buildings
+        self.hp = 100  # High HP for buildings
         self.max_hp = 200
         self.armor = 5
 
@@ -1540,6 +1540,8 @@ class Axeman(Unit):
         self._attacking_until = 0.0
         self._attack_facing = "D"
 
+        self.repair_target = None          # target building (or None)
+        self._repair_last_time = None
     def _facing_from_velocity(self) -> str:
         v = self.velocity
         if v.length_squared() < self._IDLE_SPEED_EPS2:
@@ -1712,6 +1714,25 @@ class Axeman(Unit):
     def move(self, units, spatial_grid=None, waypoint_graph=None):
         self.velocity = Vector2(0, 0)
 
+        # Repair order: move to target building first and ignore all auto behavior.
+        if self.repair_target is not None:
+            b = self.repair_target
+            # Cancel if invalid / dead / already fully healed
+            if getattr(b, 'hp', 0) <= 0 or getattr(b, 'player_id', None) != self.player_id:
+                self.repair_target = None
+            elif getattr(b, 'hp', 0) >= getattr(b, 'max_hp', b.hp):
+                self.repair_target = None
+            else:
+                # Keep a point-target at the building center; Unit.move keeps Axeman point-targets.
+                self.target = Vector2(b.pos)
+                self.autonomous_target = False
+                # Do not allow harvesting loops while repairing
+                self.depositing = False
+                # Move toward the building; stop near it (repair happens in repair_building).
+                # Use normal pathing so formations avoid obstacles.
+                super().move(units, context.spatial_grid, context.waypoint_graph)
+                return
+
         # Idle state: No target, remain idle unless commanded
         if not self.target and not self.depositing:
             # Guard stance (Axeman only when not chopping wood / depositing).
@@ -1774,7 +1795,7 @@ class Axeman(Unit):
             super().move(units, context.spatial_grid, context.waypoint_graph)
 
     def chop_tree(self, trees):
-        if self.special > 0 or self.depositing or self.target == self.return_pos:
+        if self.special > 0 or self.depositing or self.target == self.return_pos or self.repair_target is not None:
             return
 
         target_tree = next(
@@ -1925,6 +1946,116 @@ class Axeman(Unit):
                     target.path = []
                     target.path_index = 0
 # Knight class
+    def repair_building(self):
+        """If this axeman has a repair_target and is in range, repair it.
+
+        Repair speed scales linearly with number of axemen because each axeman applies its own HP/s.
+        Wood cost scales with HP repaired: full repair (0->max_hp) costs building.wood_cost wood.
+        """
+        if self.repair_target is None:
+            return
+
+        b = self.repair_target
+        if b not in context.all_units or getattr(b, 'hp', 0) <= 0:
+            self.repair_target = None
+            return
+
+        if getattr(b, 'player_id', None) != self.player_id:
+            self.repair_target = None
+            return
+
+        max_hp = float(getattr(b, 'max_hp', getattr(b, 'hp', 0) or 0))
+        if max_hp <= 0:
+            self.repair_target = None
+            return
+
+        cur_hp = float(getattr(b, 'hp', 0))
+        if cur_hp >= max_hp - 1e-6:
+            # finished
+            self.repair_target = None
+            self.target = None
+            return
+
+        # Must be close enough to repair (near building edge).
+        from constants import REPAIR_SPEED_MULT, REPAIR_REACH_PADDING
+        reach = (float(getattr(b, 'size', 0)) / 2.0) + (float(getattr(self, 'size', 0)) / 2.0) + float(REPAIR_REACH_PADDING)
+        if self.pos.distance_to(b.pos) > reach:
+            return
+
+        now = float(context.current_time)
+        last = float(self._repair_last_time or now)
+        dt = max(0.0, now - last)
+        self._repair_last_time = now
+        if dt <= 0.0:
+            return
+
+        # Construction HP/s for this building (same formula as main.py uses during construction).
+        prod_time = float(getattr(b, 'production_time', 1.0) or 1.0)
+        build_rate = (max(1.0, max_hp) - 1.0) / max(0.001, prod_time)
+        repair_rate = build_rate * float(REPAIR_SPEED_MULT)
+        desired_hp = repair_rate * dt
+        if desired_hp <= 0.0:
+            return
+
+        # Wood cost per HP: full repair costs wood_cost.
+        wood_cost = float(getattr(b, 'wood_cost', 0) or 0)
+        cost_per_hp = (wood_cost / max_hp) if wood_cost > 0 else 0.0
+
+        # Pay wood from the owning player, proportional to HP repaired.
+        player = next((p for p in context.players if getattr(p, 'player_id', None) == self.player_id), None)
+        if player is None:
+            return
+
+        if cost_per_hp > 0.0:
+            affordable_hp = float(getattr(player, 'wood', 0)) / cost_per_hp if getattr(player, 'wood', 0) > 0 else 0.0
+            hp_gain = min(desired_hp, affordable_hp, max_hp - cur_hp)
+            if hp_gain <= 0.0:
+                # Can't afford any repair right now.
+                return
+            player.wood = max(0.0, float(getattr(player, 'wood', 0)) - hp_gain * cost_per_hp)
+        else:
+            hp_gain = min(desired_hp, max_hp - cur_hp)
+
+        # Apply repair
+        b.hp = min(max_hp, float(getattr(b, 'hp', 0)) + hp_gain)
+
+        # Trigger the same attack animation while repairing (swinging).
+        v = (b.pos - self.pos)
+        if v.length_squared() > 1e-6:
+            x, y = v.x, v.y
+            if abs(x) < 0.35 * abs(y) and y < 0:
+                self._attack_facing = 'U'
+            elif abs(x) < 0.35 * abs(y) and y > 0:
+                self._attack_facing = 'D'
+            elif abs(y) < 0.35 * abs(x) and x < 0:
+                self._attack_facing = 'L'
+            elif abs(y) < 0.35 * abs(x) and x > 0:
+                self._attack_facing = 'R'
+            elif x < 0 and y < 0:
+                self._attack_facing = 'LU'
+            elif x < 0 and y > 0:
+                self._attack_facing = 'LD'
+            elif x > 0 and y < 0:
+                self._attack_facing = 'RU'
+            elif x > 0 and y > 0:
+                self._attack_facing = 'RD'
+            else:
+                self._attack_facing = 'D'
+        else:
+            self._attack_facing = self._last_facing or 'D'
+
+        attack_frames = get_unit_attack_frames('Axeman', int(self.size), tuple(self.player_color[:3]), facing=self._attack_facing)
+        frame_time = self._ATTACK_FRAME_TIME
+        anim_len = (len(attack_frames) * frame_time) if attack_frames else 0.35
+        self._attacking_until = max(self._attacking_until, now + anim_len)
+
+        if float(getattr(b, 'hp', 0)) >= max_hp - 1e-6:
+            # done
+            self.repair_target = None
+            self.target = None
+
+
+
 class Knight(Unit):
     milk_cost = 500
     wood_cost = 400

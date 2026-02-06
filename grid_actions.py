@@ -95,8 +95,8 @@ def execute_grid_cell(
         # Repair (R) - only axemen
         if (r, c) == (0, 3):
             if has_axeman:
-                # TODO: implement repair mode
-                print("Repair pressed (TODO)")
+                # Repair is an armed command handled in main.py (LMB confirms on a friendly building).
+                print('Repair pressed')
                 return True, placing_building, building_to_place
             return False, placing_building, building_to_place
 
@@ -111,6 +111,8 @@ def execute_grid_cell(
             for u in selected_units:
                 if hasattr(u, "_clear_advanced_orders"):
                     u._clear_advanced_orders()
+                if hasattr(u, 'repair_target'):
+                    u.repair_target = None
                 u.target = None
                 u.autonomous_target = False
                 if hasattr(u, "path"):
