@@ -158,6 +158,8 @@ def run_game() -> int:
 
     # Armed command mode: when True, next LMB in world confirms a move-only order; RMB cancels.
     move_armed = False
+    attack_move_armed = False
+    patrol_armed = False
 
     # Building footprint is class-defined (Building.SIZE_TILES == 3 by default).
     # Walls override it to 1.
@@ -580,7 +582,7 @@ def run_game() -> int:
 
         This intentionally differs from right-click: it never attack-targets / harvest-targets; it just moves.
         """
-        nonlocal move_armed, placing_building, building_to_place, building_pos
+        nonlocal move_armed, attack_move_armed, patrol_armed, placing_building, building_to_place, building_pos
 
         mouse_pos = Vector2(screen_pos)
 
@@ -603,6 +605,8 @@ def run_game() -> int:
         any_ordered = False
         for unit in current_player.units:
             if unit.selected and not isinstance(unit, (Building, Tree)):
+                if hasattr(unit, "_clear_advanced_orders"):
+                    unit._clear_advanced_orders()
                 unit.target = Vector2(snapped_pos)
                 unit.autonomous_target = False
                 unit.path = []
@@ -624,7 +628,118 @@ def run_game() -> int:
 
         # Disarm after confirmation
         move_armed = False
+        attack_move_armed = False
+        patrol_armed = False
 
+
+
+
+    def _handle_attack_move_click_command(screen_pos: tuple[int, int], current_time: float) -> None:
+        """Attack-move order (armed): move to tile-center; if enemy enters view_distance en route, engage once."""
+        nonlocal move_armed, attack_move_armed, patrol_armed, placing_building, building_to_place, building_pos
+
+        mouse_pos = Vector2(screen_pos)
+
+        if placing_building:
+            return
+
+        if not (VIEW_MARGIN_LEFT <= mouse_pos.x <= VIEW_BOUNDS_X and VIEW_MARGIN_TOP <= mouse_pos.y <= VIEW_BOUNDS_Y):
+            return
+
+        if not current_player:
+            return
+
+        click_pos = camera.screen_to_world(mouse_pos, view_margin_left=VIEW_MARGIN_LEFT, view_margin_top=VIEW_MARGIN_TOP)
+        tile_x = int(click_pos.x // TILE_SIZE)
+        tile_y = int(click_pos.y // TILE_SIZE)
+        snapped_pos = Vector2(tile_x * TILE_SIZE + TILE_HALF, tile_y * TILE_SIZE + TILE_HALF)
+
+        any_ordered = False
+        for unit in current_player.units:
+            if unit.selected and not isinstance(unit, (Building, Tree)):
+                if hasattr(unit, "_clear_advanced_orders"):
+                    unit._clear_advanced_orders()
+
+                unit.attack_move_active = True
+                unit.attack_move_dest = Vector2(snapped_pos)
+
+                unit.target = Vector2(snapped_pos)
+                unit.autonomous_target = False
+                unit.path = []
+                unit.path_index = 0
+
+                if hasattr(unit, "depositing"):
+                    unit.depositing = False
+                if hasattr(unit, "returning"):
+                    unit.returning = False
+                if hasattr(unit, "return_pos"):
+                    unit.return_pos = None
+
+                highlight_times[unit] = current_time
+                any_ordered = True
+
+        if any_ordered:
+            move_order_times[(snapped_pos.x, snapped_pos.y)] = current_time
+
+        # Disarm after confirmation
+        move_armed = False
+        attack_move_armed = False
+        patrol_armed = False
+
+
+    def _handle_patrol_click_command(screen_pos: tuple[int, int], current_time: float) -> None:
+        """Patrol order (armed): bounce between start-pos-at-order and destination until interrupted."""
+        nonlocal move_armed, attack_move_armed, patrol_armed, placing_building, building_to_place, building_pos
+
+        mouse_pos = Vector2(screen_pos)
+
+        if placing_building:
+            return
+
+        if not (VIEW_MARGIN_LEFT <= mouse_pos.x <= VIEW_BOUNDS_X and VIEW_MARGIN_TOP <= mouse_pos.y <= VIEW_BOUNDS_Y):
+            return
+
+        if not current_player:
+            return
+
+        click_pos = camera.screen_to_world(mouse_pos, view_margin_left=VIEW_MARGIN_LEFT, view_margin_top=VIEW_MARGIN_TOP)
+        tile_x = int(click_pos.x // TILE_SIZE)
+        tile_y = int(click_pos.y // TILE_SIZE)
+        snapped_pos = Vector2(tile_x * TILE_SIZE + TILE_HALF, tile_y * TILE_SIZE + TILE_HALF)
+
+        any_ordered = False
+        for unit in current_player.units:
+            if unit.selected and not isinstance(unit, (Building, Tree)):
+                if hasattr(unit, "_clear_advanced_orders"):
+                    unit._clear_advanced_orders()
+
+                unit.patrol_active = True
+                unit.patrol_anchor = Vector2(unit.pos)
+                unit.patrol_dest = Vector2(snapped_pos)
+                unit.patrol_leg = "to_dest"
+
+                unit.target = Vector2(snapped_pos)
+                unit.autonomous_target = False
+                unit.path = []
+                unit.path_index = 0
+
+                if hasattr(unit, "depositing"):
+                    unit.depositing = False
+                if hasattr(unit, "returning"):
+                    unit.returning = False
+                if hasattr(unit, "return_pos"):
+                    unit.return_pos = None
+
+                highlight_times[unit] = current_time
+                any_ordered = True
+
+        if any_ordered:
+            move_order_times[(snapped_pos.x, snapped_pos.y)] = current_time
+
+        # Disarm after confirmation
+        move_armed = False
+        attack_move_armed = False
+        patrol_armed = False
 
     def _handle_right_click_command(screen_pos: tuple[int, int], current_time: float) -> None:
         """Existing right-click behavior (move/attack/rally/cancel placement)."""
@@ -668,6 +783,8 @@ def run_game() -> int:
                 # Enemy/neutral units may be selectable (for inspection), but must not receive orders.
                 for unit in (current_player.units if current_player else []):
                     if unit.selected and not isinstance(unit, (Building, Tree)):
+                        if hasattr(unit, "_clear_advanced_orders"):
+                            unit._clear_advanced_orders()
                         clicked_tree = clicked_unit if isinstance(clicked_unit, Tree) and clicked_unit.player_id == 0 else None
                         if clicked_tree and isinstance(unit, Axeman) and unit.special == 0 and not unit.depositing:
                             unit.target = clicked_tree.pos
@@ -823,10 +940,23 @@ def run_game() -> int:
                         if cell and current_player:
                             r, c = cell
 
-                            # Move button arms move-only mode: LMB confirms, RMB cancels (like building placement).
-                            if (r, c) == (0, 1):
-                                if any(u.selected and not isinstance(u, (Building, Tree)) for u in current_player.units):
-                                    move_armed = True
+                            # Unit command buttons that arm a world-click order (like building placement).
+                            # LMB in world confirms; RMB cancels.
+                            if (r, c) in ((0, 1), (1, 0), (0, 0)):
+                                has_units = any(u.selected and not isinstance(u, (Building, Tree)) for u in current_player.units)
+                                if has_units:
+                                    if (r, c) == (0, 1):  # Move
+                                        move_armed = True
+                                        attack_move_armed = False
+                                        patrol_armed = False
+                                    elif (r, c) == (1, 0):  # Attack-move
+                                        move_armed = False
+                                        attack_move_armed = True
+                                        patrol_armed = False
+                                    elif (r, c) == (0, 0):  # Patrol
+                                        move_armed = False
+                                        attack_move_armed = False
+                                        patrol_armed = True
                                 grid_button_clicked = True
                             else:
                                 handled, placing_building, building_to_place = grid_actions.execute_grid_cell(
@@ -839,6 +969,10 @@ def run_game() -> int:
                                 building_to_place=building_to_place,
                             )
                             grid_button_clicked = handled
+                            if handled:
+                                move_armed = False
+                                attack_move_armed = False
+                                patrol_armed = False
 
                         # If the click was on the left grid, DO NOT treat it as a map click
                         if grid_button_clicked:
@@ -962,9 +1096,15 @@ def run_game() -> int:
                         else:
                             # Otherwise continue with normal map selection / pending click
                             if not grid_button_clicked and VIEW_MARGIN_LEFT <= mouse_pos.x <= VIEW_BOUNDS_X and VIEW_MARGIN_TOP <= mouse_pos.y <= VIEW_BOUNDS_Y:
-                                # If Move is armed, LMB confirms the move-only order and does NOT start selection/box-select.
-                                if move_armed and not placing_building:
-                                    _handle_move_click_command(event.pos, current_time)
+                                # If a command is armed, LMB confirms it and does NOT start selection/box-select.
+                                if (move_armed or attack_move_armed or patrol_armed) and not placing_building:
+                                    if move_armed:
+                                        _handle_move_click_command(event.pos, current_time)
+                                    elif attack_move_armed:
+                                        _handle_attack_move_click_command(event.pos, current_time)
+                                    elif patrol_armed:
+                                        _handle_patrol_click_command(event.pos, current_time)
+
                                     pending_click = False
                                     pending_click_unit = None
                                     selecting = False
@@ -1042,11 +1182,22 @@ def run_game() -> int:
                 if cell and current_player:
                     r, c = cell
 
-                    # Move button (W) arms move-only mode: LMB confirms, RMB cancels.
-                    if (r, c) == (0, 1):
-                        # Only arm if there is at least one selected controllable unit (not building/tree)
+                    # Unit command hotkeys that arm a world-click order (like building placement).
+                    # Q = Patrol, W = Move, A = Attack-move
+                    if (r, c) in ((0, 0), (0, 1), (1, 0)):
                         if any(u.selected and not isinstance(u, (Building, Tree)) for u in current_player.units):
-                            move_armed = True
+                            if (r, c) == (0, 1):
+                                move_armed = True
+                                attack_move_armed = False
+                                patrol_armed = False
+                            elif (r, c) == (1, 0):
+                                move_armed = False
+                                attack_move_armed = True
+                                patrol_armed = False
+                            else:  # (0,0)
+                                move_armed = False
+                                attack_move_armed = False
+                                patrol_armed = True
                         continue
 
                     handled, placing_building, building_to_place = grid_actions.execute_grid_cell(
@@ -1058,6 +1209,10 @@ def run_game() -> int:
                         placing_building=placing_building,
                         building_to_place=building_to_place,
                     )
+                    if handled:
+                        move_armed = False
+                        attack_move_armed = False
+                        patrol_armed = False
 
             elif event.type == pygame.MOUSEBUTTONUP:
                 if game_state == GameState.RUNNING and event.button == 3:
@@ -1072,9 +1227,11 @@ def run_game() -> int:
                             right_mouse_down = False
                             right_mouse_dragging = False
                             right_mouse_last = None
-                            # If Move is armed, RMB cancels the armed order (like building placement).
-                            if move_armed and not placing_building:
+                            # If a command is armed, RMB cancels it (like building placement).
+                            if (move_armed or attack_move_armed or patrol_armed) and not placing_building:
                                 move_armed = False
+                                attack_move_armed = False
+                                patrol_armed = False
                                 continue
 
                             _handle_right_click_command(event.pos, current_time)
@@ -1403,12 +1560,18 @@ def run_game() -> int:
             # Keep control groups clean (hide bookmarks when groups are empty)
             if current_player:
                 _prune_control_groups(current_player)
-        # Auto-disarm Move if selection no longer has controllable units or if we're placing a building.
+
+        # Auto-disarm armed commands if selection no longer has controllable units or if we're placing a building.
         if placing_building:
             move_armed = False
-        elif move_armed and current_player:
+            attack_move_armed = False
+            patrol_armed = False
+        elif (move_armed or attack_move_armed or patrol_armed) and current_player:
             if not any(u.selected and not isinstance(u, (Building, Tree)) for u in current_player.units):
                 move_armed = False
+                attack_move_armed = False
+                patrol_armed = False
+
 
 
         # Rendering
@@ -1590,6 +1753,16 @@ def run_game() -> int:
                 grass_tiles=grass_tiles,
                 camera=camera,
             )
+
+
+            # Draw armed-command button highlight (same visual style as Move).
+            # We do it here (after UI) so it always sits on top.
+            if move_armed:
+                pygame.draw.rect(screen, GREEN, grid_buttons[0][1], 3)
+            if attack_move_armed:
+                pygame.draw.rect(screen, GREEN, grid_buttons[1][0], 3)
+            if patrol_armed:
+                pygame.draw.rect(screen, GREEN, grid_buttons[0][0], 3)
 
         elif game_state == GameState.DEFEAT:
             # Draw Defeat screen

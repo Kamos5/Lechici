@@ -418,6 +418,19 @@ class Unit:
         self._last_auto_acquire_time: float = -1e9
         self._auto_acquire_cooldown: float = 0.30
 
+        # --- Player-issued advanced orders (attack-move, patrol) ---
+        # Attack-move: walk to a destination, but if an enemy enters view_distance on the way,
+        # engage once and do NOT resume the attack-move afterwards.
+        self.attack_move_active: bool = False
+        self.attack_move_dest: Optional[Vector2] = None
+
+        # Patrol: walk between an anchor (position at time of order) and a destination.
+        # If an enemy enters view_distance, engage once and do NOT resume patrol afterwards.
+        self.patrol_active: bool = False
+        self.patrol_anchor: Optional[Vector2] = None
+        self.patrol_dest: Optional[Vector2] = None
+        self.patrol_leg: str = "to_dest"  # "to_dest" or "to_anchor"
+
         # --- Progression (XP + levels) ---
         # Starts at novice (level 0) with 0 XP.
         self.xp: int = 0
@@ -630,6 +643,50 @@ class Unit:
         self.path_index = 0
         self.last_target = None
 
+    # ---------------- Attack-move / Patrol helpers ----------------
+
+    def _clear_advanced_orders(self) -> None:
+        """Clear attack-move / patrol state. Call this whenever a new direct order is issued."""
+        self.attack_move_active = False
+        self.attack_move_dest = None
+        self.patrol_active = False
+        self.patrol_anchor = None
+        self.patrol_dest = None
+        self.patrol_leg = "to_dest"
+
+    def _scan_for_enemy_in_view(self, units) -> Optional["Unit"]:
+        """Return closest enemy (unit/building) within view_distance. Excludes Trees."""
+        view_px = float(getattr(self, "view_distance", 0)) * TILE_SIZE
+        if view_px <= 0:
+            return None
+
+        grid = getattr(context, "spatial_grid", None)
+        nearby = grid.get_nearby_units(self, radius=view_px) if grid is not None else (units or [])
+
+        best = None
+        best_d = 1e18
+        for u in nearby:
+            if u is self:
+                continue
+            if not isinstance(u, Unit) or isinstance(u, Tree):
+                continue
+            if getattr(u, "hp", 0) <= 0 or (units is not None and u not in units):
+                continue
+
+            # Ignore Gaia (player0) for auto-scans (attack-move / patrol). Only direct attack orders should target Gaia.
+            if getattr(u, "player_id", None) == 0:
+                continue
+
+            if getattr(u, "player_id", None) == getattr(self, "player_id", None):
+                continue
+
+            d = self.pos.distance_to(u.pos)
+            if d <= view_px and d < best_d:
+                best = u
+                best_d = d
+
+        return best
+
     def draw(self, screen, camera_x, camera_y):
         if (self.pos.x < camera_x - self.size / 2 or self.pos.x > camera_x + VIEW_WIDTH + self.size / 2 or
             self.pos.y < camera_y - self.size / 2 or self.pos.y > camera_y + VIEW_HEIGHT + self.size / 2):
@@ -669,6 +726,48 @@ class Unit:
             # pygame.draw.lines(screen, WHITE, False, points, 1)
 
     def move(self, units, spatial_grid=None, waypoint_graph=None):
+        # --- Advanced player orders: attack-move / patrol ---
+        if getattr(self, "attack_move_active", False) or getattr(self, "patrol_active", False):
+            # If an enemy enters view_distance while travelling, engage once and do NOT resume.
+            enemy = self._scan_for_enemy_in_view(units)
+            if enemy is not None and not isinstance(getattr(self, "target", None), Unit):
+                self.target = enemy
+                self.autonomous_target = False
+                self._clear_advanced_orders()
+                self.path = []
+                self.path_index = 0
+                self.last_target = None
+
+            # Patrol: keep bouncing between anchor and destination (only while not fighting).
+            if getattr(self, "patrol_active", False) and enemy is None and not isinstance(getattr(self, "target", None), Unit):
+                if self.patrol_anchor is None or self.patrol_dest is None:
+                    self._clear_advanced_orders()
+                else:
+                    # Determine which point we are *currently* patrolling towards.
+                    desired_goal = Vector2(self.patrol_dest) if self.patrol_leg == "to_dest" else Vector2(self.patrol_anchor)
+
+                    goal = self.target if isinstance(getattr(self, "target", None), Vector2) else None
+                    if goal is None:
+                        # If our travel target got cleared (e.g. temporary path failure), re-issue the same leg
+                        # instead of toggling back and forth every frame (this was breaking group patrol).
+                        self.target = Vector2(desired_goal)
+                        self.autonomous_target = False
+                        self.path = []
+                        self.path_index = 0
+                        self.last_target = None
+                    else:
+                        # Consider "reached" when very close to the goal.
+                        if self.pos.distance_to(goal) <= max(6.0, float(self.size) * 0.35):
+                            # Flip to the other leg.
+                            self.patrol_leg = "to_anchor" if self.patrol_leg == "to_dest" else "to_dest"
+                            next_goal = Vector2(self.patrol_dest) if self.patrol_leg == "to_dest" else Vector2(self.patrol_anchor)
+
+                            self.target = Vector2(next_goal)
+                            self.autonomous_target = False
+                            self.path = []
+                            self.path_index = 0
+                            self.last_target = None
+
         # Guard stance: if idle and allowed, auto-acquire a nearby enemy.
         if not self.target:
             self._guard_auto_acquire(units)
@@ -748,7 +847,7 @@ class Unit:
                 except ValueError:
                     self.path_index += 1
                     if self.path_index >= len(self.path):
-                        if isinstance(self, Axeman) and isinstance(self.target, Vector2):
+                        if isinstance(self, Axeman) and isinstance(self.target, Vector2) and not (getattr(self, 'patrol_active', False) or getattr(self, 'attack_move_active', False)):
                             self.velocity = Vector2(0, 0)
                             # print(f"Axeman at {self.pos} stopped at path end, distance to {self.target}: {self.pos.distance_to(self.target):.1f}")
                         else:
@@ -760,7 +859,7 @@ class Unit:
             else:
                 self.path_index += 1
                 if self.path_index >= len(self.path):
-                    if isinstance(self, Axeman) and isinstance(self.target, Vector2):
+                    if isinstance(self, Axeman) and isinstance(self.target, Vector2) and not (getattr(self, 'patrol_active', False) or getattr(self, 'attack_move_active', False)):
                         self.velocity = Vector2(0, 0)
                         # print(f"Axeman at {self.pos} reached path end, distance to {self.target}: {self.pos.distance_to(self.target):.1f}")
                     elif not isinstance(self.target, Unit):  # Only clear non-Unit targets
@@ -836,6 +935,9 @@ class Unit:
         """Add or update an attacker with a timestamp."""
         # Remove expired attackers
         self.attackers = [(a, t) for a, t in self.attackers if context.current_time - t < self.attacker_timeout]
+        # If we are in a long-running player order (patrol / attack-move), being attacked counts as engaging in combat.
+        if hasattr(self, "_clear_advanced_orders"):
+            self._clear_advanced_orders()
         # Update or add attacker
         for i, (existing_attacker, _) in enumerate(self.attackers):
             if existing_attacker == attacker:
@@ -847,7 +949,7 @@ class Unit:
         """Return the closest living attacker."""
         if not self.attackers:
             return None
-        valid_attackers = [(a, t) for a, t in self.attackers if a.hp > 0 and a in context.all_units]
+        valid_attackers = [(a, t) for a, t in self.attackers if a.hp > 0 and a in context.all_units and getattr(a, 'player_id', None) != 0]
         if not valid_attackers:
             return None
         return min(valid_attackers, key=lambda x: self.pos.distance_to(x[0].pos))[0]

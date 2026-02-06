@@ -109,6 +109,8 @@ def execute_grid_cell(
         # Stop (S)
         if (r, c) == (1, 1):
             for u in selected_units:
+                if hasattr(u, "_clear_advanced_orders"):
+                    u._clear_advanced_orders()
                 u.target = None
                 u.autonomous_target = False
                 if hasattr(u, "path"):
