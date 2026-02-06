@@ -829,7 +829,9 @@ class Unit:
                 print(f"Target lost for {self.__class__.__name__} at {self.pos}, clearing target")
                 return
             target_pos = self.target.pos
-            stop_distance = self.attack_range
+            # Stop distance for combat targets: include both radii so melee can get right up to the target.
+            # Small epsilon keeps units from hovering with a visible gap.
+            stop_distance = max(2.0, float(self.attack_range) + (float(self.size) + float(self.target.size)) / 2.0 - 2.0)
             # Check if target moved significantly since last path calculation
             if self.path and self.path_index < len(self.path):
                 last_waypoint = self.path[-1]
@@ -838,7 +840,8 @@ class Unit:
                     self.path_index = 0
         else:
             target_pos = self.target
-            stop_distance = self.size / 4 if isinstance(self, Axeman) else self.size / 2
+            # Move-to-point stop distance: keep it small so units can approach closely without leaving gaps.
+            stop_distance = (self.size / 4) if isinstance(self, Axeman) else max(2.0, float(self.size) * 0.20)
 
         # Recalculate path if needed
         if (self.target != self.last_target or not self.path or self.path_index >= len(self.path) or
@@ -1062,8 +1065,8 @@ class Unit:
                     self_rect.move_ip(corr.x, corr.y)
                 continue
 
-            # --- UNIT vs UNIT: symmetric separation + stop "moving into each other" ---
-            # Treat as soft circles for separation
+            # --- UNIT vs UNIT: friendly-only nudging + avoid stacking ---
+            # Treat units as soft circles for separation.
             delta = self.pos - other.pos
             dist2 = delta.length_squared()
             if dist2 < 1e-8:
@@ -1072,20 +1075,63 @@ class Unit:
                 dist2 = 1.0
 
             dist = math.sqrt(dist2)
-            min_dist = (self.size + other.size) / 2
+            min_dist = (self.size + other.size) / 2.0
             if dist < min_dist:
                 overlap = min_dist - dist
                 n = delta / dist  # collision normal (from other -> self)
 
-                # split correction
-                corr = n * (overlap * 0.5)
-                total_correction += corr
+                same_player = (getattr(other, "player_id", None) == getattr(self, "player_id", None))
 
-                other_corrs = getattr(other, "_corrections", [])
-                other_corrs.append(-corr)
-                other._corrections = other_corrs
+                # Never push enemies: if we overlap an enemy, only we get corrected.
+                if not same_player:
+                    corr_self = n * overlap
+                    total_correction += corr_self
+                    self_rect.move_ip(corr_self.x, corr_self.y)
 
-                # remove velocity component that drives units INTO each other (fixes issue #2 too)
+                    # remove velocity component that drives us INTO the enemy
+                    vn_self = self.velocity.dot(-n)
+                    if vn_self > 0:
+                        self.velocity += n * vn_self
+                    continue
+
+                # Friendly nudging: allow much stronger pushing of idle friendlies
+                def _is_idle(u: Unit) -> bool:
+                    if isinstance(u, (Building, Tree)):
+                        return True
+                    if getattr(u, "target", None) is not None:
+                        return False
+                    if getattr(u, "attack_move_active", False) or getattr(u, "patrol_active", False):
+                        return False
+                    if getattr(u, "autonomous_target", False):
+                        return False
+                    if getattr(u, "velocity", Vector2(0, 0)).length_squared() > 1.0:
+                        return False
+                    # worker-like busy flags
+                    if getattr(u, "depositing", False):
+                        return False
+                    return True
+
+                self_idle = _is_idle(self)
+                other_idle = _is_idle(other)
+
+                # weights decide how much each side moves (sum == 1.0)
+                if (not self_idle) and other_idle:
+                    w_self, w_other = 0.15, 0.85  # active unit plows through idle
+                elif self_idle and (not other_idle):
+                    w_self, w_other = 0.85, 0.15  # idle yields less if the other is active
+                else:
+                    w_self, w_other = 0.5, 0.5
+
+                corr_self = n * (overlap * w_self)
+                corr_other = -n * (overlap * w_other)
+
+                total_correction += corr_self
+                self_rect.move_ip(corr_self.x, corr_self.y)
+
+                # Apply immediately to the other unit so the pusher can get through.
+                other.pos += corr_other
+
+                # remove velocity components that drive units INTO each other (reduces "conga lines")
                 vn_self = self.velocity.dot(-n)
                 if vn_self > 0:
                     self.velocity += n * vn_self
@@ -1093,7 +1139,6 @@ class Unit:
                 vn_other = other.velocity.dot(n)
                 if vn_other > 0:
                     other.velocity -= n * vn_other
-
         if total_correction.length_squared() > 0:
             self.pos += total_correction
 
