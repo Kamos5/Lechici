@@ -65,9 +65,9 @@ done:
 + Fix: Player can select units of other players
 + Fix: when boxing and moving outside the borders boxe don't behave good
 + other misc world_obj pass + impassible
-+ grid actions implemented list [move, a-move, patrol]
++ grid actions implemented list [move, a-move, patrol, stop]
 + basic behaviour to attack enemy when seen (aggressive stance)
-
++ fix: default stance don't target buildings
 
 
 todo:
@@ -78,7 +78,7 @@ CORE FEATURES:
 - start screen MAJOR
 - objectvies MAJOR
 - end screen (sum up - all the death, killed, who survived etc) MAJOR
-- grid actions (repair, stop, harvest, ) CRITICAL
+- grid actions (repair, harvest, ) CRITICAL
 - fullscreen CRITICAL
 - fog of war CRITICAL
 - clicking on minimap to move
@@ -111,7 +111,6 @@ BUGS:
 - fix: units gating stuck together
 - fix: cow stuck in empty of grass field dont move and wait for regrow (do something)
 - FIX: error with COW when she targets enemy unit (building included)
-- fix: default stance don't target buildings
 - fix: units 'dance' when attacking each other
 
 CORE 2:

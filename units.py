@@ -607,7 +607,8 @@ class Unit:
             return
 
         grid = getattr(context, "spatial_grid", None)
-        candidates = []
+        candidates_units = []
+        candidates_buildings = []
         if grid is not None:
             nearby = grid.get_nearby_units(self, radius=radius_px)
         else:
@@ -616,7 +617,7 @@ class Unit:
         for u in nearby:
             if u is self:
                 continue
-            if not isinstance(u, Unit) or isinstance(u, (Tree, Building)):
+            if not isinstance(u, Unit) or isinstance(u, Tree):
                 continue
             if getattr(u, "hp", 0) <= 0 or u not in units:
                 continue
@@ -629,14 +630,23 @@ class Unit:
                 continue
 
             d = self.pos.distance_to(u.pos)
-            if d <= radius_px:
-                candidates.append((d, u))
+            if d > radius_px:
+                continue
 
-        if not candidates:
+            # Units take priority over buildings.
+            if isinstance(u, Building):
+                candidates_buildings.append((d, u))
+            else:
+                candidates_units.append((d, u))
+
+        if candidates_units:
+            candidates_units.sort(key=lambda t: t[0])
+            target = candidates_units[0][1]
+        elif candidates_buildings:
+            candidates_buildings.sort(key=lambda t: t[0])
+            target = candidates_buildings[0][1]
+        else:
             return
-
-        candidates.sort(key=lambda t: t[0])
-        target = candidates[0][1]
         self.target = target
         self.autonomous_target = True
         self.path = []
@@ -663,8 +673,11 @@ class Unit:
         grid = getattr(context, "spatial_grid", None)
         nearby = grid.get_nearby_units(self, radius=view_px) if grid is not None else (units or [])
 
-        best = None
-        best_d = 1e18
+        best_unit = None
+        best_unit_d = 1e18
+        best_building = None
+        best_building_d = 1e18
+
         for u in nearby:
             if u is self:
                 continue
@@ -681,11 +694,20 @@ class Unit:
                 continue
 
             d = self.pos.distance_to(u.pos)
-            if d <= view_px and d < best_d:
-                best = u
-                best_d = d
+            if d > view_px:
+                continue
 
-        return best
+            # Units take priority over buildings.
+            if isinstance(u, Building):
+                if d < best_building_d:
+                    best_building = u
+                    best_building_d = d
+            else:
+                if d < best_unit_d:
+                    best_unit = u
+                    best_unit_d = d
+
+        return best_unit if best_unit is not None else best_building
 
     def draw(self, screen, camera_x, camera_y):
         if (self.pos.x < camera_x - self.size / 2 or self.pos.x > camera_x + VIEW_WIDTH + self.size / 2 or

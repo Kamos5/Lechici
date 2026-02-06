@@ -161,6 +161,9 @@ def run_game() -> int:
     attack_move_armed = False
     patrol_armed = False
 
+    # Stop button: flash active border briefly when stop is issued (button or hotkey).
+    stop_flash_until = 0.0
+
     # Building footprint is class-defined (Building.SIZE_TILES == 3 by default).
     # Walls override it to 1.
     def _placement_size_for(cls) -> int:
@@ -973,6 +976,8 @@ def run_game() -> int:
                                 move_armed = False
                                 attack_move_armed = False
                                 patrol_armed = False
+                                if (r, c) == (1, 1):  # Stop
+                                    stop_flash_until = float(current_time) + 0.35
 
                         # If the click was on the left grid, DO NOT treat it as a map click
                         if grid_button_clicked:
@@ -1213,6 +1218,8 @@ def run_game() -> int:
                         move_armed = False
                         attack_move_armed = False
                         patrol_armed = False
+                        if (r, c) == (1, 1):  # Stop
+                            stop_flash_until = float(current_time) + 0.35
 
             elif event.type == pygame.MOUSEBUTTONUP:
                 if game_state == GameState.RUNNING and event.button == 3:
@@ -1763,6 +1770,8 @@ def run_game() -> int:
                 pygame.draw.rect(screen, GREEN, grid_buttons[1][0], 3)
             if patrol_armed:
                 pygame.draw.rect(screen, GREEN, grid_buttons[0][0], 3)
+            if current_time < stop_flash_until:
+                pygame.draw.rect(screen, GREEN, grid_buttons[1][1], 3)
 
         elif game_state == GameState.DEFEAT:
             # Draw Defeat screen
