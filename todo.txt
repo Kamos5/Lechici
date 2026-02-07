@@ -68,7 +68,7 @@ done:
 + grid actions implemented list [move, a-move, patrol, stop, repair]
 + basic behaviour to attack enemy when seen (aggressive stance)
 + fix: default stance don't target buildings
-
++ clicking on minimap to move
 
 todo:
 
@@ -81,7 +81,6 @@ CORE FEATURES:
 - grid actions (harvest) CRITICAL
 - fullscreen CRITICAL
 - fog of war CRITICAL
-- clicking on minimap to move
 
 
 - zoom?

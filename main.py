@@ -135,6 +135,10 @@ def run_game() -> int:
     # --- NEW: minimap drag state ---
     minimap_dragging = False
 
+
+    # --- NEW: minimap right-click command state ---
+    minimap_rmb_down = False
+    minimap_rmb_world = None  # Vector2
     # --- NEW: right-mouse camera drag (pan) state ---
     right_mouse_down = False
     right_mouse_dragging = False
@@ -597,35 +601,10 @@ def run_game() -> int:
         tile_x = int(click_pos.x // TILE_SIZE)
         tile_y = int(click_pos.y // TILE_SIZE)
         snapped_pos = Vector2(tile_x * TILE_SIZE + TILE_HALF, tile_y * TILE_SIZE + TILE_HALF)
+        _issue_move_only_to(snapped_pos, current_time)
 
-        any_ordered = False
-        for unit in current_player.units:
-            if unit.selected and not isinstance(unit, (Building, Tree)):
-                if hasattr(unit, "_clear_advanced_orders"):
-                    unit._clear_advanced_orders()
-                unit.target = Vector2(snapped_pos)
-                unit.autonomous_target = False
-                unit.path = []
-                unit.path_index = 0
+        # Disarm after confirmation happens inside _issue_move_only_to()
 
-                # Cancel any special "depositing/returning" loops if present.
-                if hasattr(unit, "depositing"):
-                    unit.depositing = False
-                if hasattr(unit, "returning"):
-                    unit.returning = False
-                if hasattr(unit, "return_pos"):
-                    unit.return_pos = None
-
-                highlight_times[unit] = current_time
-                any_ordered = True
-
-        if any_ordered:
-            move_order_times[(snapped_pos.x, snapped_pos.y)] = current_time
-
-        # Disarm after confirmation
-        move_armed = False
-        attack_move_armed = False
-        patrol_armed = False
 
     def _handle_attack_move_click_command(screen_pos: tuple[int, int], current_time: float) -> None:
         """Attack-move order (armed): move to tile-center; if enemy enters view_distance en route, engage once."""
@@ -646,9 +625,82 @@ def run_game() -> int:
         tile_x = int(click_pos.x // TILE_SIZE)
         tile_y = int(click_pos.y // TILE_SIZE)
         snapped_pos = Vector2(tile_x * TILE_SIZE + TILE_HALF, tile_y * TILE_SIZE + TILE_HALF)
+        _issue_attack_move_to(snapped_pos, current_time)
+
+        # Disarm after confirmation happens inside _issue_attack_move_to()
+
+
+    def _handle_patrol_click_command(screen_pos: tuple[int, int], current_time: float) -> None:
+        """Patrol order (armed): bounce between start-pos-at-order and destination until interrupted."""
+        nonlocal move_armed, attack_move_armed, patrol_armed, placing_building, building_to_place, building_pos
+
+        mouse_pos = Vector2(screen_pos)
+
+        if placing_building:
+            return
+
+        if not (VIEW_MARGIN_LEFT <= mouse_pos.x <= VIEW_BOUNDS_X and VIEW_MARGIN_TOP <= mouse_pos.y <= VIEW_BOUNDS_Y):
+            return
+
+        if not current_player:
+            return
+
+        click_pos = camera.screen_to_world(mouse_pos, view_margin_left=VIEW_MARGIN_LEFT, view_margin_top=VIEW_MARGIN_TOP)
+        tile_x = int(click_pos.x // TILE_SIZE)
+        tile_y = int(click_pos.y // TILE_SIZE)
+        snapped_pos = Vector2(tile_x * TILE_SIZE + TILE_HALF, tile_y * TILE_SIZE + TILE_HALF)
+        _issue_patrol_to(snapped_pos, current_time)
+
+        # Disarm after confirmation happens inside _issue_patrol_to()
+
+
+
+
+    def _snap_world_to_tile_center(world_pos: Vector2) -> Vector2:
+        tile_x = int(world_pos.x // TILE_SIZE)
+        tile_y = int(world_pos.y // TILE_SIZE)
+        return Vector2(tile_x * TILE_SIZE + TILE_HALF, tile_y * TILE_SIZE + TILE_HALF)
+
+    def _issue_move_only_to(snapped_pos: Vector2, current_time: float) -> None:
+        """Move-only (no attack/harvest targeting). Used for Move-armed and minimap RMB."""
+        nonlocal move_armed, attack_move_armed, patrol_armed, repair_armed
 
         any_ordered = False
-        for unit in current_player.units:
+        for unit in (current_player.units if current_player else []):
+            if unit.selected and not isinstance(unit, (Building, Tree)):
+                if hasattr(unit, "_clear_advanced_orders"):
+                    unit._clear_advanced_orders()
+
+                unit.target = Vector2(snapped_pos)
+                unit.autonomous_target = False
+                unit.path = []
+                unit.path_index = 0
+
+                # Cancel any special loops if present.
+                if hasattr(unit, "depositing"):
+                    unit.depositing = False
+                if hasattr(unit, "returning"):
+                    unit.returning = False
+                if hasattr(unit, "return_pos"):
+                    unit.return_pos = None
+
+                highlight_times[unit] = current_time
+                any_ordered = True
+
+        if any_ordered:
+            move_order_times[(snapped_pos.x, snapped_pos.y)] = current_time
+
+        # If it came from an armed command, disarm here (minimap RMB uses this too).
+        move_armed = False
+        attack_move_armed = False
+        patrol_armed = False
+        repair_armed = False
+
+    def _issue_attack_move_to(snapped_pos: Vector2, current_time: float) -> None:
+        nonlocal move_armed, attack_move_armed, patrol_armed, repair_armed
+
+        any_ordered = False
+        for unit in (current_player.units if current_player else []):
             if unit.selected and not isinstance(unit, (Building, Tree)):
                 if hasattr(unit, "_clear_advanced_orders"):
                     unit._clear_advanced_orders()
@@ -674,33 +726,16 @@ def run_game() -> int:
         if any_ordered:
             move_order_times[(snapped_pos.x, snapped_pos.y)] = current_time
 
-        # Disarm after confirmation
         move_armed = False
         attack_move_armed = False
         patrol_armed = False
+        repair_armed = False
 
-    def _handle_patrol_click_command(screen_pos: tuple[int, int], current_time: float) -> None:
-        """Patrol order (armed): bounce between start-pos-at-order and destination until interrupted."""
-        nonlocal move_armed, attack_move_armed, patrol_armed, placing_building, building_to_place, building_pos
-
-        mouse_pos = Vector2(screen_pos)
-
-        if placing_building:
-            return
-
-        if not (VIEW_MARGIN_LEFT <= mouse_pos.x <= VIEW_BOUNDS_X and VIEW_MARGIN_TOP <= mouse_pos.y <= VIEW_BOUNDS_Y):
-            return
-
-        if not current_player:
-            return
-
-        click_pos = camera.screen_to_world(mouse_pos, view_margin_left=VIEW_MARGIN_LEFT, view_margin_top=VIEW_MARGIN_TOP)
-        tile_x = int(click_pos.x // TILE_SIZE)
-        tile_y = int(click_pos.y // TILE_SIZE)
-        snapped_pos = Vector2(tile_x * TILE_SIZE + TILE_HALF, tile_y * TILE_SIZE + TILE_HALF)
+    def _issue_patrol_to(snapped_pos: Vector2, current_time: float) -> None:
+        nonlocal move_armed, attack_move_armed, patrol_armed, repair_armed
 
         any_ordered = False
-        for unit in current_player.units:
+        for unit in (current_player.units if current_player else []):
             if unit.selected and not isinstance(unit, (Building, Tree)):
                 if hasattr(unit, "_clear_advanced_orders"):
                     unit._clear_advanced_orders()
@@ -728,11 +763,31 @@ def run_game() -> int:
         if any_ordered:
             move_order_times[(snapped_pos.x, snapped_pos.y)] = current_time
 
-        # Disarm after confirmation
         move_armed = False
         attack_move_armed = False
         patrol_armed = False
+        repair_armed = False
 
+    def _handle_minimap_right_click(world_pos: Vector2, current_time: float) -> None:
+        """RMB on minimap:
+        - If an order is armed (Move / Attack-move / Patrol), confirm it at this location.
+        - Otherwise issue a normal move-only order (like minimap move in classic RTS).
+        """
+        snapped = _snap_world_to_tile_center(world_pos)
+
+        # Armed orders get confirmed by minimap RMB (same as world LMB confirm)
+        if move_armed:
+            _issue_move_only_to(snapped, current_time)
+            return
+        if attack_move_armed:
+            _issue_attack_move_to(snapped, current_time)
+            return
+        if patrol_armed:
+            _issue_patrol_to(snapped, current_time)
+            return
+
+        # Default minimap RMB: move-only
+        _issue_move_only_to(snapped, current_time)
     def _handle_repair_click_command(screen_pos: tuple[int, int], current_time: float) -> None:
         """Repair order used by the Repair button (armed): LMB confirms on a friendly building; RMB cancels.
 
@@ -1212,6 +1267,14 @@ def run_game() -> int:
                                         selecting = False
 
                     elif event.button == 3:  # Right click (hold + drag pans camera)
+                        # If RMB is on minimap, treat it as a command click (not camera drag-pan).
+                        mouse_pos = Vector2(event.pos)
+                        mm_world = ui.minimap_screen_to_world(mouse_pos)
+                        if mm_world is not None:
+                            minimap_rmb_down = True
+                            minimap_rmb_world = mm_world
+                            continue
+
                         right_mouse_down = True
                         right_mouse_dragging = False
                         right_mouse_last = Vector2(event.pos)
@@ -1302,6 +1365,14 @@ def run_game() -> int:
 
             elif event.type == pygame.MOUSEBUTTONUP:
                 if game_state == GameState.RUNNING and event.button == 3:
+
+                    # If RMB was pressed on the minimap, execute minimap command on release.
+                    if minimap_rmb_down:
+                        minimap_rmb_down = False
+                        if minimap_rmb_world is not None:
+                            _handle_minimap_right_click(minimap_rmb_world, current_time)
+                        minimap_rmb_world = None
+                        continue
                     # End right-mouse drag-pan, or execute a normal right-click command if it was just a click.
                     if right_mouse_down:
                         if right_mouse_dragging:
