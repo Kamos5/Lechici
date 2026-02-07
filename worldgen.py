@@ -12,6 +12,7 @@ from pygame import Vector2
 
 from constants import *
 import context
+from objectives import MissionObjective, DEFAULT_MISSION_DICT
 import units as units_mod
 from tiles import GrassTile, Dirt, River, Foundation, Mountain
 from world_objects import Bridge, Road, MiscPassable, MiscImpassable
@@ -47,6 +48,10 @@ def load_editor_map(path: str) -> Tuple[
     """
     with open(path, "r", encoding="utf-8") as f:
         data = json.load(f)
+
+    objective_data = data.get('objective') if isinstance(data, dict) else None
+    if objective_data is None:
+        objective_data = DEFAULT_MISSION_DICT
 
     tiles_data = data.get("tiles")
     if not tiles_data:
@@ -206,7 +211,7 @@ def load_editor_map(path: str) -> Tuple[
                 except TypeError:
                     world_objects.append(MiscImpassable(x, y))
 
-    return grass_tiles, all_units, river_tiles, world_objects
+    return grass_tiles, all_units, river_tiles, world_objects, objective_data
 
 
 # ---------------------------
@@ -482,7 +487,8 @@ def init_game_world(random_world: bool = False):
 
     if not random_world:
         # ---- Load editor map ----
-        grass_tiles, loaded_units, river_tiles, world_objects  = load_editor_map("maps/test_map.json")
+        grass_tiles, loaded_units, river_tiles, world_objects, objective_data  = load_editor_map("maps/test_map.json")
+        context.mission_objective = MissionObjective.from_dict(objective_data)
         context.world_objects = world_objects  # easiest way to make it visible to main.py
 
         # Assign units to players (and rebuild all_units from player lists)
@@ -612,4 +618,8 @@ def init_game_world(random_world: bool = False):
     context.spatial_grid = spatial_grid
     context.waypoint_graph = waypoint_graph
 
+
+    # Mission objective: loaded from editor map, or default.
+    if not getattr(context, 'mission_objective', None):
+        context.mission_objective = MissionObjective.from_dict(DEFAULT_MISSION_DICT)
     return grass_tiles, needs_regrowth, river_tiles, players, all_units, spatial_grid, waypoint_graph, player2_ai

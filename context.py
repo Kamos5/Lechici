@@ -27,3 +27,7 @@ building_animations: Dict[Any, Dict[str, Any]] = {}
 
 # Orders / misc
 move_order_times: Dict[int, int] = {}
+
+# Mission objective (set by worldgen/init_game_world)
+mission_objective: Any = None
+show_objective_panel: bool = False

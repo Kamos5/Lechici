@@ -416,6 +416,14 @@ def build_ui_layout():
             row_buttons.append(pygame.Rect(x, y, btn_size, btn_size))
         grid_buttons.append(row_buttons)
 
+    # Mission objective toggle button (top ribbon, align right)
+    objective_button = pygame.Rect(
+        SCREEN_WIDTH - VIEW_MARGIN_RIGHT - 120,
+        10,
+        110,
+        24,
+    )
+
     quit_button = pygame.Rect(
         SCREEN_WIDTH // 2 - 200 // 2,
         SCREEN_HEIGHT // 2 + 50,
@@ -429,6 +437,7 @@ def build_ui_layout():
         "button_player2": button_player2,
         "grid_buttons": grid_buttons,
         "quit_button": quit_button,
+        "objective_button": objective_button,
         "icon_size": 32,
         "icon_margin": 5,
     }
@@ -1283,10 +1292,76 @@ def draw_resources_and_limits(screen, current_player, icons, fonts):
         )
 
 
-def draw_fps(screen, fps, fonts):
-    screen.blit(fonts["font"].render(f"FPS: {int(fps)}", True, WHITE), (VIEW_MARGIN_LEFT + VIEW_WIDTH - 80, VIEW_MARGIN_TOP + 10))
+def draw_fps(screen, fps, fonts, *, y_offset: int = 0):
+    screen.blit(fonts["font"].render(f"FPS: {int(fps)}", True, WHITE), (VIEW_MARGIN_LEFT + VIEW_WIDTH - 80, VIEW_MARGIN_TOP + 10 + int(y_offset)))
 
 
+
+# ---------------------------------------------------------------------------
+# Mission objective UI
+# ---------------------------------------------------------------------------
+
+def draw_objective_toggle_button(screen: pygame.Surface, rect: pygame.Rect, *, fonts: dict, show: bool) -> None:
+    """Draw the 'Objective' toggle button in the top ribbon."""
+    font = fonts.get("button_font") or fonts.get("font") or pygame.font.SysFont(None, 20)
+    bg = (210, 210, 210) if show else (185, 185, 185)
+    pygame.draw.rect(screen, bg, rect, border_radius=8)
+    pygame.draw.rect(screen, (30, 30, 30), rect, 2, border_radius=8)
+    label = "Objective"
+    surf = font.render(label, True, (0, 0, 0))
+    sr = surf.get_rect(center=rect.center)
+    screen.blit(surf, sr.topleft)
+
+def draw_objective_panel(
+        screen: pygame.Surface,
+        *,
+        objective,
+        current_time_s: float,
+        players,
+        player_id: int,
+        fonts: dict,
+) -> int:
+    """Draw objective panel in the top-right of the main view. Returns its height (for FPS offset)."""
+    if objective is None:
+        return 0
+    lines = []
+    try:
+        lines = objective.status_text(current_time_s=current_time_s, players=players or [], player_id=player_id)
+    except Exception:
+        lines = ["Objective:", "(unavailable)"]
+
+    title_font = fonts.get("button_font") or fonts.get("font") or pygame.font.SysFont(None, 20)
+    body_font = fonts.get("small_font") or fonts.get("font") or pygame.font.SysFont(None, 16)
+
+    # Measure
+    pad_x = 10
+    pad_y = 8
+    line_surfs = []
+    max_w = 0
+    total_h = 0
+    for i, ln in enumerate(lines[:4]):  # keep it compact
+        f = title_font if i == 0 else body_font
+        s = f.render(str(ln), True, (255, 255, 255))
+        line_surfs.append((s, f))
+        max_w = max(max_w, s.get_width())
+        total_h += s.get_height() + 2
+    panel_w = min(420, max_w + pad_x * 2)
+    panel_h = total_h + pad_y * 2
+
+    x = VIEW_MARGIN_LEFT + VIEW_WIDTH - panel_w - 10
+    y = VIEW_MARGIN_TOP + 8
+
+    panel = pygame.Surface((panel_w, panel_h), pygame.SRCALPHA)
+    panel.fill((0, 0, 0, 150))
+    pygame.draw.rect(panel, (230, 230, 230), pygame.Rect(0, 0, panel_w, panel_h), 2, border_radius=12)
+
+    cy = pad_y
+    for i, (surf, _f) in enumerate(line_surfs):
+        panel.blit(surf, (pad_x, cy))
+        cy += surf.get_height() + 2
+
+    screen.blit(panel, (x, y))
+    return panel_h + 6
 # ---------------------------------------------------------------------------
 # Control groups (RTS-style): 10 bookmarks (1..9,0) above the bottom stat panel
 # ---------------------------------------------------------------------------
@@ -1449,6 +1524,7 @@ def draw_pause_overlay(
         *,
         player_id: int,
         fonts: dict,
+        **_ignored_kwargs,
 ) -> pygame.Rect:
     """Draw a centered pause overlay and return the Resume button rect (screen coords)."""
     # Darken the whole screen
@@ -1518,6 +1594,11 @@ def draw_game_ui(
         *,
         grass_tiles,
         camera,
+        objective=None,
+        show_objective: bool = False,
+        objective_button_rect=None,
+        players=None,
+        player_id: int = 1,
 ):
     draw_panels(screen)
     # Control group bookmarks (shown only when a group is saved)
@@ -1549,7 +1630,12 @@ def draw_game_ui(
         icon_margin=5,
     )
     draw_resources_and_limits(screen, current_player, icons, fonts)
-    draw_fps(screen, fps, fonts)
+    fps_offset = 0
+    if objective_button_rect is not None:
+        draw_objective_toggle_button(screen, objective_button_rect, fonts=fonts, show=show_objective)
+    if show_objective:
+        fps_offset = draw_objective_panel(screen, objective=objective, current_time_s=current_time, players=players, player_id=player_id, fonts=fonts)
+    draw_fps(screen, fps, fonts, y_offset=fps_offset)
     # draw_selected_count(screen, all_units, current_player, fonts)
 
 

@@ -20,6 +20,7 @@ from typing import Dict, List, Optional, Tuple, Type, Any
 import pygame
 
 from constants import *  # SCREEN_WIDTH/HEIGHT, TILE_SIZE, VIEW_* etc.
+from objectives import DEFAULT_MISSION_DICT
 from world_objects import Bridge, Road, MiscPassable, MiscImpassable
 from tiles import GrassTile, Dirt, River, Foundation, Mountain
 from units import Unit, Axeman, Knight, Archer, Cow, Bear, Strzyga, Priestess, Shaman, Swordsman, Spearman, Tree, Barn, TownCenter, Barracks, ShamansHut, get_team_sprite, KnightsEstate, WarriorsLodge, Ruin, Wall, GIF_UNITS, get_unit_walk_frames, get_unit_walk_first_frame
@@ -401,6 +402,8 @@ def save_map(
     units_by_cell: Dict[str, Dict[str, Any]],
     objects_by_cell: Dict[str, Dict[str, Any]],
     path: str,
+    *,
+    objective: Dict[str, Any] | None = None,
 ) -> None:
     ensure_dirs(path)
     data = {
@@ -410,12 +413,13 @@ def save_map(
         "tiles": [[grid[r][c].__class__.__name__ for c in range(GRASS_COLS)] for r in range(GRASS_ROWS)],
         "units": units_by_cell,
         "objects": objects_by_cell,   # <-- NEW (bridges, etc.)
+        "objective": objective or DEFAULT_MISSION_DICT,
     }
     with open(path, "w", encoding="utf-8") as f:
         json.dump(data, f, indent=2)
 
 
-def load_map(path: str) -> Tuple[List[List[object]], Dict[str, Dict[str, Any]]]:
+def load_map(path: str) -> Tuple[List[List[object]], Dict[str, Dict[str, Any]], Dict[str, Dict[str, Any]], Dict[str, Any]]:
     with open(path, "r", encoding="utf-8") as f:
         data = json.load(f)
 
@@ -522,7 +526,10 @@ def load_map(path: str) -> Tuple[List[List[object]], Dict[str, Dict[str, Any]]]:
             objects_by_cell[k] = entry
 
     print(f"[EDITOR] Loaded: {path}")
-    return grid, units_by_cell, objects_by_cell
+    objective = data.get('objective') if isinstance(data, dict) else None
+    if objective is None:
+        objective = DEFAULT_MISSION_DICT
+    return grid, units_by_cell, objects_by_cell, objective
 
 # -----------------------------
 # Borders / scrollbars drawing
@@ -687,6 +694,10 @@ def main() -> None:
     selected_tile = "Dirt"
     selected_unit = "Axeman"
     selected_player = 1
+    # --- Mission objective settings (saved into map JSON) ---
+    mission_objective_type = 'kill_all_enemies'  # or 'survive_time'
+    survive_seconds = 300  # used when objective_type == 'survive_time'
+
 
     # Tree selection state (cycles on repeated clicks)
     selected_tree_index = 0  # 0..7
@@ -801,6 +812,17 @@ def main() -> None:
             y = y2 if row == 0 else y3
             x = left_margin + col * (btn_w + BTN_GAP)
             buttons.append(Button(pygame.Rect(x, y, btn_w, BTN_H), label, kind, value))
+
+        # Row 4: mission objective (bottom-left)
+        y_obj = PANEL_Y + PANEL_HEIGHT - BTN_H - 10
+        x_obj = 10
+        buttons.append(Button(pygame.Rect(x_obj, y_obj, 170, BTN_H), "Obj: Kill all", "objective_type", "kill_all_enemies"))
+        x_obj += 170 + 8
+        buttons.append(Button(pygame.Rect(x_obj, y_obj, 170, BTN_H), "Obj: Survive", "objective_type", "survive_time"))
+        x_obj += 170 + 16
+        buttons.append(Button(pygame.Rect(x_obj, y_obj, 40, BTN_H), "-", "objective_minus", "-"))
+        x_obj += 40 + 6
+        buttons.append(Button(pygame.Rect(x_obj, y_obj, 40, BTN_H), "+", "objective_plus", "+"))
 
     rebuild_ui()
 
@@ -1151,21 +1173,43 @@ def main() -> None:
                                 selected_unit = b.value
                                 mode = "unit"
 
+                        
+
                         elif b.kind == "player":
                             selected_player = int(b.value)
 
+                        elif b.kind == "objective_type":
+                            mission_objective_type = b.value
+                            rebuild_ui()
+
+                        elif b.kind == "objective_plus":
+                            survive_seconds = min(60 * 60 * 3, survive_seconds + 10)
+
+                        elif b.kind == "objective_minus":
+                            survive_seconds = max(5, survive_seconds - 10)
+
                         elif b.kind == "action":
                             if b.value == "save":
-                                save_map(grid, units_by_cell, objects_by_cell, DEFAULT_SAVE_PATH)
+                                obj = {"type": mission_objective_type}
+                                if mission_objective_type == "survive_time":
+                                    obj["seconds"] = int(survive_seconds)
+                                save_map(grid, units_by_cell, objects_by_cell, DEFAULT_SAVE_PATH, objective=obj)
+
                             elif b.value == "load":
                                 try:
-                                    grid, units_by_cell, objects_by_cell = load_map(DEFAULT_SAVE_PATH)
+                                    grid, units_by_cell, objects_by_cell, obj = load_map(DEFAULT_SAVE_PATH)
+                                    mission_objective_type = str(obj.get("type", "kill_all_enemies")).lower()
+                                    survive_seconds = int(obj.get("seconds", obj.get("time", 300)))
+                                    rebuild_ui()
                                 except Exception as e:
                                     print(f"[EDITOR] Load failed: {e}")
+
                             elif b.value == "clear":
                                 grid = new_grass_map()
                                 units_by_cell = {}
+                                objects_by_cell = {}
                                 print("[EDITOR] Cleared.")
+
                         break
 
                 if not hit_ui:
@@ -1277,9 +1321,10 @@ def main() -> None:
         # Panel
         pygame.draw.rect(screen, PANEL_COLOR, panel_rect)
 
+        obj_desc = "Kill all enemies" if mission_objective_type == 'kill_all_enemies' else f"Survive {survive_seconds//60}m {survive_seconds%60:02d}s"
         header = (
             f"Mode: {mode.upper()} | Tile: {selected_tile} | Unit: {selected_unit} | "
-            f"TreeVar: {current_tree_variant()} | Player: {PLAYERS[selected_player][0]} | "
+            f"TreeVar: {current_tree_variant()} | Player: {PLAYERS[selected_player][0]} | Obj: {obj_desc} | "
             f"Camera: Arrow Keys | View: {view_tiles_w}x{view_tiles_h} tiles"
         )
         screen.blit(font_big.render(header, True, WHITE), (10, PANEL_Y - 26))

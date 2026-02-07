@@ -43,6 +43,7 @@ def run_game() -> int:
 
     grid_buttons = ui_layout["grid_buttons"]
     quit_button = ui_layout["quit_button"]
+    objective_button = ui_layout.get("objective_button")
 
     # Universal grid hotkeys (4x3): q w e r / a s d f / z x c v
     GRID_HOTKEYS = {
@@ -90,6 +91,11 @@ def run_game() -> int:
     paused = False
     paused_by_player_id = None
     resume_button_rect = None
+
+    # Mission objective UI (toggle panel)
+    context.show_objective_panel = getattr(context, 'show_objective_panel', False)
+
+
 
     # Simulation time that does NOT advance while paused
     game_time = 0.0
@@ -945,7 +951,14 @@ def run_game() -> int:
                 game_state = GameState.DEFEAT
                 print("Player 1 has no units left. Showing Defeat screen.")
 
-            # Victory: Player 2 has no units or buildings
+            # Victory: mission objective completed
+            elif getattr(context, 'mission_objective', None) is not None:
+                try:
+                    if context.mission_objective.is_completed(current_time_s=current_time, players=players, player_id=1):
+                        game_state = GameState.VICTORY
+                except Exception:
+                    pass
+            # Fallback (older behavior)
             elif player2 and not player2.units:
                 game_state = GameState.VICTORY
                 print("Player 2 has no units left. Showing Victory screen.")
@@ -969,7 +982,7 @@ def run_game() -> int:
                     else:
                         paused_by_player_id = None
                         resume_button_rect = None
-                    continue
+
 
                 # While paused: ignore all other key input
                 if paused:
@@ -981,7 +994,7 @@ def run_game() -> int:
                     paused = False
                     paused_by_player_id = None
                     resume_button_rect = None
-                continue
+
             elif event.type == pygame.MOUSEBUTTONDOWN:
                 if game_state in (GameState.DEFEAT, GameState.VICTORY):
                     # Check if Quit button is clicked
@@ -993,6 +1006,13 @@ def run_game() -> int:
                     if event.button == 1:  # Left click
                         mouse_pos = Vector2(event.pos)
                         clicked_something = False
+
+                        # Mission objective panel toggle (top ribbon button)
+                        if objective_button is not None and objective_button.collidepoint(event.pos):
+                            context.show_objective_panel = not getattr(context, 'show_objective_panel', False)
+                            clicked_something = True
+                            continue
+
 
                         # --- Control group bookmarks (above bottom stat panel) ---
                         if current_player:
@@ -1909,6 +1929,11 @@ def run_game() -> int:
                 fps=fps,
                 grass_tiles=grass_tiles,
                 camera=camera,
+                objective=getattr(context, 'mission_objective', None),
+                show_objective=getattr(context, 'show_objective_panel', False),
+                objective_button_rect=objective_button,
+                players=players,
+                player_id=(getattr(current_player, 'player_id', None) or 1),
             )
 
             # Draw armed-command button highlight (same visual style as Move).
