@@ -1071,34 +1071,39 @@ def run_game() -> int:
                             r, c = cell
                             # Unit command buttons that arm a world-click order (like building placement).
                             # LMB in world confirms; RMB cancels.
-                            if (r, c) in ((0, 1), (1, 0), (0, 0)):
-                                has_units = any(u.selected and not isinstance(u, (Building, Tree)) for u in current_player.units)
-                                if has_units:
-                                    if (r, c) == (0, 1):  # Move
-                                        move_armed = True
-                                        attack_move_armed = False
-                                        patrol_armed = False
-                                        repair_armed = False
-                                    elif (r, c) == (1, 0):  # Attack-move
-                                        move_armed = False
-                                        attack_move_armed = True
-                                        patrol_armed = False
-                                        repair_armed = False
-                                    else:  # (0,0) Patrol
-                                        move_armed = False
-                                        attack_move_armed = False
-                                        patrol_armed = True
-                                        repair_armed = False
+                            has_units_selected = any(
+                                u.selected and not isinstance(u, (Building, Tree)) for u in current_player.units
+                            )
+
+                            # Only intercept Q/W/A/R cells as "armed commands" when unit commands are active.
+                            if has_units_selected and (r, c) in ((0, 1), (1, 0), (0, 0)):
+                                if (r, c) == (0, 1):  # Move
+                                    move_armed = True
+                                    attack_move_armed = False
+                                    patrol_armed = False
+                                    repair_armed = False
+                                elif (r, c) == (1, 0):  # Attack-move
+                                    move_armed = False
+                                    attack_move_armed = True
+                                    patrol_armed = False
+                                    repair_armed = False
+                                else:  # (0,0) Patrol
+                                    move_armed = False
+                                    attack_move_armed = False
+                                    patrol_armed = True
+                                    repair_armed = False
                                 grid_button_clicked = True
 
-                            elif (r, c) == (0, 3):  # Repair
-                                has_axeman_sel = any(u.selected and isinstance(u, Axeman) for u in current_player.units)
+                            elif has_units_selected and (r, c) == (0, 3):  # Repair
+                                has_axeman_sel = any(
+                                    u.selected and isinstance(u, Axeman) for u in current_player.units
+                                )
                                 if has_axeman_sel:
                                     repair_armed = True
                                     move_armed = False
                                     attack_move_armed = False
                                     patrol_armed = False
-                                grid_button_clicked = True
+                                    grid_button_clicked = True
                             else:
                                 handled, placing_building, building_to_place = grid_actions.execute_grid_cell(
                                     r, c,
@@ -1337,26 +1342,29 @@ def run_game() -> int:
                     r, c = cell
                     # Unit command hotkeys that arm a world-click order (like building placement).
                     # Q = Patrol, W = Move, A = Attack-move, R = Repair
-                    if (r, c) in ((0, 0), (0, 1), (1, 0)):
-                        if any(u.selected and not isinstance(u, (Building, Tree)) for u in current_player.units):
-                            if (r, c) == (0, 1):
-                                move_armed = True
-                                attack_move_armed = False
-                                patrol_armed = False
-                                repair_armed = False
-                            elif (r, c) == (1, 0):
-                                move_armed = False
-                                attack_move_armed = True
-                                patrol_armed = False
-                                repair_armed = False
-                            else:  # (0,0)
-                                move_armed = False
-                                attack_move_armed = False
-                                patrol_armed = True
-                                repair_armed = False
+                    has_units_selected = any(
+                        u.selected and not isinstance(u, (Building, Tree)) for u in current_player.units
+                    )
+
+                    if has_units_selected and (r, c) in ((0, 0), (0, 1), (1, 0)):
+                        if (r, c) == (0, 1):
+                            move_armed = True
+                            attack_move_armed = False
+                            patrol_armed = False
+                            repair_armed = False
+                        elif (r, c) == (1, 0):
+                            move_armed = False
+                            attack_move_armed = True
+                            patrol_armed = False
+                            repair_armed = False
+                        else:  # (0,0)
+                            move_armed = False
+                            attack_move_armed = False
+                            patrol_armed = True
+                            repair_armed = False
                         continue
 
-                    if (r, c) == (0, 3):
+                    if has_units_selected and (r, c) == (0, 3):
                         # Repair (armed): only axemen
                         has_axeman_sel = any(u.selected and isinstance(u, Axeman) for u in current_player.units)
                         if has_axeman_sel:
