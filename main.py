@@ -22,6 +22,8 @@ from units import Unit, Tree, Building, Barn, TownCenter, Barracks, KnightsEstat
 from player import Player, PlayerAI
 from pathfinding import SpatialGrid, WaypointGraph
 import ui
+from endgame_stats import StatsTracker
+import endgame_screen
 from camera import Camera
 
 
@@ -109,6 +111,10 @@ def run_game() -> int:
 
     # --- World init (refactored) --- (refactored) ---
     grass_tiles, needs_regrowth, river_tiles, players, all_units, spatial_grid, waypoint_graph, player2_ai = init_game_world()
+
+    # --- Endgame stats tracker (AoE-style) ---
+    stats = StatsTracker(player_id=1, sample_every_s=1.0)
+    stats.set_baseline_from_players(players)
 
     # Wire up shared mutable state for refactored modules
     context.players = players
@@ -938,6 +944,8 @@ def run_game() -> int:
             game_time += dt
         current_time = game_time
         context.current_time = current_time
+        # sample endgame stats timeline
+        stats.maybe_sample(current_time, players)
         if (not paused) and game_state == GameState.RUNNING:
             update_effects(getattr(context, "effects", []), current_time, dt)
 
@@ -947,8 +955,10 @@ def run_game() -> int:
             player2 = next((p for p in players if p.player_id == 2), None)
 
             # Defeat: Player 1 has no units or buildings
-            if player1 and not player1.units:
-                game_state = GameState.DEFEAT
+            if player1:
+                alive_p1 = [u for u in player1.units if not isinstance(u, Wall)]
+                if not alive_p1:
+                    game_state = GameState.DEFEAT
                 print("Player 1 has no units left. Showing Defeat screen.")
 
             # Victory: mission objective completed
@@ -959,8 +969,10 @@ def run_game() -> int:
                 except Exception:
                     pass
             # Fallback (older behavior)
-            elif player2 and not player2.units:
-                game_state = GameState.VICTORY
+            elif player2:
+                alive_p2 = [u for u in player2.units if not isinstance(u, Wall)]
+                if not alive_p2:
+                    game_state = GameState.VICTORY
                 print("Player 2 has no units left. Showing Victory screen.")
 
         # Handle events
@@ -1630,6 +1642,8 @@ def run_game() -> int:
                 player.barns = [u for u in player.units if isinstance(u, Barn) and u.alpha == 255]
                 highlight_times[unit] = current_time
                 print(f"Spawned {unit.__class__.__name__} at {unit.pos} for Player {player.player_id}")
+                # endgame stats
+                stats.on_unit_trained(unit, player.player_id)
 
             # Update building animations (construction)
             for building, anim in list(building_animations.items()):
@@ -1651,6 +1665,9 @@ def run_game() -> int:
                 if elapsed >= building.production_time:
                     building.alpha = 255
                     player = next(p for p in players if p.player_id == building.player_id)
+                    if not getattr(building, '_stats_completed', False):
+                        stats.on_building_completed(building, building.player_id)
+                        setattr(building, '_stats_completed', True)
                     if building not in player.units or building.alpha < 255:
                         player.building_count += 1
                     if isinstance(building, Barn):
@@ -1685,6 +1702,9 @@ def run_game() -> int:
                     if unit.target and isinstance(unit.target, Unit) and not isinstance(unit.target, Tree) and unit.target in all_units:
                         unit.attack(unit.target, current_time)
                         if unit.target.hp <= 0:
+                            # attribute kill before removal
+                            stats.on_kill(unit, unit.target)
+                            setattr(unit.target, '_last_attacker', unit)
                             units_to_remove.add(unit.target)
                     unit.resolve_collisions(all_units, spatial_grid)
                     if hasattr(unit, '_corrections') and unit._corrections:
@@ -1728,6 +1748,11 @@ def run_game() -> int:
 
             # Remove dead units
             for unit in units_to_remove:
+                # endgame stats: loss/kills (projectile kills may be resolved here)
+                stats.on_unit_lost(unit)
+                attacker = getattr(unit, '_last_attacker', None)
+                if attacker is not None:
+                    stats.on_kill(attacker, unit)
                 if unit in building_animations:
                     anim = building_animations[unit]
                     town_center = anim.get('town_center')
@@ -1958,27 +1983,30 @@ def run_game() -> int:
                 pygame.draw.rect(screen, GREEN, grid_buttons[1][1], 3)
 
         elif game_state == GameState.DEFEAT:
-            # Draw Defeat screen
-            ui.draw_end_screen(
-                screen,
-                mode_text=("Defeat! Player 1 has lost all units.", (100, 0, 0)),
-                quit_button=quit_button,
+            # Endgame screen (defeat) with AoE-style stats + charts.
+            action = endgame_screen.run_endgame_stats_screen(
+                screen=screen,
+                clock=clock,
+                result="defeat",
+                stats=stats,
                 fonts=fonts,
-                move_armed=move_armed,
-                repair_armed=repair_armed,
             )
+            if action == "restart":
+                return 2
+            # continue / quit both end the match; caller can decide what to do next.
             running = False
 
         elif game_state == GameState.VICTORY:
-            # Draw Victory screen
-            ui.draw_end_screen(
-                screen,
-                mode_text=("Victory! Player 2 has been defeated!", (0, 100, 0)),
-                quit_button=quit_button,
+            # Endgame screen (victory) with AoE-style stats + charts.
+            action = endgame_screen.run_endgame_stats_screen(
+                screen=screen,
+                clock=clock,
+                result="victory",
+                stats=stats,
                 fonts=fonts,
-                move_armed=move_armed,
-                repair_armed=repair_armed,
             )
+            if action == "restart":
+                return 2
             running = False
         # Pause overlay (drawn on top of everything)
         if paused and game_state == GameState.RUNNING:

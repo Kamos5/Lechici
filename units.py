@@ -995,6 +995,8 @@ class Unit:
                 damage = max(0, self.attack_damage - target.armor)
                 hp_before = float(getattr(target, "hp", 0))
                 target.hp -= damage
+                # Track last attacker for endgame stats attribution
+                setattr(target, '_last_attacker', self)
                 # Progression XP: 1 per damaging hit, bonus on kill/destroy.
                 progression.award_combat_xp(self, target, damage=damage, target_hp_before=hp_before)
                 self.last_attack_time = context.current_time
