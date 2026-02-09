@@ -74,12 +74,13 @@ done:
 + objectvies MAJOR
 + FIX!!!!!: gridaction building not working + pause crashes -> reason 'arming' grid actions caused it
 + end screen (sum up - all the death, killed, who survived etc) MAJOR
++ fire animation MINOR
 
 todo:
 
 CORE FEATURES:
 - double clicking the same unit select all that are sees in camera MINOR
-- fire animation MINOR
+
 - start screen MAJOR
 - grid actions (harvest) CRITICAL
 - fullscreen CRITICAL
@@ -88,6 +89,9 @@ CORE FEATURES:
 - zoom?
 - menu
 - script to set up custom maps
+- mission selection
+- set up units stats (balance)
+- magic for priestress and shaman
 
 - death animation should linger
 - sounds?
