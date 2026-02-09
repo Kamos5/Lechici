@@ -664,6 +664,11 @@ class Unit:
         self.patrol_anchor = None
         self.patrol_dest = None
         self.patrol_leg = "to_dest"
+        # Also cancel repairs (Axeman uses repair_target)
+        if hasattr(self, "repair_target"):
+            self.repair_target = None
+            if hasattr(self, "_repair_last_time"):
+                self._repair_last_time = None
 
     def _scan_for_enemy_in_view(self, units) -> Optional["Unit"]:
         """Return closest enemy (unit/building) within view_distance. Excludes Trees."""
