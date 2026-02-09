@@ -11,6 +11,7 @@ from pygame.math import Vector2
 
 from constants import *
 import context
+from effects import draw_building_damage_fire
 from tiles import GrassTile, Dirt
 
 # XP/level progression (kept separate for easier tuning)
@@ -109,66 +110,6 @@ def get_team_sprite(cls_name: str, desired_px: int, player_color: Tuple[int, int
 
 # Cache per (folder_key, size_px, player_color_rgb, flip_x) -> list[Surface]
 _ANIM_CACHE: Dict[Tuple[str, int, Tuple[int, int, int], bool], List[pygame.Surface]] = {}
-
-# ------------------ Building damage fire (GIF) support ------------------
-
-# Cache per (level, size_px) -> list[Surface]
-_FIRE_ANIM_CACHE: Dict[Tuple[int, int], List[pygame.Surface]] = {}
-
-# Remember missing flame assets so we don't spam the console.
-_MISSING_FIRE_WARNED: set[tuple[int, int]] = set()
-
-def _fire_gif_path(level: int) -> Optional[str]:
-    """Resolve flame gif path.
-
-    We try multiple common layouts because asset folders vary between projects.
-    """
-    level = int(level)
-
-    candidates = [
-        os.path.join("assets", "effects", "flame", f"flame{level}.gif"),
-        os.path.join("assets", "effects", f"flame{level}.gif"),
-        os.path.join("assets", "effects", "flames", f"flame{level}.gif"),
-        os.path.join("assets", "effects", "fire", f"flame{level}.gif"),
-        os.path.join("assets", "effects", "fire", "flame", f"flame{level}.gif"),
-        os.path.join("assets", "effects", "flame", f"flame_{level}.gif"),
-        os.path.join("assets", "effects", f"flame_{level}.gif"),
-    ]
-
-    for c in candidates:
-        if os.path.exists(c):
-            return c
-        d = os.path.dirname(c)
-        base = os.path.basename(c)
-        if os.path.isdir(d):
-            try:
-                for fn in os.listdir(d):
-                    if fn.lower() == base.lower():
-                        return os.path.join(d, fn)
-            except Exception:
-                pass
-    return None
-
-def get_fire_frames(level: int, size_px: int) -> List[pygame.Surface]:
-    """Load & cache flame GIF frames scaled to (size_px, size_px)."""
-    key = (int(level), int(size_px))
-    if key in _FIRE_ANIM_CACHE:
-        return _FIRE_ANIM_CACHE[key]
-
-    path = _fire_gif_path(level)
-    if not path or not os.path.exists(path):
-        _FIRE_ANIM_CACHE[key] = []
-        if key not in _MISSING_FIRE_WARNED:
-            _MISSING_FIRE_WARNED.add(key)
-            print(f"[fire] Missing flame asset for level={level}: put flame{level}.gif under assets/effects/flame/ (or similar).")
-        return []
-
-    frames = _load_gif_frames(path)
-    out: List[pygame.Surface] = []
-    for fr in frames:
-        out.append(pygame.transform.scale(fr, (int(size_px), int(size_px))))
-    _FIRE_ANIM_CACHE[key] = out
-    return out
 
 
 def _load_gif_frames(path: str) -> List[pygame.Surface]:
@@ -796,11 +737,11 @@ class Unit:
             image_rect = image_surface.get_rect(center=(int(x), int(y)))
             _blit_sprite_with_border(screen, image_surface, image_rect)
         # Fire overlay for damaged buildings (drawn on top of building sprite).
-        if isinstance(self, Building) and hasattr(self, "_draw_damage_fire"):
+        if isinstance(self, Building):
             try:
-                self._draw_damage_fire(screen, x, y)
-            except Exception as e:
-                _fire_warn_once(f"[fire] draw failed for {type(self).__name__}: {e}")
+                draw_building_damage_fire(self, screen, x, y, now=context.current_time)
+            except Exception:
+                pass
         if self.selected:
             pygame.draw.rect(screen, self.player_color, (x - self.size / 2, y - self.size / 2, self.size, self.size), 1)
         if self.should_highlight(context.current_time):
@@ -1431,99 +1372,6 @@ class Building(Unit):
         self.attack_damage = 0  # Buildings cannot attack
         self.attack_range = 0
         self.rally_point = None  # Initialize rally point as None
-
-        # --- Damage fire overlay state (buildings only) ---
-        self._fire_level: int = 0
-        self._fire_slots: List[Tuple[int, int]] = []
-        self._fire_jitter: List[Tuple[int, int]] = []
-
-    
-_FIRE_FRAME_TIME: float = 0.12
-
-# One-time warnings so asset/path issues don't get swallowed silently.
-_fire_warned: set = set()
-def _fire_warn_once(msg: str) -> None:
-    if msg in _fire_warned:
-        return
-    _fire_warned.add(msg)
-    try:
-        print(msg)
-    except Exception:
-        pass
-
-def _compute_fire_state(self) -> tuple[int, int]:
-    """Return (flame_level, flame_count) based on building HP percent.
-    Levels map to flame1/2/3 assets. Count increases 1→2→3 as damage worsens,
-    and decreases during repair without changing already-chosen positions."""
-    mx = float(getattr(self, "max_hp", 0) or 0)
-    if mx <= 0:
-        return (0, 0)
-    hp = float(getattr(self, "hp", 0) or 0)
-    pct = max(0.0, min(1.0, hp / mx))
-    if pct > 0.75:
-        return (0, 0)
-    if pct > 0.50:
-        return (1, 1)
-    if pct > 0.25:
-        return (2, 2)
-    return (3, 3)
-
-def _ensure_fire_slots(self) -> None:
-    """Pick 3 stable offsets (and jitters) once per building."""
-    if not hasattr(self, "_fire_slots") or not isinstance(getattr(self, "_fire_slots"), list):
-        self._fire_slots = []
-    if not hasattr(self, "_fire_jitter") or not isinstance(getattr(self, "_fire_jitter"), list):
-        self._fire_jitter = []
-    if len(self._fire_slots) >= 3 and len(self._fire_jitter) >= 3:
-        return
-
-    candidates = [(ox, oy) for ox in (-1, 0, 1) for oy in (-1, 0, 1)]
-    # Ensure we get 3 unique positions; if not enough candidates, fall back safely.
-    slots = random.sample(candidates, 3) if len(candidates) >= 3 else candidates
-    self._fire_slots = slots
-
-    j = max(1, int(round(TILE_SIZE * 0.15)))
-    self._fire_jitter = [(random.randint(-j, j), random.randint(-j, j)) for _ in range(len(self._fire_slots))]
-
-def _draw_damage_fire(self, screen: pygame.Surface, x: float, y: float) -> None:
-    # Only for 3x3 buildings and only when fully visible.
-    if getattr(self, "SIZE_TILES", 1) < 3:
-        return
-    if getattr(self, "alpha", 255) < 255:
-        return
-
-    level, count = self._compute_fire_state()
-    if count <= 0 or level <= 0:
-        return
-
-    self._ensure_fire_slots()
-    frames = get_fire_frames(level, int(TILE_SIZE))
-    if not frames:
-        _fire_warn_once(f"[fire] missing frames for level={level} (check flame assets paths/names)")
-        return
-
-    now = float(getattr(context, "current_time", 0.0) or 0.0)
-    idx = int(now / float(self._FIRE_FRAME_TIME)) % len(frames)
-    fr = frames[idx]
-
-    # Lift a bit so flames appear on the roof/top of the 3x3 sprite.
-    lift = int(round(TILE_SIZE * 0.35))
-
-    # Draw first N slots to keep earlier flames fixed as intensity grows/shrinks.
-    n = min(int(count), len(self._fire_slots))
-    for i in range(n):
-        ox, oy = self._fire_slots[i]
-        jx, jy = self._fire_jitter[i] if i < len(self._fire_jitter) else (0, 0)
-        fx = float(x) + float(ox) * float(TILE_SIZE) + float(jx)
-        fy = float(y) + float(oy) * float(TILE_SIZE) + float(jy) - float(lift)
-        rect = fr.get_rect(center=(int(fx), int(fy)))
-        screen.blit(fr, rect)
-
-# Bind fire helpers as Building methods so they are accessible as self._...()
-Building._FIRE_FRAME_TIME = _FIRE_FRAME_TIME
-Building._compute_fire_state = _compute_fire_state
-Building._ensure_fire_slots = _ensure_fire_slots
-Building._draw_damage_fire = _draw_damage_fire
 
 # Barn class
 class Barn(Building):

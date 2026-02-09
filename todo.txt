@@ -79,6 +79,7 @@ done:
 todo:
 
 CORE FEATURES:
+
 - double clicking the same unit select all that are sees in camera MINOR
 
 - start screen MAJOR
@@ -117,6 +118,8 @@ BUGS:
 - fix: cow stuck in empty of grass field dont move and wait for regrow (do something)
 - FIX: error with COW when she targets enemy unit (building included)
 - fix: when building repairing is possible - accept or discard but fix it
+- fix: axeman when repairing ignore other orders
+
 CORE 2:
 
 
