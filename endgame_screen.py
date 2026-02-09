@@ -173,6 +173,9 @@ def run_endgame_stats_screen(
     small_font = fonts.get("small_font") or fonts["font"]
     btn_font = fonts.get("button_font") or fonts["font"]
 
+    # Support both single-player StatsTracker and MultiStats wrapper.
+    pstats = stats.get_tracker(1) if hasattr(stats, 'get_tracker') and stats.get_tracker(1) is not None else stats
+
     # Simple tab state
     tabs = ["Summary", "Economy", "Military", "Production"]
     active_tab = 0
@@ -253,18 +256,35 @@ def run_endgame_stats_screen(
         y += 34
 
         rows = [
-            ("Produced units", int(getattr(stats, "produced_units", 0))),
-            ("Produced buildings", int(getattr(stats, "produced_buildings", 0))),
-            ("Collected milk", int(getattr(stats, "collected_milk", 0))),
-            ("Collected wood", int(getattr(stats, "collected_wood", 0))),
-            ("Units trained", int(getattr(stats, "units_trained", 0))),
-            ("Units lost", int(getattr(stats, "units_lost", 0))),
-            ("Units killed", int(getattr(stats, "units_killed", 0))),
+            ("Produced units", int(getattr(pstats, "produced_units", 0))),
+            ("Produced buildings", int(getattr(pstats, "produced_buildings", 0))),
+            ("Collected milk", int(getattr(pstats, "collected_milk", 0))),
+            ("Collected wood", int(getattr(pstats, "collected_wood", 0))),
+            ("Units trained", int(getattr(pstats, "units_trained", 0))),
+            ("Units lost", int(getattr(pstats, "units_lost", 0))),
+            ("Units killed", int(getattr(pstats, "units_killed", 0))),
         ]
         for name, val in rows:
             _draw_text(screen, small_font, name, (left.x + 12, y), (200, 200, 200))
             _draw_text(screen, small_font, str(val), (left.right - 70, y), (255, 255, 255))
             y += 22
+
+        # Multi-player summary (excluding Gaia). Shows all players if MultiStats is used.
+        if hasattr(stats, 'iter_player_ids') and hasattr(stats, 'get_tracker'):
+            pids = [pid for pid in stats.iter_player_ids() if int(pid) != 0]
+            if len(pids) > 1:
+                y += 14
+                _draw_text(screen, small_font, "Players", (left.x + 12, y))
+                y += 22
+                _draw_text(screen, small_font, "PID  Trn  Lst  Kll  Bld", (left.x + 12, y))
+                y += 18
+                for pid in pids:
+                    tr = stats.get_tracker(pid)
+                    if tr is None:
+                        continue
+                    line = f"{pid:>3}  {int(getattr(tr,'units_trained',0)):>3}  {int(getattr(tr,'units_lost',0)):>3}  {int(getattr(tr,'units_killed',0)):>3}  {int(getattr(tr,'produced_buildings',0)):>3}"
+                    _draw_text(screen, small_font, line, (left.x + 12, y))
+                    y += 18
 
         # MVP panel
         y += 12
@@ -303,7 +323,7 @@ def run_endgame_stats_screen(
         # Right: charts
         chart_area = pygame.Rect(right.x + 10, right.y + 52, right.w - 20, right.h - 62)
 
-        t = list(getattr(stats.series, "t", []))
+        t = list(getattr(pstats.series, "t", []))
         # (Name, values, color)
         if active_tab == 0:  # Summary
             _draw_line_chart(
@@ -312,8 +332,8 @@ def run_endgame_stats_screen(
                 "Resources collected over time",
                 t,
                 [
-                    ("Milk", list(getattr(stats.series, "milk_collected", [])), C_ACC1),
-                    ("Wood", list(getattr(stats.series, "wood_collected", [])), C_ACC2),
+                    ("Milk", list(getattr(pstats.series, "milk_collected", [])), C_ACC1),
+                    ("Wood", list(getattr(pstats.series, "wood_collected", [])), C_ACC2),
                 ],
                 font,
                 small_font,
@@ -323,10 +343,10 @@ def run_endgame_stats_screen(
                 pygame.Rect(chart_area.x, chart_area.y + int(chart_area.h * 0.62) + 10, chart_area.w, chart_area.h - int(chart_area.h * 0.62) - 10),
                 "Final totals",
                 [
-                    ("U", float(getattr(stats, "produced_units", 0)), C_ACC3),
-                    ("B", float(getattr(stats, "produced_buildings", 0)), C_ACC4),
-                    ("M", float(getattr(stats, "collected_milk", 0)), C_ACC1),
-                    ("W", float(getattr(stats, "collected_wood", 0)), C_ACC2),
+                    ("U", float(getattr(pstats, "produced_units", 0)), C_ACC3),
+                    ("B", float(getattr(pstats, "produced_buildings", 0)), C_ACC4),
+                    ("M", float(getattr(pstats, "collected_milk", 0)), C_ACC1),
+                    ("W", float(getattr(pstats, "collected_wood", 0)), C_ACC2),
                 ],
                 font,
                 small_font,
@@ -338,8 +358,8 @@ def run_endgame_stats_screen(
                 "Economy (cumulative)",
                 t,
                 [
-                    ("Milk", list(getattr(stats.series, "milk_collected", [])), C_ACC1),
-                    ("Wood", list(getattr(stats.series, "wood_collected", [])), C_ACC2),
+                    ("Milk", list(getattr(pstats.series, "milk_collected", [])), C_ACC1),
+                    ("Wood", list(getattr(pstats.series, "wood_collected", [])), C_ACC2),
                 ],
                 font,
                 small_font,
@@ -351,9 +371,9 @@ def run_endgame_stats_screen(
                 "Military (cumulative)",
                 t,
                 [
-                    ("Trained", list(getattr(stats.series, "units_trained", [])), C_ACC1),
-                    ("Lost", list(getattr(stats.series, "units_lost", [])), C_DEF),
-                    ("Killed", list(getattr(stats.series, "units_killed", [])), C_VIC),
+                    ("Trained", list(getattr(pstats.series, "units_trained", [])), C_ACC1),
+                    ("Lost", list(getattr(pstats.series, "units_lost", [])), C_DEF),
+                    ("Killed", list(getattr(pstats.series, "units_killed", [])), C_VIC),
                 ],
                 font,
                 small_font,
@@ -363,9 +383,9 @@ def run_endgame_stats_screen(
                 pygame.Rect(chart_area.x, chart_area.y + int(chart_area.h * 0.62) + 10, chart_area.w, chart_area.h - int(chart_area.h * 0.62) - 10),
                 "Final military",
                 [
-                    ("Tr", float(getattr(stats, "units_trained", 0)), C_ACC1),
-                    ("Ls", float(getattr(stats, "units_lost", 0)), C_DEF),
-                    ("Kl", float(getattr(stats, "units_killed", 0)), C_VIC),
+                    ("Tr", float(getattr(pstats, "units_trained", 0)), C_ACC1),
+                    ("Ls", float(getattr(pstats, "units_lost", 0)), C_DEF),
+                    ("Kl", float(getattr(pstats, "units_killed", 0)), C_VIC),
                 ],
                 font,
                 small_font,
@@ -377,8 +397,8 @@ def run_endgame_stats_screen(
                 "Production (cumulative)",
                 t,
                 [
-                    ("Units", list(getattr(stats.series, "units_total", [])), C_ACC3),
-                    ("Buildings", list(getattr(stats.series, "buildings_total", [])), C_ACC4),
+                    ("Units", list(getattr(pstats.series, "units_total", [])), C_ACC3),
+                    ("Buildings", list(getattr(pstats.series, "buildings_total", [])), C_ACC4),
                 ],
                 font,
                 small_font,

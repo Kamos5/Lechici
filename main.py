@@ -22,7 +22,7 @@ from units import Unit, Tree, Building, Barn, TownCenter, Barracks, KnightsEstat
 from player import Player, PlayerAI
 from pathfinding import SpatialGrid, WaypointGraph
 import ui
-from endgame_stats import StatsTracker
+from endgame_stats import StatsTracker, MultiStats
 import endgame_screen
 from camera import Camera
 
@@ -113,7 +113,7 @@ def run_game() -> int:
     grass_tiles, needs_regrowth, river_tiles, players, all_units, spatial_grid, waypoint_graph, player2_ai = init_game_world()
 
     # --- Endgame stats tracker (AoE-style) ---
-    stats = StatsTracker(player_id=1, sample_every_s=1.0)
+    stats = MultiStats(player_ids=[p.player_id for p in players if getattr(p,'player_id',0)!=0], sample_every_s=1.0)
     stats.set_baseline_from_players(players)
 
     # Wire up shared mutable state for refactored modules
@@ -949,31 +949,45 @@ def run_game() -> int:
         if (not paused) and game_state == GameState.RUNNING:
             update_effects(getattr(context, "effects", []), current_time, dt)
 
+        
+
         # Check for Defeat or Victory conditions
         if (not paused) and game_state == GameState.RUNNING:
-            player1 = next((p for p in players if p.player_id == 1), None)
-            player2 = next((p for p in players if p.player_id == 2), None)
+            player1 = next((p for p in players if getattr(p, 'player_id', None) == 1), None)
 
-            # Defeat: Player 1 has no units or buildings
-            if player1:
-                alive_p1 = [u for u in player1.units if not isinstance(u, Wall)]
-                if not alive_p1:
-                    game_state = GameState.DEFEAT
-                print("Player 1 has no units left. Showing Defeat screen.")
+            def _living_assets(p):
+                if not p:
+                    return []
+                out = []
+                for u in (getattr(p, 'units', []) or []):
+                    # Ignore walls for endgame elimination logic
+                    if isinstance(u, Wall):
+                        continue
+                    # Only count living units/buildings
+                    if getattr(u, 'hp', 0) <= 0:
+                        continue
+                    out.append(u)
+                return out
 
-            # Victory: mission objective completed
-            elif getattr(context, 'mission_objective', None) is not None:
+            # 1) Mission objective victory (preferred)
+            obj = getattr(context, 'mission_objective', None)
+            if obj is not None:
                 try:
-                    if context.mission_objective.is_completed(current_time_s=current_time, players=players, player_id=1):
+                    if obj.is_completed(current_time_s=current_time, players=players, player_id=1):
                         game_state = GameState.VICTORY
                 except Exception:
                     pass
-            # Fallback (older behavior)
-            elif player2:
-                alive_p2 = [u for u in player2.units if not isinstance(u, Wall)]
-                if not alive_p2:
+
+            # 2) Defeat: player 1 eliminated (no living units/buildings except walls)
+            if game_state == GameState.RUNNING and player1 is not None:
+                if not _living_assets(player1):
+                    game_state = GameState.DEFEAT
+
+            # 3) Fallback Victory: all non-gaia enemies eliminated
+            if game_state == GameState.RUNNING:
+                enemies = [p for p in players if getattr(p, 'player_id', 0) not in (0, 1)]
+                if enemies and all(len(_living_assets(p)) == 0 for p in enemies):
                     game_state = GameState.VICTORY
-                print("Player 2 has no units left. Showing Victory screen.")
 
         # Handle events
         for event in pygame.event.get():

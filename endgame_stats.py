@@ -247,3 +247,63 @@ def _is_building(u: Any) -> bool:
 def _is_neutral(u: Any) -> bool:
     # Player 0 is neutral in this project (trees, map objects).
     return getattr(u, 'player_id', None) == 0
+
+
+# ---------------- Multi-player wrapper ----------------
+
+class MultiStats:
+    """Track endgame stats for multiple non-Gaia players.
+
+    The game previously used a single StatsTracker (player 1 only). This wrapper keeps
+    the same call sites (stats.on_kill, stats.on_unit_lost, stats.maybe_sample, etc.)
+    but routes each event to the correct per-player tracker.
+    """
+
+    def __init__(self, player_ids: List[int], sample_every_s: float = 1.0):
+        self.trackers: Dict[int, StatsTracker] = {
+            int(pid): StatsTracker(player_id=int(pid), sample_every_s=sample_every_s)
+            for pid in (player_ids or [])
+            if int(pid) != 0
+        }
+
+    def set_baseline_from_players(self, players: List[Any]) -> None:
+        for tr in self.trackers.values():
+            tr.set_baseline_from_players(players)
+
+    def maybe_sample(self, t: float, players: List[Any]) -> None:
+        for tr in self.trackers.values():
+            tr.maybe_sample(t, players)
+
+    def on_unit_trained(self, unit: Any, player_id: int) -> None:
+        tr = self.trackers.get(int(player_id))
+        if tr:
+            tr.on_unit_trained(unit, player_id)
+
+    def on_building_completed(self, building: Any, player_id: int) -> None:
+        tr = self.trackers.get(int(player_id))
+        if tr:
+            tr.on_building_completed(building, player_id)
+
+    def on_unit_lost(self, unit: Any) -> None:
+        pid = int(getattr(unit, 'player_id', 0) or 0)
+        tr = self.trackers.get(pid)
+        if tr:
+            tr.on_unit_lost(unit)
+
+    def on_kill(self, attacker: Any, victim: Any) -> None:
+        pid = int(getattr(attacker, 'player_id', 0) or 0)
+        tr = self.trackers.get(pid)
+        if tr:
+            tr.on_kill(attacker, victim)
+
+    # UI convenience helpers
+    def get_mvp(self) -> Optional[UnitSnapshot]:
+        """MVP for player 1 (human) by convention."""
+        tr = self.trackers.get(1)
+        return tr.get_mvp() if tr else None
+
+    def get_tracker(self, player_id: int) -> Optional['StatsTracker']:
+        return self.trackers.get(int(player_id))
+
+    def iter_player_ids(self) -> List[int]:
+        return sorted(self.trackers.keys())

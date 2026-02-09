@@ -73,6 +73,7 @@ done:
 + fix: units 'dance' when attacking each other
 + objectvies MAJOR
 + FIX!!!!!: gridaction building not working + pause crashes -> reason 'arming' grid actions caused it
++ end screen (sum up - all the death, killed, who survived etc) MAJOR
 
 todo:
 
@@ -83,7 +84,6 @@ CORE FEATURES:
 - grid actions (harvest) CRITICAL
 - fullscreen CRITICAL
 - fog of war CRITICAL
-+ end screen (sum up - all the death, killed, who survived etc) MAJOR
 
 - zoom?
 - menu
