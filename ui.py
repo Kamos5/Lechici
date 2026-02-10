@@ -8,6 +8,42 @@ from world_objects import Road
 from constants import *
 from units import Unit, Building, Barn, Barracks, TownCenter, Axeman, Archer, Knight, Bear, Strzyga, Priestess, Shaman, Swordsman, Spearman, Cow, ShamansHut, WarriorsLodge, KnightsEstate, Wall, Tree
 
+from dataclasses import dataclass
+from typing import Callable, Any
+
+@dataclass
+class GridButton:
+    """Persistent grid button model.
+
+    Stores UI rect + metadata (icon/action/pressed) so game logic doesn't need to
+    hardcode per-cell behavior.
+    """
+    rect: pygame.Rect
+    row: int
+    col: int
+    hotkey: str | None = None
+    action_id: str | None = None
+    pressed: bool = False  # e.g. armed command
+    icon: pygame.Surface | None = None
+    enabled: bool = True
+    tooltip_name: str = ""
+    tooltip_desc: str = ""
+    callback: Callable[[dict, Any], bool] | None = None  # (armed_state, current_player) -> handled
+
+    def collidepoint(self, pos) -> bool:
+        return self.rect.collidepoint(pos)
+
+    def __getattr__(self, name):
+        # Back-compat: allow using this like a pygame.Rect in existing drawing code.
+        return getattr(self.rect, name)
+
+
+def set_armed_state(armed_state: dict, action_id: str | None) -> None:
+    """Set one armed action active, clear the rest."""
+    keys = ["patrol", "move", "attack_move", "repair", "harvest"]
+    for k in keys:
+        armed_state[k] = (k == action_id)
+
 
 def load_ui_icons():
     """Load and scale UI icons. Falls back to colored squares if missing."""
@@ -413,10 +449,61 @@ def build_ui_layout():
         for col in range(GRID_COLS):
             x = grid_button_start_x + col * (btn_size + eff_margin_x)
             y = grid_button_start_y + row * (btn_size + eff_margin_y)
-            row_buttons.append(pygame.Rect(x, y, btn_size, btn_size))
+            row_buttons.append(GridButton(pygame.Rect(x, y, btn_size, btn_size), row=row, col=col))
         grid_buttons.append(row_buttons)
 
-    # Mission objective toggle button (top ribbon, align right)
+    
+    # Configure persistent hotkeys + default command callbacks (armable commands).
+    hotkey_map = {
+        (0, 0): "q", (0, 1): "w", (0, 2): "e", (0, 3): "r",
+        (1, 0): "a", (1, 1): "s", (1, 2): "d", (1, 3): "f",
+        (2, 0): "z", (2, 1): "x", (2, 2): "c", (2, 3): "v",
+    }
+
+    def _has_selected_units(player) -> bool:
+        if not player:
+            return False
+        return any(u.selected and not isinstance(u, (Building, Tree)) for u in player.units)
+
+    def _has_selected_axeman(player) -> bool:
+        if not player:
+            return False
+        return any(u.selected and isinstance(u, Axeman) for u in player.units)
+
+    def _has_selected_cow(player) -> bool:
+        if not player:
+            return False
+        return any(u.selected and isinstance(u, Cow) for u in player.units)
+
+    def _arm_callback(action_id: str, *, require_units: bool = True, require_axeman: bool = False, require_harvesters: bool = False):
+        def _cb(armed_state: dict, player) -> bool:
+            if require_units and not _has_selected_units(player):
+                return False
+            if require_axeman and not _has_selected_axeman(player):
+                return False
+            if require_harvesters and not (_has_selected_axeman(player) or _has_selected_cow(player)):
+                return False
+            set_armed_state(armed_state, action_id)
+            return True
+        return _cb
+
+    # Assign fixed action IDs to the core unit command cells.
+    fixed_actions = {
+        (0, 0): ("patrol", _arm_callback("patrol")),
+        (0, 1): ("move", _arm_callback("move")),
+        (0, 2): ("harvest", _arm_callback("harvest", require_harvesters=True)),
+        (0, 3): ("repair", _arm_callback("repair", require_axeman=True)),
+        (1, 0): ("attack_move", _arm_callback("attack_move")),
+        # (1,1) Stop is immediate, handled via grid_actions.execute_grid_cell
+    }
+
+    for r in range(GRID_ROWS):
+        for c in range(GRID_COLS):
+            btn = grid_buttons[r][c]
+            btn.hotkey = hotkey_map.get((r, c))
+            if (r, c) in fixed_actions:
+                btn.action_id, btn.callback = fixed_actions[(r, c)]
+# Mission objective toggle button (top ribbon, align right)
     objective_button = pygame.Rect(
         SCREEN_WIDTH - VIEW_MARGIN_RIGHT - 120,
         10,
@@ -472,10 +559,11 @@ def draw_panels(screen):
     pygame.draw.rect(screen, PANEL_COLOR, (VIEW_MARGIN_LEFT, PANEL_Y, VIEW_WIDTH, PANEL_HEIGHT))
 
 
-def draw_grid_buttons(screen, grid_buttons, current_player, all_units, production_queues, current_time, icons, fonts, move_armed: bool = False, repair_armed: bool = False):
+def draw_grid_buttons(screen, grid_buttons, current_player, all_units, production_queues, current_time, icons, fonts, armed_state: dict | None = None):
     small_font = fonts["small_font"]
     mouse_pos = pygame.mouse.get_pos()
     hovered_tooltip = None  # (name, desc, milk_cost, wood_cost)
+    armed_state = armed_state or {}
 
     # --- cached scaled icons for build grid ---
     if not hasattr(draw_grid_buttons, "_scaled_cache"):
@@ -598,10 +686,16 @@ def draw_grid_buttons(screen, grid_buttons, current_player, all_units, productio
                 hov = ui_btn.hovered(mouse_pos)
                 ui_btn.draw_base(screen, hovered=hov)
 
-                # Orange border while Move/Repair is armed
-                if label == 'Move' and move_armed:
+                # Orange border while a command is armed ("pressed" / arming)
+                if label == 'Move' and armed_state.get('move'):
                     pygame.draw.rect(screen, ORANGE, btn, 4)
-                if label == 'Repair' and repair_armed:
+                if label == 'Patrol' and armed_state.get('patrol'):
+                    pygame.draw.rect(screen, ORANGE, btn, 4)
+                if label == 'Attack' and armed_state.get('attack_move'):
+                    pygame.draw.rect(screen, ORANGE, btn, 4)
+                if label == 'Repair' and armed_state.get('repair'):
+                    pygame.draw.rect(screen, ORANGE, btn, 4)
+                if label == 'Harvest' and armed_state.get('harvest'):
                     pygame.draw.rect(screen, ORANGE, btn, 4)
 
                 # Draw icon if available (Stop/Attack/Repair), otherwise just show hotkey badge.
@@ -628,12 +722,6 @@ def draw_grid_buttons(screen, grid_buttons, current_player, all_units, productio
                 )
                 hov = ui_btn.hovered(mouse_pos)
                 ui_btn.draw_base(screen, hovered=hov)
-
-                # Orange border while Move/Repair is armed
-                if label == 'Move' and move_armed:
-                    pygame.draw.rect(screen, ORANGE, btn, 4)
-                if label == 'Repair' and repair_armed:
-                    pygame.draw.rect(screen, ORANGE, btn, 4)
                 ui_btn.draw_icon_fill(screen, icon_pad=4)
                 ui_btn.draw_hotkey_badge(screen, fonts.get("button_font") or small_font)
                 if hov:
@@ -730,12 +818,6 @@ def draw_grid_buttons(screen, grid_buttons, current_player, all_units, productio
 
                 hov = ui_btn.hovered(mouse_pos)
                 ui_btn.draw_base(screen, hovered=hov)
-
-                # Orange border while Move/Repair is armed
-                if label == 'Move' and move_armed:
-                    pygame.draw.rect(screen, ORANGE, btn, 4)
-                if label == 'Repair' and repair_armed:
-                    pygame.draw.rect(screen, ORANGE, btn, 4)
 
                 # Ensure icon is loaded even if no instance exists yet
                 if cls is Road:
@@ -1588,8 +1670,7 @@ def draw_game_ui(
         all_units,
         icons,
         fonts,
-        move_armed: bool = False,
-        repair_armed: bool = False,
+        armed_state: dict | None = None,
         fps=None,
         *,
         grass_tiles,
@@ -1603,7 +1684,7 @@ def draw_game_ui(
     draw_panels(screen)
     # Control group bookmarks (shown only when a group is saved)
     draw_control_group_bookmarks(screen, current_player, all_units, fonts)
-    draw_grid_buttons(screen, grid_buttons, current_player, all_units, production_queues, current_time, icons, fonts, move_armed=move_armed, repair_armed=repair_armed)
+    draw_grid_buttons(screen, grid_buttons, current_player, all_units, production_queues, current_time, icons, fonts, armed_state=armed_state)
 
     # --- NEW: minimap bottom-right (inside right panel) ---
     draw_minimap(screen, grass_tiles=grass_tiles, all_units=all_units, camera=camera, current_player=current_player)
