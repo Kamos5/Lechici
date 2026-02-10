@@ -14,6 +14,7 @@ from __future__ import annotations
 import json
 import math
 import os
+import re
 from dataclasses import dataclass
 from typing import Dict, List, Optional, Tuple, Type, Any
 
@@ -707,6 +708,20 @@ def main() -> None:
     custom_cols = 60
     custom_focus = None  # "rows"|"cols"|None
 
+    # Save / Load dialogs (file-explorer style)
+    maps_dir = "maps"
+    ensure_dirs(os.path.join(maps_dir, "dummy.txt"))  # ensure maps/ exists
+    current_map_path = DEFAULT_SAVE_PATH  # last loaded/saved path (defaults)
+    save_dialog_open = False
+    load_dialog_open = False
+    overwrite_confirm_open = False
+    overwrite_target_path = None  # str|None
+
+    file_list_scroll = 0
+    file_selected_index = 0
+    save_name = ""  # filename typed by user (without dir)
+    save_focus = True  # focus text input in save dialog
+
     # Convenience: keep view below the top bar
     VIEW_MARGIN_TOP_LOCAL = TOPBAR_H + 10
 
@@ -861,6 +876,52 @@ def main() -> None:
         x_obj += 40 + 6
         buttons.append(Button(pygame.Rect(x_obj, y_obj, 40, BTN_H), "+", "objective_plus", "+"))
 
+
+    # ---------- File dialog helpers ----------
+    def _list_maps() -> List[str]:
+        try:
+            os.makedirs(maps_dir, exist_ok=True)
+        except Exception:
+            pass
+        out = []
+        try:
+            for fn in os.listdir(maps_dir):
+                if fn.startswith("."):
+                    continue
+                if fn.lower().endswith(".json"):
+                    out.append(fn)
+        except Exception:
+            return []
+        out.sort(key=lambda s: s.lower())
+        return out
+
+    _FILENAME_ALLOWED_RE = re.compile(r"^[A-Za-z0-9 _\-\.]{1,64}$")
+
+    def _sanitize_filename(name: str) -> str:
+        name = (name or "").strip()
+        # disallow path separators
+        name = name.replace("/", "").replace("\\", "")
+        if not name:
+            return ""
+        # auto add .json extension
+        if not name.lower().endswith(".json"):
+            name += ".json"
+        # collapse spaces
+        name = re.sub(r"\s+", " ", name).strip()
+        # keep it reasonable
+        if len(name) > 64:
+            name = name[:64]
+        return name
+
+    def _is_valid_filename(name: str) -> bool:
+        if not name:
+            return False
+        if name in (".json", "..json"):
+            return False
+        return bool(_FILENAME_ALLOWED_RE.match(name))
+
+    def _map_path_from_name(name: str) -> str:
+        return os.path.join(maps_dir, name)
     rebuild_ui()
 
     def snap_to_tile(n: int) -> int:
@@ -1116,6 +1177,117 @@ def main() -> None:
                 running = False
 
             elif event.type == pygame.KEYDOWN:
+                # Modal dialogs eat keyboard first (top-most priority)
+                if overwrite_confirm_open:
+                    if event.key == pygame.K_ESCAPE:
+                        overwrite_confirm_open = False
+                        overwrite_target_path = None
+                        continue
+                    if event.key in (pygame.K_RETURN, pygame.K_KP_ENTER, pygame.K_y):
+                        # Confirm overwrite and save
+                        if overwrite_target_path:
+                            obj = {"type": mission_objective_type}
+                            if mission_objective_type == "survive_time":
+                                obj["seconds"] = int(survive_seconds)
+                            save_map(grid, units_by_cell, objects_by_cell, overwrite_target_path, objective=obj)
+                            current_map_path = overwrite_target_path
+                            print(f"[EDITOR] Saved (overwritten): {overwrite_target_path}")
+                        overwrite_confirm_open = False
+                        overwrite_target_path = None
+                        save_dialog_open = False
+                        file_menu_open = False
+                        continue
+                    if event.key in (pygame.K_n,):
+                        overwrite_confirm_open = False
+                        overwrite_target_path = None
+                        continue
+
+                if save_dialog_open:
+                    if event.key == pygame.K_ESCAPE:
+                        save_dialog_open = False
+                        overwrite_confirm_open = False
+                        overwrite_target_path = None
+                        continue
+
+                    # Navigate list
+                    if event.key == pygame.K_UP:
+                        file_selected_index = max(0, file_selected_index - 1)
+                        continue
+                    if event.key == pygame.K_DOWN:
+                        files = _list_maps()
+                        if files:
+                            file_selected_index = min(len(files) - 1, file_selected_index + 1)
+                        continue
+
+                    if event.key in (pygame.K_RETURN, pygame.K_KP_ENTER):
+                        name = _sanitize_filename(save_name)
+                        if not _is_valid_filename(name):
+                            print("[EDITOR] Invalid filename.")
+                            continue
+                        target = _map_path_from_name(name)
+                        if os.path.exists(target):
+                            overwrite_confirm_open = True
+                            overwrite_target_path = target
+                            continue
+                        obj = {"type": mission_objective_type}
+                        if mission_objective_type == "survive_time":
+                            obj["seconds"] = int(survive_seconds)
+                        save_map(grid, units_by_cell, objects_by_cell, target, objective=obj)
+                        current_map_path = target
+                        print(f"[EDITOR] Saved: {target}")
+                        save_dialog_open = False
+                        file_menu_open = False
+                        continue
+
+                    if event.key == pygame.K_BACKSPACE:
+                        save_name = save_name[:-1]
+                        continue
+
+                    # Type into filename box
+                    ch = event.unicode
+                    if ch:
+                        # allow only a safe subset
+                        if ch.isalnum() or ch in " _-.":
+                            if len(save_name) < 64:
+                                save_name += ch
+                        continue
+
+                if load_dialog_open:
+                    if event.key == pygame.K_ESCAPE:
+                        load_dialog_open = False
+                        continue
+
+                    if event.key == pygame.K_UP:
+                        file_selected_index = max(0, file_selected_index - 1)
+                        continue
+                    if event.key == pygame.K_DOWN:
+                        files = _list_maps()
+                        if files:
+                            file_selected_index = min(len(files) - 1, file_selected_index + 1)
+                        continue
+
+                    if event.key in (pygame.K_RETURN, pygame.K_KP_ENTER):
+                        files = _list_maps()
+                        if not files:
+                            continue
+                        file_selected_index = max(0, min(file_selected_index, len(files) - 1))
+                        target = _map_path_from_name(files[file_selected_index])
+                        try:
+                            grid, units_by_cell, objects_by_cell, obj = load_map(target)
+                            current_map_path = target
+                            mission_objective_type = str(obj.get("type", "kill_all_enemies")).lower()
+                            survive_seconds = int(obj.get("seconds", obj.get("time", 300)))
+                            rebuild_ui()
+                            camera_x = 0
+                            camera_y = 0
+                            clamp_camera()
+                            print(f"[EDITOR] Loaded: {target}")
+                        except Exception as e:
+                            print(f"[EDITOR] Load failed: {e}")
+                        load_dialog_open = False
+                        file_menu_open = False
+                        continue
+
                 # Keyboard handling for the New-map dialog
                 if new_dialog_open:
                     if event.key == pygame.K_ESCAPE:
@@ -1169,6 +1341,7 @@ def main() -> None:
                             new_choice = "custom"
                         continue
 
+
             elif event.type == pygame.MOUSEBUTTONDOWN and event.button == 1:
                 hit_ui = False
                 # ---- Top bar + File menu ----
@@ -1178,6 +1351,154 @@ def main() -> None:
                 file_rect = pygame.Rect(10, 0, file_text.get_width() + 20, TOPBAR_H)
 
                 # New-map dialog rects (computed lazily)
+                # ---- Overwrite confirmation modal ----
+                if overwrite_confirm_open:
+                    dlg_w, dlg_h = 460, 180
+                    dlg_rect = pygame.Rect((SCREEN_WIDTH - dlg_w)//2, (SCREEN_HEIGHT - dlg_h)//2, dlg_w, dlg_h)
+                    yes_rect = pygame.Rect(dlg_rect.right - 120 - 16, dlg_rect.bottom - 44, 120, 32)
+                    no_rect = pygame.Rect(dlg_rect.right - 240 - 24, dlg_rect.bottom - 44, 120, 32)
+
+                    if dlg_rect.collidepoint(event.pos):
+                        hit_ui = True
+                        if yes_rect.collidepoint(event.pos):
+                            if overwrite_target_path:
+                                obj = {"type": mission_objective_type}
+                                if mission_objective_type == "survive_time":
+                                    obj["seconds"] = int(survive_seconds)
+                                save_map(grid, units_by_cell, objects_by_cell, overwrite_target_path, objective=obj)
+                                current_map_path = overwrite_target_path
+                                print(f"[EDITOR] Saved (overwritten): {overwrite_target_path}")
+                            overwrite_confirm_open = False
+                            overwrite_target_path = None
+                            save_dialog_open = False
+                            file_menu_open = False
+                        elif no_rect.collidepoint(event.pos):
+                            overwrite_confirm_open = False
+                            overwrite_target_path = None
+                        continue
+                    else:
+                        # click outside -> cancel
+                        overwrite_confirm_open = False
+                        overwrite_target_path = None
+                        continue
+
+                # ---- Save dialog (file explorer) ----
+                if save_dialog_open:
+                    dlg_w, dlg_h = 700, 420
+                    dlg_rect = pygame.Rect((SCREEN_WIDTH - dlg_w)//2, (SCREEN_HEIGHT - dlg_h)//2, dlg_w, dlg_h)
+                    list_rect = pygame.Rect(dlg_rect.x + 18, dlg_rect.y + 64, dlg_w - 36, dlg_h - 64 - 86)
+                    name_box = pygame.Rect(dlg_rect.x + 18, dlg_rect.bottom - 72, dlg_w - 36 - 260, 28)
+                    save_btn = pygame.Rect(dlg_rect.right - 120 - 18, dlg_rect.bottom - 72, 120, 32)
+                    cancel_btn = pygame.Rect(dlg_rect.right - 240 - 26, dlg_rect.bottom - 72, 120, 32)
+
+                    if dlg_rect.collidepoint(event.pos):
+                        hit_ui = True
+                        files = _list_maps()
+                        item_h = 26
+                        visible = max(1, list_rect.h // item_h)
+                        max_scroll = max(0, len(files) - visible)
+                        file_list_scroll = max(0, min(file_list_scroll, max_scroll))
+
+                        # click list
+                        if list_rect.collidepoint(event.pos):
+                            idx = (event.pos[1] - list_rect.y) // item_h + file_list_scroll
+                            if 0 <= idx < len(files):
+                                file_selected_index = int(idx)
+                                save_name = files[file_selected_index]
+                            continue
+
+                        # focus name box
+                        if name_box.collidepoint(event.pos):
+                            save_focus = True
+                            continue
+
+                        if save_btn.collidepoint(event.pos):
+                            name = _sanitize_filename(save_name)
+                            if not _is_valid_filename(name):
+                                print("[EDITOR] Invalid filename.")
+                                continue
+                            target = _map_path_from_name(name)
+                            if os.path.exists(target):
+                                overwrite_confirm_open = True
+                                overwrite_target_path = target
+                                continue
+                            obj = {"type": mission_objective_type}
+                            if mission_objective_type == "survive_time":
+                                obj["seconds"] = int(survive_seconds)
+                            save_map(grid, units_by_cell, objects_by_cell, target, objective=obj)
+                            current_map_path = target
+                            print(f"[EDITOR] Saved: {target}")
+                            save_dialog_open = False
+                            file_menu_open = False
+                            continue
+
+                        if cancel_btn.collidepoint(event.pos):
+                            save_dialog_open = False
+                            overwrite_confirm_open = False
+                            overwrite_target_path = None
+                            continue
+
+                        continue
+                    else:
+                        # click outside closes
+                        save_dialog_open = False
+                        overwrite_confirm_open = False
+                        overwrite_target_path = None
+                        continue
+
+                # ---- Load dialog (file explorer) ----
+                if load_dialog_open:
+                    dlg_w, dlg_h = 700, 420
+                    dlg_rect = pygame.Rect((SCREEN_WIDTH - dlg_w)//2, (SCREEN_HEIGHT - dlg_h)//2, dlg_w, dlg_h)
+                    list_rect = pygame.Rect(dlg_rect.x + 18, dlg_rect.y + 64, dlg_w - 36, dlg_h - 64 - 86)
+                    load_btn = pygame.Rect(dlg_rect.right - 120 - 18, dlg_rect.bottom - 72, 120, 32)
+                    cancel_btn = pygame.Rect(dlg_rect.right - 240 - 26, dlg_rect.bottom - 72, 120, 32)
+
+                    if dlg_rect.collidepoint(event.pos):
+                        hit_ui = True
+                        files = _list_maps()
+                        item_h = 26
+                        visible = max(1, list_rect.h // item_h)
+                        max_scroll = max(0, len(files) - visible)
+                        file_list_scroll = max(0, min(file_list_scroll, max_scroll))
+
+                        if list_rect.collidepoint(event.pos):
+                            idx = (event.pos[1] - list_rect.y) // item_h + file_list_scroll
+                            if 0 <= idx < len(files):
+                                file_selected_index = int(idx)
+                            continue
+
+                        if load_btn.collidepoint(event.pos):
+                            files = _list_maps()
+                            if not files:
+                                continue
+                            file_selected_index = max(0, min(file_selected_index, len(files) - 1))
+                            target = _map_path_from_name(files[file_selected_index])
+                            try:
+                                grid, units_by_cell, objects_by_cell, obj = load_map(target)
+                                current_map_path = target
+                                mission_objective_type = str(obj.get("type", "kill_all_enemies")).lower()
+                                survive_seconds = int(obj.get("seconds", obj.get("time", 300)))
+                                rebuild_ui()
+                                camera_x = 0
+                                camera_y = 0
+                                clamp_camera()
+                                print(f"[EDITOR] Loaded: {target}")
+                            except Exception as e:
+                                print(f"[EDITOR] Load failed: {e}")
+                            load_dialog_open = False
+                            file_menu_open = False
+                            continue
+
+                        if cancel_btn.collidepoint(event.pos):
+                            load_dialog_open = False
+                            continue
+
+                        continue
+                    else:
+                        load_dialog_open = False
+                        continue
+
                 if new_dialog_open:
                     # Modal eats clicks first
                     dlg_w, dlg_h = 520, 320
@@ -1283,22 +1604,28 @@ def main() -> None:
                                 custom_focus = None
 
                             elif choice == "Save":
-                                obj = {"type": mission_objective_type}
-                                if mission_objective_type == "survive_time":
-                                    obj["seconds"] = int(survive_seconds)
-                                save_map(grid, units_by_cell, objects_by_cell, DEFAULT_SAVE_PATH, objective=obj)
+                                # Open Save dialog
+                                save_dialog_open = True
+                                load_dialog_open = False
+                                overwrite_confirm_open = False
+                                overwrite_target_path = None
+                                file_list_scroll = 0
+                                file_selected_index = 0
+                                # default name based on last path
+                                try:
+                                    save_name = os.path.basename(current_map_path)
+                                except Exception:
+                                    save_name = "map.json"
+                                save_focus = True
 
                             elif choice == "Load":
-                                try:
-                                    grid, units_by_cell, objects_by_cell, obj = load_map(DEFAULT_SAVE_PATH)
-                                    mission_objective_type = str(obj.get("type", "kill_all_enemies")).lower()
-                                    survive_seconds = int(obj.get("seconds", obj.get("time", 300)))
-                                    rebuild_ui()
-                                    camera_x = 0
-                                    camera_y = 0
-                                    clamp_camera()
-                                except Exception as e:
-                                    print(f"[EDITOR] Load failed: {e}")
+                                # Open Load dialog
+                                load_dialog_open = True
+                                save_dialog_open = False
+                                overwrite_confirm_open = False
+                                overwrite_target_path = None
+                                file_list_scroll = 0
+                                file_selected_index = 0
 
                             elif choice == "Clear":
                                 grid = new_grass_map()
@@ -1465,6 +1792,15 @@ def main() -> None:
             elif event.type == pygame.MOUSEMOTION and painting:
                 paint_at(*event.pos)
 
+            elif event.type == pygame.MOUSEWHEEL:
+                # Scroll file lists in dialogs
+                if save_dialog_open or load_dialog_open:
+                    files = _list_maps()
+                    item_h = 26
+                    visible = 10  # safe default; actual visible computed in draw
+                    max_scroll = max(0, len(files) - visible)
+                    file_list_scroll = max(0, min(file_list_scroll - int(event.y), max_scroll))
+
         # -------- DRAW --------
         screen.fill(BLACK)
         view_surf.fill((0, 0, 0))
@@ -1604,6 +1940,123 @@ def main() -> None:
                 t = font.render(label, True, (240, 240, 240))
                 screen.blit(t, (r.x + 10, r.y + (file_menu_item_h - t.get_height()) // 2))
         
+
+        # Save / Load / Overwrite dialogs (modal, always on top)
+        if save_dialog_open or load_dialog_open or overwrite_confirm_open:
+            dim = pygame.Surface((SCREEN_WIDTH, SCREEN_HEIGHT), pygame.SRCALPHA)
+            dim.fill((0, 0, 0, 170))
+            screen.blit(dim, (0, 0))
+
+        if overwrite_confirm_open:
+            dlg_w, dlg_h = 460, 180
+            dlg_rect = pygame.Rect((SCREEN_WIDTH - dlg_w)//2, (SCREEN_HEIGHT - dlg_h)//2, dlg_w, dlg_h)
+            pygame.draw.rect(screen, (50, 50, 50), dlg_rect, border_radius=10)
+            pygame.draw.rect(screen, (160, 160, 160), dlg_rect, 2, border_radius=10)
+
+            title = font_big.render("Overwrite file?", True, (255, 255, 255))
+            screen.blit(title, (dlg_rect.x + 18, dlg_rect.y + 16))
+
+            name = os.path.basename(overwrite_target_path or "")
+            msg = font.render(f"'{name}' already exists. Replace it?", True, (230, 230, 230))
+            screen.blit(msg, (dlg_rect.x + 18, dlg_rect.y + 58))
+
+            hint = font.render("Enter/Y = Yes   N/Esc = No", True, (200, 200, 200))
+            screen.blit(hint, (dlg_rect.x + 18, dlg_rect.y + 84))
+
+            yes_rect = pygame.Rect(dlg_rect.right - 120 - 16, dlg_rect.bottom - 44, 120, 32)
+            no_rect = pygame.Rect(dlg_rect.right - 240 - 24, dlg_rect.bottom - 44, 120, 32)
+
+            pygame.draw.rect(screen, (70, 70, 70), no_rect, border_radius=8)
+            pygame.draw.rect(screen, (170, 170, 170), no_rect, 2, border_radius=8)
+            t = font.render("No", True, (240, 240, 240))
+            screen.blit(t, (no_rect.centerx - t.get_width()//2, no_rect.centery - t.get_height()//2))
+
+            pygame.draw.rect(screen, (90, 90, 90), yes_rect, border_radius=8)
+            pygame.draw.rect(screen, (220, 220, 220), yes_rect, 2, border_radius=8)
+            t = font.render("Yes", True, (255, 255, 255))
+            screen.blit(t, (yes_rect.centerx - t.get_width()//2, yes_rect.centery - t.get_height()//2))
+
+        if save_dialog_open or load_dialog_open:
+            dlg_w, dlg_h = 700, 420
+            dlg_rect = pygame.Rect((SCREEN_WIDTH - dlg_w)//2, (SCREEN_HEIGHT - dlg_h)//2, dlg_w, dlg_h)
+            pygame.draw.rect(screen, (50, 50, 50), dlg_rect, border_radius=10)
+            pygame.draw.rect(screen, (160, 160, 160), dlg_rect, 2, border_radius=10)
+
+            title_txt = "Save map" if save_dialog_open else "Load map"
+            title = font_big.render(title_txt, True, (255, 255, 255))
+            screen.blit(title, (dlg_rect.x + 18, dlg_rect.y + 14))
+
+            subtitle = font.render(f"Folder: {maps_dir}/", True, (220, 220, 220))
+            screen.blit(subtitle, (dlg_rect.x + 18, dlg_rect.y + 38))
+
+            files = _list_maps()
+            item_h = 26
+            list_rect = pygame.Rect(dlg_rect.x + 18, dlg_rect.y + 64, dlg_w - 36, dlg_h - 64 - 86)
+
+            # clamp scroll + selection
+            visible = max(1, list_rect.h // item_h)
+            max_scroll = max(0, len(files) - visible)
+            file_list_scroll = max(0, min(file_list_scroll, max_scroll))
+            if files:
+                file_selected_index = max(0, min(file_selected_index, len(files) - 1))
+            else:
+                file_selected_index = 0
+
+            # list background
+            pygame.draw.rect(screen, (35, 35, 35), list_rect, border_radius=8)
+            pygame.draw.rect(screen, (120, 120, 120), list_rect, 2, border_radius=8)
+
+            # draw rows
+            start = file_list_scroll
+            end = min(len(files), start + visible)
+            for i in range(start, end):
+                y = list_rect.y + (i - start) * item_h
+                row = pygame.Rect(list_rect.x + 6, y, list_rect.w - 12, item_h)
+                if i == file_selected_index:
+                    pygame.draw.rect(screen, (70, 70, 70), row, border_radius=6)
+                elif row.collidepoint((mx, my)):
+                    pygame.draw.rect(screen, (55, 55, 55), row, border_radius=6)
+                txt = font.render(files[i], True, (240, 240, 240))
+                screen.blit(txt, (row.x + 10, row.y + (item_h - txt.get_height())//2))
+
+            # simple scrollbar thumb
+            if len(files) > visible:
+                track = pygame.Rect(list_rect.right - 10, list_rect.y + 6, 6, list_rect.h - 12)
+                pygame.draw.rect(screen, (60, 60, 60), track, border_radius=3)
+                thumb_h = max(18, int(track.h * (visible / len(files))))
+                denom = max(1, (len(files) - visible))
+                thumb_y = track.y + int((track.h - thumb_h) * (file_list_scroll / denom))
+                thumb = pygame.Rect(track.x, thumb_y, track.w, thumb_h)
+                pygame.draw.rect(screen, (190, 190, 190), thumb, border_radius=3)
+
+            # bottom controls
+            cancel_btn = pygame.Rect(dlg_rect.right - 240 - 26, dlg_rect.bottom - 72, 120, 32)
+            primary_btn = pygame.Rect(dlg_rect.right - 120 - 18, dlg_rect.bottom - 72, 120, 32)
+
+            pygame.draw.rect(screen, (70, 70, 70), cancel_btn, border_radius=8)
+            pygame.draw.rect(screen, (170, 170, 170), cancel_btn, 2, border_radius=8)
+            tc = font.render("Cancel", True, (240, 240, 240))
+            screen.blit(tc, (cancel_btn.centerx - tc.get_width()//2, cancel_btn.centery - tc.get_height()//2))
+
+            primary_label = "Save" if save_dialog_open else "Load"
+            pygame.draw.rect(screen, (90, 90, 90), primary_btn, border_radius=8)
+            pygame.draw.rect(screen, (220, 220, 220), primary_btn, 2, border_radius=8)
+            tt = font.render(primary_label, True, (255, 255, 255))
+            screen.blit(tt, (primary_btn.centerx - tt.get_width()//2, primary_btn.centery - tt.get_height()//2))
+
+            if save_dialog_open:
+                name_box = pygame.Rect(dlg_rect.x + 18, dlg_rect.bottom - 72, dlg_w - 36 - 260, 28)
+                pygame.draw.rect(screen, (35, 35, 35), name_box, border_radius=6)
+                pygame.draw.rect(screen, (255, 255, 255) if save_focus else (130, 130, 130), name_box, 2, border_radius=6)
+                shown = save_name if save_name else ""
+                t = font.render(shown, True, (240, 240, 240))
+                screen.blit(t, (name_box.x + 8, name_box.y + (name_box.h - t.get_height())//2))
+
+                hint = font.render("Type name, Enter to save. Select a file to auto-fill. Allowed: A-Z 0-9 space _ - .", True, (200, 200, 200))
+                screen.blit(hint, (dlg_rect.x + 18, dlg_rect.bottom - 40))
+            else:
+                hint = font.render("Select a file, Enter to load.", True, (200, 200, 200))
+                screen.blit(hint, (dlg_rect.x + 18, dlg_rect.bottom - 40))
         # New-map dialog (modal)
         if new_dialog_open:
             # dim background
