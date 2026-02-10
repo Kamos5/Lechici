@@ -675,11 +675,11 @@ def draw_grid_buttons(screen, grid_buttons, current_player, all_units, productio
                         "Repair": icons.get("repair"),
                     }.get(label, None),
                     description={
-                        'Patrol': 'Move in formation between points (TODO).',
-                        'Move': 'Issue a move order (right-click also works).',
-                        'Harvest': 'Gather resources (cows/axemen only).',
-                        'Repair': 'Repair buildings (axemen only).',
-                        'Attack': 'Force-attack mode (TODO).',
+                        'Patrol': 'Move in formation between points back and forth.',
+                        'Move': 'Issue a move order.',
+                        'Harvest': 'Gather resources.',
+                        'Repair': 'Repair buildings.',
+                        'Attack': 'Attack command.',
                         'Stop': 'Cancel current orders and clear targets.',
                     }.get(label, ''),
                 )

@@ -3654,36 +3654,89 @@ class Cow(Unit):
             pygame.draw.rect(screen, BLACK, (bar_x, bar_y + bar_h + 2, bar_w, bar_h), 1)
 
     def move(self, units, spatial_grid=None, waypoint_graph=None):
+        """Cow movement supports both:
+        - grazing/harvest orders (target is a Vector2 tile position)
+        - combat orders (target is a Unit). This used to crash because Cow.move assumed
+          `self.target` is always a Vector2 and passed a Unit into pathfinding.
+        """
         self.velocity = Vector2(0, 0)
         if not self.target:
             return
-        target_pos = self.target
-        stop_distance = self.size / 2  # Use size/2 for grass tiles
-        # Snap target to tile center for grass tiles
-        if isinstance(self.target, Vector2):
-            target_tile_x = int(self.target.x // TILE_SIZE)
-            target_tile_y = int(self.target.y // TILE_SIZE)
-            target_pos = Vector2(target_tile_x * TILE_SIZE + TILE_HALF, target_tile_y * TILE_SIZE + TILE_HALF)
-            self.target = target_pos
-        # Recalculate path if target changed or path is blocked
-        if (self.target != self.last_target or not self.path or self.path_index >= len(self.path) or
-                self.is_path_blocked(units, context.spatial_grid, context.waypoint_graph)):
+
+        # --- Determine target position + stop distance ---
+        if isinstance(self.target, Unit) and not isinstance(self.target, Tree):
+            # Combat target (unit/building)
+            if getattr(self.target, "hp", 0) <= 0 or self.target not in units:
+                self.target = None
+                self.path = []
+                self.path_index = 0
+                self.last_target = None
+                return
+
+            target_pos = Vector2(self.target.pos)
+            # Include both radii so cows can get close enough to attack in melee range.
+            stop_distance = max(
+                2.0,
+                float(getattr(self, "attack_range", 0))
+                + (float(self.size) + float(getattr(self.target, "size", self.size))) / 2.0
+                - 2.0,
+            )
+
+            # If target moved significantly since last path calculation, force recalculation.
+            if self.path and self.path_index < len(self.path):
+                last_waypoint = self.path[-1]
+                if (target_pos - last_waypoint).length() > self.size:
+                    self.path = []
+                    self.path_index = 0
+        else:
+            # Grazing/move-to-point target
+            target_pos = self.target
+            stop_distance = self.size / 2  # for grass tiles / tile-center moves
+
+            # Snap target to tile center (only when target is a point)
+            if isinstance(target_pos, Vector2):
+                target_tile_x = int(target_pos.x // TILE_SIZE)
+                target_tile_y = int(target_pos.y // TILE_SIZE)
+                target_pos = Vector2(target_tile_x * TILE_SIZE + TILE_HALF, target_tile_y * TILE_SIZE + TILE_HALF)
+                self.target = target_pos
+
+        # --- Recalculate path if target changed or path is blocked ---
+        if (
+            self.target != self.last_target
+            or not self.path
+            or self.path_index >= len(self.path)
+            or self.is_path_blocked(units, context.spatial_grid, context.waypoint_graph)
+        ):
             self.path = context.waypoint_graph.get_path(self.pos, target_pos, self) if context.waypoint_graph else []
             self.path_index = 0
             self.last_target = self.target
+
             if not self.path:
-                if self.pos.distance_to(target_pos) < self.size * 1.5 and self.is_line_of_sight_clear(target_pos, units, context.spatial_grid):
+                if (
+                    isinstance(target_pos, Vector2)
+                    and self.pos.distance_to(target_pos) < self.size * 1.5
+                    and self.is_line_of_sight_clear(target_pos, units, context.spatial_grid)
+                ):
                     self.path = [self.pos, target_pos]
                 else:
                     print(f"No path found for Cow from {self.pos} to {target_pos}")
+
+                    # Try an adjacent tile only when we have a point target.
+                    if not isinstance(target_pos, Vector2):
+                        self.target = None
+                        return
+
                     tile_x = int(target_pos.x // TILE_SIZE)
                     tile_y = int(target_pos.y // TILE_SIZE)
                     adjacent_tiles = [
                         (tile_x, tile_y - 1), (tile_x, tile_y + 1), (tile_x - 1, tile_y), (tile_x + 1, tile_y)
                     ]
                     for adj_x, adj_y in adjacent_tiles:
-                        if (0 <= adj_x < GRASS_COLS and 0 <= adj_y < GRASS_ROWS and
-                                context.waypoint_graph.is_walkable(adj_x, adj_y, self)):
+                        if (
+                            0 <= adj_x < GRASS_COLS
+                            and 0 <= adj_y < GRASS_ROWS
+                            and context.waypoint_graph.is_walkable(adj_x, adj_y, self)
+                        ):
                             adj_pos = Vector2(adj_x * TILE_SIZE + TILE_HALF, adj_y * TILE_SIZE + TILE_HALF)
                             self.path = [self.pos, adj_pos]
                             print(f"Retrying path to adjacent tile {adj_pos} for Cow")
@@ -3691,17 +3744,22 @@ class Cow(Unit):
                     else:
                         self.target = None
                         return
+
+        # --- Follow the path ---
         if self.path_index < len(self.path):
             next_point = self.path[self.path_index]
             direction = next_point - self.pos
             distance = direction.length()
+
             if distance > stop_distance:
                 try:
                     self.velocity = direction.normalize() * self.speed
                 except ValueError:
                     self.path_index += 1
                     if self.path_index >= len(self.path):
-                        self.target = None
+                        # For combat targets, do not clear `self.target` here.
+                        if not isinstance(self.target, Unit):
+                            self.target = None
                         self.path = []
                         self.path_index = 0
                         self.last_target = None
@@ -3709,16 +3767,18 @@ class Cow(Unit):
             else:
                 self.path_index += 1
                 if self.path_index >= len(self.path):
-                    # Snap to tile center when reaching the target
-                    self.pos = Vector2(int(self.pos.x // TILE_SIZE) * TILE_SIZE + TILE_HALF,
-                                       int(self.pos.y // TILE_SIZE) * TILE_SIZE + TILE_HALF)
-                    self.target = None
+                    # For combat targets, do not clear `self.target` here.
+                    if not isinstance(self.target, Unit):
+                        self.target = None
                     self.path = []
                     self.path_index = 0
                     self.last_target = None
+        else:
+            self.velocity = Vector2(0, 0)
+
+        # Damping + apply movement
         self.velocity *= self.damping
         self.pos += self.velocity
-
     def is_in_barn(self, barn):
         return (isinstance(barn, Barn) and
                 barn.pos.x - barn.size / 2 <= self.pos.x <= barn.pos.x + barn.size / 2 and

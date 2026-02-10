@@ -75,20 +75,20 @@ def execute_grid_cell(
         # Patrol (Q)
         if (r, c) == (0, 0):
             # TODO: implement patrol
-            print("Patrol pressed (TODO)")
+            # print("Patrol pressed (TODO)")
             return True, placing_building, building_to_place
 
         # Move (W)
         if (r, c) == (0, 1):
             # TIP: your right-click already does move/attack contextually
-            print("Move pressed")
+            # print("Move pressed")
             return True, placing_building, building_to_place
 
         # Harvest (E) - only cows + axemen
         if (r, c) == (0, 2):
             if has_axeman or has_cow:
                 # TODO: implement harvest mode
-                print("Harvest pressed (TODO)")
+                # print("Harvest pressed (TODO)")
                 return True, placing_building, building_to_place
             return False, placing_building, building_to_place
 
@@ -96,14 +96,14 @@ def execute_grid_cell(
         if (r, c) == (0, 3):
             if has_axeman:
                 # Repair is an armed command handled in main.py (LMB confirms on a friendly building).
-                print('Repair pressed')
+                # print('Repair pressed')
                 return True, placing_building, building_to_place
             return False, placing_building, building_to_place
 
         # Attack (A)
         if (r, c) == (1, 0):
             # TODO: implement attack-only mode
-            print("Attack pressed (TODO)")
+            # print("Attack pressed (TODO)")
             return True, placing_building, building_to_place
 
         # Stop (S)
