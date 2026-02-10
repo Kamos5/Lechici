@@ -1058,12 +1058,6 @@ class Unit:
         max_range = self.attack_range + self.size / 2 + target.size / 2
         if distance <= max_range:
             if context.current_time - self.last_attack_time >= self.attack_cooldown:
-                context.attack_animations.append({
-                    'start_pos': self.pos,
-                    'end_pos': target.pos,
-                    'color': self.color,
-                    'start_time': context.current_time
-                })
                 damage = max(0, self.attack_damage - target.armor)
                 hp_before = float(getattr(target, "hp", 0))
                 target.hp -= damage
