@@ -75,6 +75,7 @@ def run_game() -> int:
     # Move order and highlight tracking
     move_order_times = {}
     highlight_times = {}
+    target_outline_times = {}
     attack_animations = []  # List to store attack animation data (start_pos, end_pos, start_time)
 
     # Production queue and animation tracking
@@ -126,6 +127,7 @@ def run_game() -> int:
 
     # Share these animation/queue dicts defined above with modules
     context.highlight_times = highlight_times
+    context.target_outline_times = target_outline_times
     context.attack_animations = attack_animations
     context.production_queues = production_queues
     context.building_animations = building_animations
@@ -836,6 +838,8 @@ def run_game() -> int:
 
         # Visual confirmation: highlight the building silhouette briefly
         highlight_times[clicked] = current_time
+        target_outline_times[clicked] = (current_time, YELLOW)
+        target_outline_times[clicked] = (current_time, YELLOW)
 
         # Disarm after confirmation
         armed_state["repair"] = False
@@ -893,6 +897,7 @@ def run_game() -> int:
 
             if any_ordered:
                 highlight_times[clicked] = current_time
+                target_outline_times[clicked] = (current_time, YELLOW)
 
             ui.set_armed_state(armed_state, None)
             return
@@ -969,9 +974,63 @@ def run_game() -> int:
                         if hasattr(unit, "_clear_advanced_orders"):
                             unit._clear_advanced_orders()
                         clicked_tree = clicked_unit if isinstance(clicked_unit, Tree) and clicked_unit.player_id == 0 else None
+
+                        # If this order sets some entity as a target, show an on-top outline on the target.
+                        outline_target = None
+                        outline_color = None
+
                         if clicked_tree and isinstance(unit, Axeman) and unit.special == 0 and not unit.depositing:
-                            unit.target = clicked_tree.pos
+                            # Chop tree
+                            unit.target = Vector2(clicked_tree.pos)
                             unit.autonomous_target = False
+                            outline_target = clicked_tree
+                            outline_color = YELLOW
+
+                        elif (clicked_unit and isinstance(clicked_unit, Barn) and clicked_unit.player_id == unit.player_id
+                              and isinstance(unit, Cow) and getattr(unit, "special", 0) > 0):
+                            # Manual return-with-resources for cows: target the barn entry (same corner used by auto logic)
+                            unit.target = Vector2(clicked_unit.pos.x - TILE_SIZE, clicked_unit.pos.y - TILE_SIZE)
+                            unit.autonomous_target = False
+                            if hasattr(unit, "returning"):
+                                unit.returning = True
+                            unit.return_pos = None
+                            unit.path = waypoint_graph.get_path(unit.pos, unit.target, unit) if waypoint_graph else [unit.pos, unit.target]
+                            unit.path_index = 0
+                            outline_target = clicked_unit
+                            outline_color = YELLOW
+
+                        elif clicked_unit and not isinstance(clicked_unit, Tree) and (clicked_unit.player_id != unit.player_id or clicked_unit.player_id == 0):
+                            # Attack target (enemy / neutral)
+                            unit.target = clicked_unit
+                            unit.autonomous_target = False
+                            outline_target = clicked_unit
+                            outline_color = RED
+
+                        elif (clicked_unit
+                              and isinstance(clicked_unit, TownCenter)
+                              and clicked_unit.player_id == unit.player_id
+                              and isinstance(unit, Axeman)
+                              and unit.special > 0):
+                            # Manual deposit order: behave exactly like the automatic deposit
+                            unit.target = Vector2(clicked_unit.pos)  # IMPORTANT: use TC center, not raw click_pos
+                            unit.depositing = True
+                            unit.return_pos = None  # optional; prevents returning-to-old-tree logic
+                            unit.autonomous_target = False
+                            unit.path = waypoint_graph.get_path(unit.pos, unit.target, unit) if waypoint_graph else [unit.pos, unit.target]
+                            unit.path_index = 0
+                            outline_target = clicked_unit
+                            outline_color = YELLOW
+
+                        else:
+                            # Normal move order should cancel a deposit run
+                            if isinstance(unit, Axeman):
+                                unit.depositing = False
+
+                            unit.target = Vector2(click_pos.x, click_pos.y)
+                            unit.autonomous_target = False
+
+                        if outline_target is not None and outline_color is not None:
+                            target_outline_times[outline_target] = (current_time, outline_color)
 
                         elif clicked_unit and not isinstance(clicked_unit, Tree) and (clicked_unit.player_id != unit.player_id or clicked_unit.player_id == 0):
                             unit.target = clicked_unit
@@ -1836,6 +1895,9 @@ def run_game() -> int:
             # Clean up move orders and highlights
             move_order_times = {k: v for k, v in move_order_times.items() if current_time - v <= 1}
             highlight_times = {k: v for k, v in highlight_times.items() if current_time - v <= 0.4}
+            target_outline_times = {k: v for k, v in target_outline_times.items() if (k in all_units) and current_time - v[0] <= 0.4}
+            context.highlight_times = highlight_times
+            context.target_outline_times = target_outline_times
             attack_animations[:] = [anim for anim in attack_animations if current_time - anim['start_time'] < 0.2]
 
             for obj in getattr(context, "world_objects", []):
@@ -1872,6 +1934,18 @@ def run_game() -> int:
                 pygame.draw.line(screen, anim['color'], (start_x, start_y), (end_x, end_y), 2)
 
             # Draw building/road preview during placement
+
+            # Draw target outlines (on-top confirmation of targeting)
+            for tgt, (t0, col) in list(target_outline_times.items()):
+                if tgt not in all_units:
+                    continue
+                if current_time - t0 > 0.4:
+                    continue
+                x = tgt.pos.x - camera.x + VIEW_MARGIN_LEFT
+                y = tgt.pos.y - camera.y + VIEW_MARGIN_TOP
+                s = float(getattr(tgt, "size", UNIT_SIZE) or UNIT_SIZE)
+                pygame.draw.rect(screen, col, (x - s / 2, y - s / 2, s, s), 2)
+
             if placing_building and building_pos:
                 building_size = _placement_size_for(building_to_place)
                 tile_x = int(building_pos.x // TILE_SIZE)
