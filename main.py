@@ -1304,7 +1304,7 @@ def run_game() -> int:
                             # Otherwise continue with normal map selection / pending click
                             if not grid_button_clicked and VIEW_MARGIN_LEFT <= mouse_pos.x <= VIEW_BOUNDS_X and VIEW_MARGIN_TOP <= mouse_pos.y <= VIEW_BOUNDS_Y:
                                 # If a command is armed, LMB confirms it and does NOT start selection/box-select.
-                                if (armed_state["move"] or armed_state["attack_move"] or armed_state["patrol"] or armed_state["repair"]) and not placing_building:
+                                if (armed_state["move"] or armed_state["attack_move"] or armed_state["patrol"] or armed_state["harvest"] or armed_state["repair"]) and not placing_building:
                                     if armed_state["move"]:
                                         _handle_move_click_command(event.pos, current_time)
                                     elif armed_state["attack_move"]:

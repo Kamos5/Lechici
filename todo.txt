@@ -76,7 +76,7 @@ done:
 + end screen (sum up - all the death, killed, who survived etc) MAJOR
 + fire animation MINOR
 + fix: axeman when repairing ignore other orders
-
++ grid actions CRITICAL
 
 todo:
 
@@ -85,7 +85,6 @@ CORE FEATURES:
 - double clicking the same unit select all that are sees in camera MINOR
 
 - start screen MAJOR
-- grid actions (harvest) CRITICAL
 - fullscreen CRITICAL
 - fog of war CRITICAL
 
