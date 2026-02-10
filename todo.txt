@@ -118,7 +118,7 @@ NICE TO HAVE:
 - different grass types (season based?)
 - update map edit
 - map clock for script
-
+- hero units
 - follow command?
 
 BUGS:
@@ -126,6 +126,7 @@ BUGS:
 - fix: cow stuck in empty of grass field dont move and wait for regrow (do something)
 - fix: when building repairing is possible - accept or discard but fix it
 - fix: stats are caltulated with errors (end game)
+
 CORE 2: - MAYOR
 
 

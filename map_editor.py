@@ -1714,7 +1714,7 @@ def main() -> None:
                             elif b.value == "MiscImpassable":
                                 if selected_object == "MiscImpassable" and mode == "object":
                                     selected_misc_impa_index += 1
-                                    if selected_misc_impa_index > 12:
+                                    if selected_misc_impa_index > 6:
                                         selected_misc_impa_index = 1
                                 selected_object = "MiscImpassable"
                                 mode = "object"
