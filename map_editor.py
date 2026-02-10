@@ -20,6 +20,25 @@ from typing import Dict, List, Optional, Tuple, Type, Any
 import pygame
 
 from constants import *  # SCREEN_WIDTH/HEIGHT, TILE_SIZE, VIEW_* etc.
+
+
+# -----------------------------
+# Dynamic map size (editor-only)
+# -----------------------------
+# The runtime editor can create maps of different sizes without touching constants.py.
+# We shadow the imported GRASS_ROWS/GRASS_COLS/MAP_WIDTH/MAP_HEIGHT names locally.
+EDITOR_ROWS = int(__import__("constants").GRASS_ROWS)
+EDITOR_COLS = int(__import__("constants").GRASS_COLS)
+EDITOR_MAP_WIDTH = EDITOR_COLS * TILE_SIZE
+EDITOR_MAP_HEIGHT = EDITOR_ROWS * TILE_SIZE
+
+def set_editor_map_size(rows: int, cols: int) -> None:
+    global EDITOR_ROWS, EDITOR_COLS, EDITOR_MAP_WIDTH, EDITOR_MAP_HEIGHT
+    EDITOR_ROWS = int(rows)
+    EDITOR_COLS = int(cols)
+    EDITOR_MAP_WIDTH = EDITOR_COLS * TILE_SIZE
+    EDITOR_MAP_HEIGHT = EDITOR_ROWS * TILE_SIZE
+
 from objectives import DEFAULT_MISSION_DICT
 from world_objects import Bridge, Road, MiscPassable, MiscImpassable
 from tiles import GrassTile, Dirt, River, Foundation, Mountain
@@ -272,9 +291,9 @@ def load_misc_impa_editor_image(variant: str, desired_px: int) -> Optional[pygam
 # -----------------------------
 def new_grass_map() -> List[List[object]]:
     grid: List[List[object]] = []
-    for r in range(GRASS_ROWS):
+    for r in range(EDITOR_ROWS):
         row = []
-        for c in range(GRASS_COLS):
+        for c in range(EDITOR_COLS):
             row.append(GrassTile(c * TILE_SIZE, r * TILE_SIZE))
         grid.append(row)
     return grid
@@ -407,10 +426,10 @@ def save_map(
 ) -> None:
     ensure_dirs(path)
     data = {
-        "rows": GRASS_ROWS,
-        "cols": GRASS_COLS,
+        "rows": EDITOR_ROWS,
+        "cols": EDITOR_COLS,
         "tile_size": TILE_SIZE,
-        "tiles": [[grid[r][c].__class__.__name__ for c in range(GRASS_COLS)] for r in range(GRASS_ROWS)],
+        "tiles": [[grid[r][c].__class__.__name__ for c in range(EDITOR_COLS)] for r in range(EDITOR_ROWS)],
         "units": units_by_cell,
         "objects": objects_by_cell,   # <-- NEW (bridges, etc.)
         "objective": objective or DEFAULT_MISSION_DICT,
@@ -423,19 +442,20 @@ def load_map(path: str) -> Tuple[List[List[object]], Dict[str, Dict[str, Any]], 
     with open(path, "r", encoding="utf-8") as f:
         data = json.load(f)
 
-    rows = int(data.get("rows", GRASS_ROWS))
-    cols = int(data.get("cols", GRASS_COLS))
+    rows = int(data.get("rows", EDITOR_ROWS))
+    cols = int(data.get("cols", EDITOR_COLS))
 
-    if rows != GRASS_ROWS or cols != GRASS_COLS:
-        raise ValueError(f"Map size mismatch. Expected {GRASS_ROWS}x{GRASS_COLS}, got {rows}x{cols}")
+    # Allow any map size in the editor: resize editor globals to match the loaded file.
+    if rows != EDITOR_ROWS or cols != EDITOR_COLS:
+        set_editor_map_size(rows, cols)
 
     tiles = data.get("tiles")
     if not tiles:
         raise ValueError("Missing tiles[] in save")
 
     grid = new_grass_map()
-    for r in range(GRASS_ROWS):
-        for c in range(GRASS_COLS):
+    for r in range(EDITOR_ROWS):
+        for c in range(EDITOR_COLS):
             cell = tiles[r][c]
 
             # Backward compatible: old saves store strings; new saves may store dicts
@@ -481,7 +501,7 @@ def load_map(path: str) -> Tuple[List[List[object]], Dict[str, Dict[str, Any]], 
                 rr, cc = int(rs), int(cs)
             except Exception:
                 continue
-            if not (0 <= rr < GRASS_ROWS and 0 <= cc < GRASS_COLS):
+            if not (0 <= rr < EDITOR_ROWS and 0 <= cc < EDITOR_COLS):
                 continue
 
             entry: Dict[str, Any] = {"type": t, "player": p}
@@ -512,7 +532,7 @@ def load_map(path: str) -> Tuple[List[List[object]], Dict[str, Dict[str, Any]], 
 
             rs, cs = k.split(",")
             rr, cc = int(rs), int(cs)
-            if not (0 <= rr < GRASS_ROWS and 0 <= cc < GRASS_COLS):
+            if not (0 <= rr < EDITOR_ROWS and 0 <= cc < EDITOR_COLS):
                 continue
 
             entry: Dict[str, Any] = {"type": t}
@@ -557,12 +577,12 @@ def draw_tile_type_borders(
             x1 = x0 + TILE_SIZE
             y1 = y0 + TILE_SIZE
 
-            if c + 1 < GRASS_COLS:
+            if c + 1 < EDITOR_COLS:
                 rname = grid[r][c + 1].__class__.__name__
                 if rname != tname:
                     pygame.draw.line(surf, border_color, (x1, y0), (x1, y1), 1)
 
-            if r + 1 < GRASS_ROWS:
+            if r + 1 < EDITOR_ROWS:
                 bname = grid[r + 1][c].__class__.__name__
                 if bname != tname:
                     pygame.draw.line(surf, border_color, (x0, y1), (x1, y1), 1)
@@ -590,8 +610,8 @@ def draw_scrollbars(
     h_track = pygame.Rect(view_frame.x, view_frame.y - (bar_thick + 4), view_frame.w, bar_thick)
     pygame.draw.rect(screen, track_col, h_track, border_radius=4)
 
-    denom_x = max(1, MAP_WIDTH - view_px_w)
-    thumb_w = max(20, int(h_track.w * (view_px_w / MAP_WIDTH)))
+    denom_x = max(1, EDITOR_MAP_WIDTH - view_px_w)
+    thumb_w = max(20, int(h_track.w * (view_px_w / EDITOR_MAP_WIDTH)))
     thumb_x = h_track.x + int((h_track.w - thumb_w) * (camera_x / denom_x))
     h_thumb = pygame.Rect(thumb_x, h_track.y, thumb_w, bar_thick)
     pygame.draw.rect(screen, thumb_col, h_thumb, border_radius=4)
@@ -600,8 +620,8 @@ def draw_scrollbars(
     v_track = pygame.Rect(view_frame.right + 4, view_frame.y, bar_thick, view_frame.h)
     pygame.draw.rect(screen, track_col, v_track, border_radius=4)
 
-    denom_y = max(1, MAP_HEIGHT - view_px_h)
-    thumb_h = max(20, int(v_track.h * (view_px_h / MAP_HEIGHT)))
+    denom_y = max(1, EDITOR_MAP_HEIGHT - view_px_h)
+    thumb_h = max(20, int(v_track.h * (view_px_h / EDITOR_MAP_HEIGHT)))
     thumb_y = v_track.y + int((v_track.h - thumb_h) * (camera_y / denom_y))
     v_thumb = pygame.Rect(v_track.x, thumb_y, bar_thick, thumb_h)
     pygame.draw.rect(screen, thumb_col, v_thumb, border_radius=4)
@@ -632,7 +652,7 @@ def footprint_cells(unit_type: str, anchor_row: int, anchor_col: int) -> List[Tu
     cells: List[Tuple[int, int]] = []
     for rr in range(r0, r0 + n):
         for cc in range(c0, c0 + n):
-            if 0 <= rr < GRASS_ROWS and 0 <= cc < GRASS_COLS:
+            if 0 <= rr < EDITOR_ROWS and 0 <= cc < EDITOR_COLS:
                 cells.append((rr, cc))
     return cells
 
@@ -669,6 +689,28 @@ def main() -> None:
     pygame.display.set_caption("Map Editor (Clean Borders + Scrollbars)")
     clock = pygame.time.Clock()
 
+    # --- Top menu bar (always on top) ---
+    TOPBAR_H = 28
+    TOPBAR_BG = (35, 35, 35)
+    TOPBAR_BORDER = (90, 90, 90)
+    TOPBAR_TEXT = (240, 240, 240)
+
+    file_menu_open = False
+    file_menu_items = ["New", "Load", "Save", "Clear", "Quit"]
+    file_menu_item_h = 28
+    file_menu_w = 140
+
+    # "New map" dialog state
+    new_dialog_open = False
+    new_choice = "medium"  # small|medium|big|huge|custom
+    custom_rows = 60
+    custom_cols = 60
+    custom_focus = None  # "rows"|"cols"|None
+
+    # Convenience: keep view below the top bar
+    VIEW_MARGIN_TOP_LOCAL = TOPBAR_H + 10
+
+
     font = pygame.font.SysFont("arial", 16)
     font_big = pygame.font.SysFont("arial", 18)
 
@@ -680,7 +722,7 @@ def main() -> None:
 
     # Center that tile-aligned view inside the available view frame
     view_x = VIEW_MARGIN_LEFT + (VIEW_WIDTH - view_px_w) // 2
-    view_y = VIEW_MARGIN_TOP + (VIEW_HEIGHT - view_px_h) // 2
+    view_y = VIEW_MARGIN_TOP_LOCAL + (VIEW_HEIGHT - view_px_h) // 2
     view_frame = pygame.Rect(view_x, view_y, view_px_w, view_px_h)
 
     view_surf = pygame.Surface((view_px_w, view_px_h))
@@ -768,11 +810,6 @@ def main() -> None:
             x += 90 + 8
 
         x += 20
-        buttons.append(Button(pygame.Rect(x, y, 100, BTN_H), "Save", "action", "save"))
-        x += 100 + 8
-        buttons.append(Button(pygame.Rect(x, y, 100, BTN_H), "Load", "action", "load"))
-        x += 100 + 8
-        buttons.append(Button(pygame.Rect(x, y, 100, BTN_H), "Clear", "action", "clear"))
 
         # Players on right: same height as others
         px = SCREEN_WIDTH - 10 - (len(PLAYERS) * (70 + 6))
@@ -831,8 +868,8 @@ def main() -> None:
 
     def clamp_camera() -> None:
         nonlocal camera_x, camera_y
-        max_x = max(0, MAP_WIDTH - view_px_w)
-        max_y = max(0, MAP_HEIGHT - view_px_h)
+        max_x = max(0, EDITOR_MAP_WIDTH - view_px_w)
+        max_y = max(0, EDITOR_MAP_HEIGHT - view_px_h)
         camera_x = max(0, min(camera_x, max_x))
         camera_y = max(0, min(camera_y, max_y))
         camera_x = snap_to_tile(camera_x)
@@ -853,7 +890,7 @@ def main() -> None:
             return
         wx, wy = wp
         row, col = world_to_tile(wx, wy)
-        if not (0 <= row < GRASS_ROWS and 0 <= col < GRASS_COLS):
+        if not (0 <= row < EDITOR_ROWS and 0 <= col < EDITOR_COLS):
             return
 
         occ = build_occupancy(units_by_cell)
@@ -1078,8 +1115,214 @@ def main() -> None:
             if event.type == pygame.QUIT:
                 running = False
 
+            elif event.type == pygame.KEYDOWN:
+                # Keyboard handling for the New-map dialog
+                if new_dialog_open:
+                    if event.key == pygame.K_ESCAPE:
+                        new_dialog_open = False
+                        custom_focus = None
+                        continue
+
+                    if event.key == pygame.K_TAB:
+                        if custom_focus == "rows":
+                            custom_focus = "cols"
+                        else:
+                            custom_focus = "rows"
+                        new_choice = "custom"
+                        continue
+
+                    if event.key in (pygame.K_RETURN, pygame.K_KP_ENTER):
+                        # Trigger Create
+                        def _clamp(n: int) -> int:
+                            return max(30, min(100, int(n)))
+                        rows, cols = _clamp(custom_rows), _clamp(custom_cols)
+                        set_editor_map_size(rows, cols)
+                        grid = new_grass_map()
+                        units_by_cell = {}
+                        objects_by_cell = {}
+                        camera_x = 0
+                        camera_y = 0
+                        clamp_camera()
+                        new_dialog_open = False
+                        file_menu_open = False
+                        custom_focus = None
+                        print(f"[EDITOR] New map: {rows}x{cols}")
+                        continue
+
+                    if event.key == pygame.K_BACKSPACE:
+                        if custom_focus == "rows":
+                            custom_rows = int(str(custom_rows)[:-1] or "0")
+                        elif custom_focus == "cols":
+                            custom_cols = int(str(custom_cols)[:-1] or "0")
+                        continue
+
+                    # Digits for custom inputs
+                    if pygame.K_0 <= event.key <= pygame.K_9:
+                        digit = chr(event.key)
+                        if custom_focus == "rows":
+                            s = (str(custom_rows) if custom_rows != 0 else "") + digit
+                            custom_rows = int(s[:3])
+                            new_choice = "custom"
+                        elif custom_focus == "cols":
+                            s = (str(custom_cols) if custom_cols != 0 else "") + digit
+                            custom_cols = int(s[:3])
+                            new_choice = "custom"
+                        continue
+
             elif event.type == pygame.MOUSEBUTTONDOWN and event.button == 1:
                 hit_ui = False
+                # ---- Top bar + File menu ----
+                topbar_rect = pygame.Rect(0, 0, SCREEN_WIDTH, TOPBAR_H)
+                file_label = "File"
+                file_text = font_big.render(file_label, True, TOPBAR_TEXT)
+                file_rect = pygame.Rect(10, 0, file_text.get_width() + 20, TOPBAR_H)
+
+                # New-map dialog rects (computed lazily)
+                if new_dialog_open:
+                    # Modal eats clicks first
+                    dlg_w, dlg_h = 520, 320
+                    dlg_rect = pygame.Rect((SCREEN_WIDTH - dlg_w)//2, (SCREEN_HEIGHT - dlg_h)//2, dlg_w, dlg_h)
+                    create_rect = pygame.Rect(dlg_rect.right - 120 - 16, dlg_rect.bottom - 44, 120, 32)
+                    cancel_rect = pygame.Rect(dlg_rect.right - 240 - 24, dlg_rect.bottom - 44, 120, 32)
+
+                    # Radio button positions
+                    opt_y0 = dlg_rect.y + 70
+                    opt_gap = 32
+                    options = [
+                        ("small", 50, 50),
+                        ("medium", 60, 60),
+                        ("big", 70, 70),
+                        ("huge", 80, 80),
+                        ("custom", None, None),
+                    ]
+                    radio_rects = {}
+                    for i,(key, rr, cc) in enumerate(options):
+                        ry = opt_y0 + i*opt_gap
+                        radio_rects[key] = pygame.Rect(dlg_rect.x + 26, ry, 18, 18)
+
+                    rows_box = pygame.Rect(dlg_rect.x + 260, opt_y0 + 4*opt_gap - 4, 70, 26)
+                    cols_box = pygame.Rect(dlg_rect.x + 350, opt_y0 + 4*opt_gap - 4, 70, 26)
+
+                    # Handle clicks
+                    if dlg_rect.collidepoint(event.pos):
+                        hit_ui = True
+
+                        # Radio select
+                        for key, rrect in radio_rects.items():
+                            if rrect.collidepoint(event.pos):
+                                new_choice = key
+                                custom_focus = None
+                                break
+
+                        # Focus custom inputs
+                        if rows_box.collidepoint(event.pos):
+                            new_choice = "custom"
+                            custom_focus = "rows"
+                        elif cols_box.collidepoint(event.pos):
+                            new_choice = "custom"
+                            custom_focus = "cols"
+
+                        # Buttons
+                        if create_rect.collidepoint(event.pos):
+                            def _clamp(n: int) -> int:
+                                return max(30, min(100, int(n)))
+
+                            if new_choice == "small":
+                                rows, cols = 50, 50
+                            elif new_choice == "medium":
+                                rows, cols = 60, 60
+                            elif new_choice == "big":
+                                rows, cols = 70, 70
+                            elif new_choice == "huge":
+                                rows, cols = 80, 80
+                            else:
+                                rows, cols = _clamp(custom_rows), _clamp(custom_cols)
+
+                            set_editor_map_size(rows, cols)
+                            grid = new_grass_map()
+                            units_by_cell = {}
+                            objects_by_cell = {}
+                            camera_x = 0
+                            camera_y = 0
+                            clamp_camera()
+                            new_dialog_open = False
+                            file_menu_open = False
+                            custom_focus = None
+                            print(f"[EDITOR] New map: {rows}x{cols}")
+
+                        elif cancel_rect.collidepoint(event.pos):
+                            new_dialog_open = False
+                            custom_focus = None
+
+                        # consume click
+                        continue
+
+                    else:
+                        # Click outside closes dialog
+                        new_dialog_open = False
+                        custom_focus = None
+                        continue
+
+                # If file dropdown open, it should eat clicks
+                if file_menu_open:
+                    menu_x = file_rect.x
+                    menu_y = TOPBAR_H
+                    menu_rect = pygame.Rect(menu_x, menu_y, file_menu_w, file_menu_item_h * len(file_menu_items))
+                    if menu_rect.collidepoint(event.pos):
+                        hit_ui = True
+                        idx = (event.pos[1] - menu_y) // file_menu_item_h
+                        if 0 <= idx < len(file_menu_items):
+                            choice = file_menu_items[int(idx)]
+                            file_menu_open = False
+
+                            if choice == "New":
+                                new_dialog_open = True
+                                # default dialog values reflect current map
+                                custom_rows = int(EDITOR_ROWS)
+                                custom_cols = int(EDITOR_COLS)
+                                custom_focus = None
+
+                            elif choice == "Save":
+                                obj = {"type": mission_objective_type}
+                                if mission_objective_type == "survive_time":
+                                    obj["seconds"] = int(survive_seconds)
+                                save_map(grid, units_by_cell, objects_by_cell, DEFAULT_SAVE_PATH, objective=obj)
+
+                            elif choice == "Load":
+                                try:
+                                    grid, units_by_cell, objects_by_cell, obj = load_map(DEFAULT_SAVE_PATH)
+                                    mission_objective_type = str(obj.get("type", "kill_all_enemies")).lower()
+                                    survive_seconds = int(obj.get("seconds", obj.get("time", 300)))
+                                    rebuild_ui()
+                                    camera_x = 0
+                                    camera_y = 0
+                                    clamp_camera()
+                                except Exception as e:
+                                    print(f"[EDITOR] Load failed: {e}")
+
+                            elif choice == "Clear":
+                                grid = new_grass_map()
+                                units_by_cell = {}
+                                objects_by_cell = {}
+                                camera_x = 0
+                                camera_y = 0
+                                clamp_camera()
+                                print("[EDITOR] Cleared.")
+
+                            elif choice == "Quit":
+                                running = False
+
+                        continue
+                    else:
+                        # click outside closes dropdown (but still allow other UI to process)
+                        file_menu_open = False
+
+                # Click on File label toggles dropdown
+                if topbar_rect.collidepoint(event.pos) and file_rect.collidepoint(event.pos):
+                    file_menu_open = not file_menu_open
+                    hit_ui = True
+                    continue
+
                 for b in buttons:
                     if b.hit(event.pos):
                         hit_ui = True
@@ -1227,9 +1470,9 @@ def main() -> None:
         view_surf.fill((0, 0, 0))
 
         start_col = max(0, camera_x // TILE_SIZE)
-        end_col = min(GRASS_COLS, (camera_x + view_px_w) // TILE_SIZE + 1)
+        end_col = min(EDITOR_COLS, (camera_x + view_px_w) // TILE_SIZE + 1)
         start_row = max(0, camera_y // TILE_SIZE)
-        end_row = min(GRASS_ROWS, (camera_y + view_px_h) // TILE_SIZE + 1)
+        end_row = min(EDITOR_ROWS, (camera_y + view_px_h) // TILE_SIZE + 1)
 
         # Tiles
         for r in range(start_row, end_row):
@@ -1332,6 +1575,107 @@ def main() -> None:
         for b in buttons:
             draw_button(b)
 
+                # ---- TOP BAR (always on top) ----
+        pygame.draw.rect(screen, TOPBAR_BG, pygame.Rect(0, 0, SCREEN_WIDTH, TOPBAR_H))
+        pygame.draw.line(screen, TOPBAR_BORDER, (0, TOPBAR_H-1), (SCREEN_WIDTH, TOPBAR_H-1), 1)
+        
+        # "File" label
+        file_text = font_big.render("File", True, TOPBAR_TEXT)
+        file_rect = pygame.Rect(10, 0, file_text.get_width() + 20, TOPBAR_H)
+        # subtle hover/active background
+        mx, my = pygame.mouse.get_pos()
+        hovering_file = file_rect.collidepoint((mx, my))
+        if hovering_file or file_menu_open:
+            pygame.draw.rect(screen, (55, 55, 55), file_rect)
+        screen.blit(file_text, (file_rect.x + 10, file_rect.y + (TOPBAR_H - file_text.get_height()) // 2))
+        
+        # Dropdown
+        if file_menu_open:
+            menu_x = file_rect.x
+            menu_y = TOPBAR_H
+            menu_h = file_menu_item_h * len(file_menu_items)
+            menu_rect = pygame.Rect(menu_x, menu_y, file_menu_w, menu_h)
+            pygame.draw.rect(screen, (45, 45, 45), menu_rect)
+            pygame.draw.rect(screen, (120, 120, 120), menu_rect, 2)
+            for i, label in enumerate(file_menu_items):
+                r = pygame.Rect(menu_x, menu_y + i * file_menu_item_h, file_menu_w, file_menu_item_h)
+                if r.collidepoint((mx, my)):
+                    pygame.draw.rect(screen, (65, 65, 65), r)
+                t = font.render(label, True, (240, 240, 240))
+                screen.blit(t, (r.x + 10, r.y + (file_menu_item_h - t.get_height()) // 2))
+        
+        # New-map dialog (modal)
+        if new_dialog_open:
+            # dim background
+            dim = pygame.Surface((SCREEN_WIDTH, SCREEN_HEIGHT), pygame.SRCALPHA)
+            dim.fill((0, 0, 0, 170))
+            screen.blit(dim, (0, 0))
+        
+            dlg_w, dlg_h = 520, 320
+            dlg_rect = pygame.Rect((SCREEN_WIDTH - dlg_w)//2, (SCREEN_HEIGHT - dlg_h)//2, dlg_w, dlg_h)
+            pygame.draw.rect(screen, (50, 50, 50), dlg_rect, border_radius=10)
+            pygame.draw.rect(screen, (160, 160, 160), dlg_rect, 2, border_radius=10)
+        
+            title = font_big.render("Create new map", True, (255, 255, 255))
+            screen.blit(title, (dlg_rect.x + 18, dlg_rect.y + 16))
+        
+            subtitle = font.render("Choose size:", True, (220, 220, 220))
+            screen.blit(subtitle, (dlg_rect.x + 18, dlg_rect.y + 46))
+        
+            opt_y0 = dlg_rect.y + 70
+            opt_gap = 32
+            options = [
+                ("small", "Small  50 x 50"),
+                ("medium", "Medium 60 x 60"),
+                ("big", "Big    70 x 70"),
+                ("huge", "Huge   80 x 80"),
+                ("custom", "Custom"),
+            ]
+        
+            # radio draw
+            for i, (key, label) in enumerate(options):
+                ry = opt_y0 + i * opt_gap
+                center = (dlg_rect.x + 35, ry + 9)
+                pygame.draw.circle(screen, (220, 220, 220), center, 8, 2)
+                if new_choice == key:
+                    pygame.draw.circle(screen, (220, 220, 220), center, 4, 0)
+                tt = font.render(label, True, (240, 240, 240))
+                screen.blit(tt, (dlg_rect.x + 55, ry))
+        
+            # custom inputs
+            rows_box = pygame.Rect(dlg_rect.x + 260, opt_y0 + 4*opt_gap - 4, 70, 26)
+            cols_box = pygame.Rect(dlg_rect.x + 350, opt_y0 + 4*opt_gap - 4, 70, 26)
+        
+            lab = font.render("Rows", True, (220, 220, 220))
+            screen.blit(lab, (rows_box.x, rows_box.y - 18))
+            lab2 = font.render("Cols", True, (220, 220, 220))
+            screen.blit(lab2, (cols_box.x, cols_box.y - 18))
+        
+            def _draw_box(rect, text, focused):
+                pygame.draw.rect(screen, (35, 35, 35), rect, border_radius=6)
+                pygame.draw.rect(screen, (255, 255, 255) if focused else (130, 130, 130), rect, 2, border_radius=6)
+                t = font.render(text, True, (240, 240, 240))
+                screen.blit(t, (rect.x + 8, rect.y + (rect.h - t.get_height())//2))
+        
+            _draw_box(rows_box, str(custom_rows), custom_focus == "rows")
+            _draw_box(cols_box, str(custom_cols), custom_focus == "cols")
+        
+            hint = font.render("Custom limits: 30..100. Click a box, type digits, Enter to create.", True, (200, 200, 200))
+            screen.blit(hint, (dlg_rect.x + 18, dlg_rect.y + dlg_h - 84))
+        
+            # buttons
+            create_rect = pygame.Rect(dlg_rect.right - 120 - 16, dlg_rect.bottom - 44, 120, 32)
+            cancel_rect = pygame.Rect(dlg_rect.right - 240 - 24, dlg_rect.bottom - 44, 120, 32)
+        
+            pygame.draw.rect(screen, (70, 70, 70), cancel_rect, border_radius=8)
+            pygame.draw.rect(screen, (170, 170, 170), cancel_rect, 2, border_radius=8)
+            tc = font.render("Cancel", True, (240, 240, 240))
+            screen.blit(tc, (cancel_rect.centerx - tc.get_width()//2, cancel_rect.centery - tc.get_height()//2))
+        
+            pygame.draw.rect(screen, (90, 90, 90), create_rect, border_radius=8)
+            pygame.draw.rect(screen, (220, 220, 220), create_rect, 2, border_radius=8)
+            tt = font.render("Create", True, (255, 255, 255))
+            screen.blit(tt, (create_rect.centerx - tt.get_width()//2, create_rect.centery - tt.get_height()//2))
         pygame.display.flip()
 
     pygame.quit()
