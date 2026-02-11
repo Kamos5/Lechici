@@ -25,6 +25,7 @@ import ui
 from endgame_stats import StatsTracker, MultiStats
 import endgame_screen
 from camera import Camera
+from death_animations import DeathAnimationManager
 
 
 def run_game() -> int:
@@ -134,6 +135,10 @@ def run_game() -> int:
     context.move_order_times = move_order_times
 
     context.effects = []
+
+    # Death animations (units only): linger for 60s using per-unit death.gif
+    death_anim_mgr = DeathAnimationManager()
+    context.death_anim_mgr = death_anim_mgr
 
     selection_end = None
     selecting = False
@@ -1823,6 +1828,12 @@ def run_game() -> int:
 
             # Remove dead units
             for unit in units_to_remove:
+                # Spawn death sprite linger for units (not buildings/trees) before removing.
+                try:
+                    death_anim_mgr.spawn_from_unit(unit, current_time)
+                except Exception as e:
+                    print(f"[death] failed to spawn for {type(unit).__name__}: {e}")
+
                 # endgame stats: loss/kills (projectile kills may be resolved here)
                 stats.on_unit_lost(unit)
                 attacker = getattr(unit, '_last_attacker', None)
@@ -1904,6 +1915,10 @@ def run_game() -> int:
                 obj.draw(tile_surface, camera.x, camera.y)
 
             screen.blit(tile_surface, (VIEW_MARGIN_LEFT, VIEW_MARGIN_TOP))
+
+            # Draw lingering death animations (under living units)
+            death_anim_mgr.update(current_time)
+            death_anim_mgr.draw(screen, camera.x, camera.y, current_time)
 
             # Draw units (existing)
             for unit in all_units:

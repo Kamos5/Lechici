@@ -78,9 +78,9 @@ done:
 + fix: axeman when repairing ignore other orders
 + grid actions CRITICAL
 + FIX: error with COW when she targets enemy unit (building included)
-+? fix: units gating stuck together - I think it is fixed
 + map editor map size
 + give feedback when rightclicked to move or attack or repair or whatever
++ death animation should linger
 
 todo:
 
@@ -99,7 +99,8 @@ CORE FEATURES:
 - set up units stats (balance)
 - magic for priestress and shaman
 
-- death animation should linger
+
+- fix: units gating stuck together
 - sounds?
 - fix animation attack offset
 - animations (archer done, cow done, axeman done, knight done, bear done: TODO DEATH ANIMATION ALL)
