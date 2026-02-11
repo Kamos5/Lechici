@@ -22,7 +22,6 @@ import pygame
 
 from constants import *  # SCREEN_WIDTH/HEIGHT, TILE_SIZE, VIEW_* etc.
 
-
 # -----------------------------
 # Dynamic map size (editor-only)
 # -----------------------------
@@ -33,12 +32,14 @@ EDITOR_COLS = int(__import__("constants").GRASS_COLS)
 EDITOR_MAP_WIDTH = EDITOR_COLS * TILE_SIZE
 EDITOR_MAP_HEIGHT = EDITOR_ROWS * TILE_SIZE
 
+
 def set_editor_map_size(rows: int, cols: int) -> None:
     global EDITOR_ROWS, EDITOR_COLS, EDITOR_MAP_WIDTH, EDITOR_MAP_HEIGHT
     EDITOR_ROWS = int(rows)
     EDITOR_COLS = int(cols)
     EDITOR_MAP_WIDTH = EDITOR_COLS * TILE_SIZE
     EDITOR_MAP_HEIGHT = EDITOR_ROWS * TILE_SIZE
+
 
 from objectives import DEFAULT_MISSION_DICT
 from world_objects import Bridge, Road, MiscPassable, MiscImpassable
@@ -171,6 +172,7 @@ def load_tree_editor_image(variant: str, desired_px: int) -> Optional[pygame.Sur
         _TREE_EDITOR_IMAGES[key] = None
         return None
 
+
 def load_river_editor_image(variant: str, desired_px: int) -> Optional[pygame.Surface]:
     """
     Loads assets/river/{variant}.png (e.g. assets/river/river5.png), scaled to desired_px.
@@ -191,6 +193,7 @@ def load_river_editor_image(variant: str, desired_px: int) -> Optional[pygame.Su
         _RIVER_EDITOR_IMAGES[key] = None
         return None
 
+
 def load_bridge_editor_image(variant: str, desired_px: int) -> Optional[pygame.Surface]:
     key = (variant, desired_px)
     if key in _BRIDGE_EDITOR_IMAGES:
@@ -206,6 +209,7 @@ def load_bridge_editor_image(variant: str, desired_px: int) -> Optional[pygame.S
         _BRIDGE_EDITOR_IMAGES[key] = None
         return None
 
+
 def load_road_editor_image(variant: str, desired_px: int) -> Optional[pygame.Surface]:
     key = (variant, desired_px)
     if key in _ROAD_EDITOR_IMAGES:
@@ -220,6 +224,7 @@ def load_road_editor_image(variant: str, desired_px: int) -> Optional[pygame.Sur
         print(f"[EDITOR] Failed to load {path}: {e}")
         _ROAD_EDITOR_IMAGES[key] = None
         return None
+
 
 def load_mountain_editor_image(variant: str, desired_px: int) -> Optional[pygame.Surface]:
     """
@@ -241,6 +246,7 @@ def load_mountain_editor_image(variant: str, desired_px: int) -> Optional[pygame
         _MOUNTAIN_EDITOR_IMAGES[key] = None
         return None
 
+
 def load_wall_editor_image(variant: str, desired_px: int) -> Optional[pygame.Surface]:
     key = (variant, desired_px)
     if key in _WALL_EDITOR_IMAGES:
@@ -255,6 +261,7 @@ def load_wall_editor_image(variant: str, desired_px: int) -> Optional[pygame.Sur
         print(f"[EDITOR] Failed to load {path}: {e}")
         _WALL_EDITOR_IMAGES[key] = None
         return None
+
 
 def load_misc_pass_editor_image(variant: str, desired_px: int) -> Optional[pygame.Surface]:
     key = (variant, desired_px)
@@ -286,6 +293,7 @@ def load_misc_impa_editor_image(variant: str, desired_px: int) -> Optional[pygam
         print(f"[EDITOR] Failed to load {path}: {e}")
         _MISC_IMPA_EDITOR_IMAGES[key] = None
         return None
+
 
 # -----------------------------
 # Map data helpers
@@ -350,17 +358,17 @@ def _ensure_unit_sprite_loaded(cls_name: str, desired_px: int, player_color=None
 
 
 def draw_unit_sprite(
-    surf: pygame.Surface,
-    unit_type: str,
-    player_color: Tuple[int, int, int],
-    world_cx: int,
-    world_cy: int,
-    camera_x: int,
-    camera_y: int,
-    tree_variant: Optional[str] = None,
+        surf: pygame.Surface,
+        unit_type: str,
+        player_color: Tuple[int, int, int],
+        world_cx: int,
+        world_cy: int,
+        camera_x: int,
+        camera_y: int,
+        tree_variant: Optional[str] = None,
 ) -> None:
     # Buildings bigger
-    if unit_type in ("Barn", "TownCenter", "Barracks", "ShamansHut", "WarriorsLodge", "KnightsEstate",  "Ruin"):
+    if unit_type in ("Barn", "TownCenter", "Barracks", "ShamansHut", "WarriorsLodge", "KnightsEstate", "Ruin"):
         desired = int(BUILDING_SIZE)
     elif unit_type in ("Tree", "Wall"):
         desired = int(TILE_SIZE)
@@ -418,12 +426,12 @@ def draw_unit_sprite(
 # Save / Load
 # -----------------------------
 def save_map(
-    grid: List[List[object]],
-    units_by_cell: Dict[str, Dict[str, Any]],
-    objects_by_cell: Dict[str, Dict[str, Any]],
-    path: str,
-    *,
-    objective: Dict[str, Any] | None = None,
+        grid: List[List[object]],
+        units_by_cell: Dict[str, Dict[str, Any]],
+        objects_by_cell: Dict[str, Dict[str, Any]],
+        path: str,
+        *,
+        objective: Dict[str, Any] | None = None,
 ) -> None:
     ensure_dirs(path)
     data = {
@@ -432,7 +440,7 @@ def save_map(
         "tile_size": TILE_SIZE,
         "tiles": [[grid[r][c].__class__.__name__ for c in range(EDITOR_COLS)] for r in range(EDITOR_ROWS)],
         "units": units_by_cell,
-        "objects": objects_by_cell,   # <-- NEW (bridges, etc.)
+        "objects": objects_by_cell,  # <-- NEW (bridges, etc.)
         "objective": objective or DEFAULT_MISSION_DICT,
     }
     with open(path, "w", encoding="utf-8") as f:
@@ -552,19 +560,20 @@ def load_map(path: str) -> Tuple[List[List[object]], Dict[str, Dict[str, Any]], 
         objective = DEFAULT_MISSION_DICT
     return grid, units_by_cell, objects_by_cell, objective
 
+
 # -----------------------------
 # Borders / scrollbars drawing
 # -----------------------------
 def draw_tile_type_borders(
-    surf: pygame.Surface,
-    grid: List[List[object]],
-    start_row: int,
-    end_row: int,
-    start_col: int,
-    end_col: int,
-    camera_x: int,
-    camera_y: int,
-    border_color: Tuple[int, int, int] = (0, 0, 0),
+        surf: pygame.Surface,
+        grid: List[List[object]],
+        start_row: int,
+        end_row: int,
+        start_col: int,
+        end_col: int,
+        camera_x: int,
+        camera_y: int,
+        border_color: Tuple[int, int, int] = (0, 0, 0),
 ) -> None:
     """
     Draw 1px borders ONLY where adjacent tile types differ (cleaner than full grid lines).
@@ -592,12 +601,12 @@ def draw_tile_type_borders(
 
 
 def draw_scrollbars(
-    screen: pygame.Surface,
-    view_frame: pygame.Rect,
-    camera_x: int,
-    camera_y: int,
-    view_px_w: int,
-    view_px_h: int,
+        screen: pygame.Surface,
+        view_frame: pygame.Rect,
+        camera_x: int,
+        camera_y: int,
+        view_px_w: int,
+        view_px_h: int,
 ) -> None:
     """
     Draw a small horizontal scrollbar at the TOP of the view frame and a vertical one on the RIGHT.
@@ -725,7 +734,6 @@ def main() -> None:
     # Convenience: keep view below the top bar
     VIEW_MARGIN_TOP_LOCAL = TOPBAR_H + 10
 
-
     font = pygame.font.SysFont("arial", 16)
     font_big = pygame.font.SysFont("arial", 18)
 
@@ -755,7 +763,6 @@ def main() -> None:
     mission_objective_type = 'kill_all_enemies'  # or 'survive_time'
     survive_seconds = 300  # used when objective_type == 'survive_time'
 
-
     # Tree selection state (cycles on repeated clicks)
     selected_tree_index = 0  # 0..7
 
@@ -781,6 +788,18 @@ def main() -> None:
     camera_x = 0
     camera_y = 0
     CAM_STEP = TILE_SIZE
+
+    # --- Camera pan helpers (tile-snapped like the rest of the editor) ---
+    RIGHT_DRAG_THRESHOLD_PX = 4
+    EDGE_MARGIN_PX = 24
+    EDGE_SCROLL_DELAY_MS = 40  # smaller = faster
+
+    rmb_down = False
+    rmb_dragging = False
+    rmb_last = None  # (x, y)
+    rmb_accum_x = 0
+    rmb_accum_y = 0
+    last_edge_scroll_ms = 0
 
     panel_rect = pygame.Rect(0, PANEL_Y, SCREEN_WIDTH, PANEL_HEIGHT)
     buttons: List[Button] = []
@@ -876,7 +895,6 @@ def main() -> None:
         x_obj += 40 + 6
         buttons.append(Button(pygame.Rect(x_obj, y_obj, 40, BTN_H), "+", "objective_plus", "+"))
 
-
     # ---------- File dialog helpers ----------
     def _list_maps() -> List[str]:
         try:
@@ -922,6 +940,7 @@ def main() -> None:
 
     def _map_path_from_name(name: str) -> str:
         return os.path.join(maps_dir, name)
+
     rebuild_ui()
 
     def snap_to_tile(n: int) -> int:
@@ -1160,7 +1179,7 @@ def main() -> None:
     while running:
         clock.tick(FPS)
 
-        # Camera: ONLY arrow keys
+        # Camera: arrow keys + edge-scroll (mouse to border) + RMB drag-pan (tile-snapped)
         keys = pygame.key.get_pressed()
         if keys[pygame.K_LEFT]:
             camera_x -= CAM_STEP
@@ -1170,6 +1189,31 @@ def main() -> None:
             camera_y -= CAM_STEP
         if keys[pygame.K_DOWN]:
             camera_y += CAM_STEP
+
+        # Mouse-to-border scrolling (only when cursor is inside the map view and no modal dialog is open)
+        any_modal = overwrite_confirm_open or save_dialog_open or load_dialog_open or new_dialog_open
+        if (not any_modal) and (not rmb_dragging) and view_frame.collidepoint(pygame.mouse.get_pos()):
+            now_ms = pygame.time.get_ticks()
+            if now_ms - last_edge_scroll_ms >= EDGE_SCROLL_DELAY_MS:
+                mx, my = pygame.mouse.get_pos()
+                moved = False
+                if mx <= view_frame.left + EDGE_MARGIN_PX:
+                    camera_x -= CAM_STEP
+                    moved = True
+                elif mx >= view_frame.right - EDGE_MARGIN_PX:
+                    camera_x += CAM_STEP
+                    moved = True
+
+                if my <= view_frame.top + EDGE_MARGIN_PX:
+                    camera_y -= CAM_STEP
+                    moved = True
+                elif my >= view_frame.bottom - EDGE_MARGIN_PX:
+                    camera_y += CAM_STEP
+                    moved = True
+
+                if moved:
+                    last_edge_scroll_ms = now_ms
+
         clamp_camera()
 
         for event in pygame.event.get():
@@ -1307,6 +1351,7 @@ def main() -> None:
                         # Trigger Create
                         def _clamp(n: int) -> int:
                             return max(30, min(100, int(n)))
+
                         rows, cols = _clamp(custom_rows), _clamp(custom_cols)
                         set_editor_map_size(rows, cols)
                         grid = new_grass_map()
@@ -1342,6 +1387,18 @@ def main() -> None:
                         continue
 
 
+            elif event.type == pygame.MOUSEBUTTONDOWN and event.button == 3:
+                # Right-click drag to pan the camera (tile-snapped).
+                # Only start panning when clicking inside the map view and no modal is open.
+                any_modal = overwrite_confirm_open or save_dialog_open or load_dialog_open or new_dialog_open
+                if (not any_modal) and view_frame.collidepoint(event.pos):
+                    rmb_down = True
+                    rmb_dragging = False
+                    rmb_last = event.pos
+                    rmb_accum_x = 0
+                    rmb_accum_y = 0
+                    continue
+
             elif event.type == pygame.MOUSEBUTTONDOWN and event.button == 1:
                 hit_ui = False
                 # ---- Top bar + File menu ----
@@ -1354,7 +1411,7 @@ def main() -> None:
                 # ---- Overwrite confirmation modal ----
                 if overwrite_confirm_open:
                     dlg_w, dlg_h = 460, 180
-                    dlg_rect = pygame.Rect((SCREEN_WIDTH - dlg_w)//2, (SCREEN_HEIGHT - dlg_h)//2, dlg_w, dlg_h)
+                    dlg_rect = pygame.Rect((SCREEN_WIDTH - dlg_w) // 2, (SCREEN_HEIGHT - dlg_h) // 2, dlg_w, dlg_h)
                     yes_rect = pygame.Rect(dlg_rect.right - 120 - 16, dlg_rect.bottom - 44, 120, 32)
                     no_rect = pygame.Rect(dlg_rect.right - 240 - 24, dlg_rect.bottom - 44, 120, 32)
 
@@ -1385,7 +1442,7 @@ def main() -> None:
                 # ---- Save dialog (file explorer) ----
                 if save_dialog_open:
                     dlg_w, dlg_h = 700, 420
-                    dlg_rect = pygame.Rect((SCREEN_WIDTH - dlg_w)//2, (SCREEN_HEIGHT - dlg_h)//2, dlg_w, dlg_h)
+                    dlg_rect = pygame.Rect((SCREEN_WIDTH - dlg_w) // 2, (SCREEN_HEIGHT - dlg_h) // 2, dlg_w, dlg_h)
                     list_rect = pygame.Rect(dlg_rect.x + 18, dlg_rect.y + 64, dlg_w - 36, dlg_h - 64 - 86)
                     name_box = pygame.Rect(dlg_rect.x + 18, dlg_rect.bottom - 72, dlg_w - 36 - 260, 28)
                     save_btn = pygame.Rect(dlg_rect.right - 120 - 18, dlg_rect.bottom - 72, 120, 32)
@@ -1449,7 +1506,7 @@ def main() -> None:
                 # ---- Load dialog (file explorer) ----
                 if load_dialog_open:
                     dlg_w, dlg_h = 700, 420
-                    dlg_rect = pygame.Rect((SCREEN_WIDTH - dlg_w)//2, (SCREEN_HEIGHT - dlg_h)//2, dlg_w, dlg_h)
+                    dlg_rect = pygame.Rect((SCREEN_WIDTH - dlg_w) // 2, (SCREEN_HEIGHT - dlg_h) // 2, dlg_w, dlg_h)
                     list_rect = pygame.Rect(dlg_rect.x + 18, dlg_rect.y + 64, dlg_w - 36, dlg_h - 64 - 86)
                     load_btn = pygame.Rect(dlg_rect.right - 120 - 18, dlg_rect.bottom - 72, 120, 32)
                     cancel_btn = pygame.Rect(dlg_rect.right - 240 - 26, dlg_rect.bottom - 72, 120, 32)
@@ -1502,7 +1559,7 @@ def main() -> None:
                 if new_dialog_open:
                     # Modal eats clicks first
                     dlg_w, dlg_h = 520, 320
-                    dlg_rect = pygame.Rect((SCREEN_WIDTH - dlg_w)//2, (SCREEN_HEIGHT - dlg_h)//2, dlg_w, dlg_h)
+                    dlg_rect = pygame.Rect((SCREEN_WIDTH - dlg_w) // 2, (SCREEN_HEIGHT - dlg_h) // 2, dlg_w, dlg_h)
                     create_rect = pygame.Rect(dlg_rect.right - 120 - 16, dlg_rect.bottom - 44, 120, 32)
                     cancel_rect = pygame.Rect(dlg_rect.right - 240 - 24, dlg_rect.bottom - 44, 120, 32)
 
@@ -1517,12 +1574,12 @@ def main() -> None:
                         ("custom", None, None),
                     ]
                     radio_rects = {}
-                    for i,(key, rr, cc) in enumerate(options):
-                        ry = opt_y0 + i*opt_gap
+                    for i, (key, rr, cc) in enumerate(options):
+                        ry = opt_y0 + i * opt_gap
                         radio_rects[key] = pygame.Rect(dlg_rect.x + 26, ry, 18, 18)
 
-                    rows_box = pygame.Rect(dlg_rect.x + 260, opt_y0 + 4*opt_gap - 4, 70, 26)
-                    cols_box = pygame.Rect(dlg_rect.x + 350, opt_y0 + 4*opt_gap - 4, 70, 26)
+                    rows_box = pygame.Rect(dlg_rect.x + 260, opt_y0 + 4 * opt_gap - 4, 70, 26)
+                    cols_box = pygame.Rect(dlg_rect.x + 350, opt_y0 + 4 * opt_gap - 4, 70, 26)
 
                     # Handle clicks
                     if dlg_rect.collidepoint(event.pos):
@@ -1743,7 +1800,7 @@ def main() -> None:
                                 selected_unit = b.value
                                 mode = "unit"
 
-                        
+
 
                         elif b.kind == "player":
                             selected_player = int(b.value)
@@ -1786,8 +1843,47 @@ def main() -> None:
                     painting = True
                     paint_at(*event.pos)
 
+            elif event.type == pygame.MOUSEBUTTONUP and event.button == 3:
+                rmb_down = False
+                rmb_dragging = False
+                rmb_last = None
+                rmb_accum_x = 0
+                rmb_accum_y = 0
+
             elif event.type == pygame.MOUSEBUTTONUP and event.button == 1:
                 painting = False
+
+            elif event.type == pygame.MOUSEMOTION and rmb_down and (rmb_last is not None):
+                # Convert pixel delta into tile steps (so camera_x/camera_y stay snapped).
+                dx = event.pos[0] - rmb_last[0]
+                dy = event.pos[1] - rmb_last[1]
+
+                if (not rmb_dragging) and (dx * dx + dy * dy >= RIGHT_DRAG_THRESHOLD_PX * RIGHT_DRAG_THRESHOLD_PX):
+                    rmb_dragging = True
+
+                if rmb_dragging:
+                    # Dragging mouse right should move camera left => subtract dx
+                    rmb_accum_x -= dx
+                    rmb_accum_y -= dy
+
+                    while rmb_accum_x >= TILE_SIZE:
+                        camera_x += TILE_SIZE
+                        rmb_accum_x -= TILE_SIZE
+                    while rmb_accum_x <= -TILE_SIZE:
+                        camera_x -= TILE_SIZE
+                        rmb_accum_x += TILE_SIZE
+
+                    while rmb_accum_y >= TILE_SIZE:
+                        camera_y += TILE_SIZE
+                        rmb_accum_y -= TILE_SIZE
+                    while rmb_accum_y <= -TILE_SIZE:
+                        camera_y -= TILE_SIZE
+                        rmb_accum_y += TILE_SIZE
+
+                    clamp_camera()
+
+                rmb_last = event.pos
+                continue
 
             elif event.type == pygame.MOUSEMOTION and painting:
                 paint_at(*event.pos)
@@ -1900,7 +1996,7 @@ def main() -> None:
         # Panel
         pygame.draw.rect(screen, PANEL_COLOR, panel_rect)
 
-        obj_desc = "Kill all enemies" if mission_objective_type == 'kill_all_enemies' else f"Survive {survive_seconds//60}m {survive_seconds%60:02d}s"
+        obj_desc = "Kill all enemies" if mission_objective_type == 'kill_all_enemies' else f"Survive {survive_seconds // 60}m {survive_seconds % 60:02d}s"
         header = (
             f"Mode: {mode.upper()} | Tile: {selected_tile} | Unit: {selected_unit} | "
             f"TreeVar: {current_tree_variant()} | Player: {PLAYERS[selected_player][0]} | Obj: {obj_desc} | "
@@ -1911,10 +2007,10 @@ def main() -> None:
         for b in buttons:
             draw_button(b)
 
-                # ---- TOP BAR (always on top) ----
+            # ---- TOP BAR (always on top) ----
         pygame.draw.rect(screen, TOPBAR_BG, pygame.Rect(0, 0, SCREEN_WIDTH, TOPBAR_H))
-        pygame.draw.line(screen, TOPBAR_BORDER, (0, TOPBAR_H-1), (SCREEN_WIDTH, TOPBAR_H-1), 1)
-        
+        pygame.draw.line(screen, TOPBAR_BORDER, (0, TOPBAR_H - 1), (SCREEN_WIDTH, TOPBAR_H - 1), 1)
+
         # "File" label
         file_text = font_big.render("File", True, TOPBAR_TEXT)
         file_rect = pygame.Rect(10, 0, file_text.get_width() + 20, TOPBAR_H)
@@ -1924,7 +2020,7 @@ def main() -> None:
         if hovering_file or file_menu_open:
             pygame.draw.rect(screen, (55, 55, 55), file_rect)
         screen.blit(file_text, (file_rect.x + 10, file_rect.y + (TOPBAR_H - file_text.get_height()) // 2))
-        
+
         # Dropdown
         if file_menu_open:
             menu_x = file_rect.x
@@ -1939,7 +2035,6 @@ def main() -> None:
                     pygame.draw.rect(screen, (65, 65, 65), r)
                 t = font.render(label, True, (240, 240, 240))
                 screen.blit(t, (r.x + 10, r.y + (file_menu_item_h - t.get_height()) // 2))
-        
 
         # Save / Load / Overwrite dialogs (modal, always on top)
         if save_dialog_open or load_dialog_open or overwrite_confirm_open:
@@ -1949,7 +2044,7 @@ def main() -> None:
 
         if overwrite_confirm_open:
             dlg_w, dlg_h = 460, 180
-            dlg_rect = pygame.Rect((SCREEN_WIDTH - dlg_w)//2, (SCREEN_HEIGHT - dlg_h)//2, dlg_w, dlg_h)
+            dlg_rect = pygame.Rect((SCREEN_WIDTH - dlg_w) // 2, (SCREEN_HEIGHT - dlg_h) // 2, dlg_w, dlg_h)
             pygame.draw.rect(screen, (50, 50, 50), dlg_rect, border_radius=10)
             pygame.draw.rect(screen, (160, 160, 160), dlg_rect, 2, border_radius=10)
 
@@ -1969,16 +2064,16 @@ def main() -> None:
             pygame.draw.rect(screen, (70, 70, 70), no_rect, border_radius=8)
             pygame.draw.rect(screen, (170, 170, 170), no_rect, 2, border_radius=8)
             t = font.render("No", True, (240, 240, 240))
-            screen.blit(t, (no_rect.centerx - t.get_width()//2, no_rect.centery - t.get_height()//2))
+            screen.blit(t, (no_rect.centerx - t.get_width() // 2, no_rect.centery - t.get_height() // 2))
 
             pygame.draw.rect(screen, (90, 90, 90), yes_rect, border_radius=8)
             pygame.draw.rect(screen, (220, 220, 220), yes_rect, 2, border_radius=8)
             t = font.render("Yes", True, (255, 255, 255))
-            screen.blit(t, (yes_rect.centerx - t.get_width()//2, yes_rect.centery - t.get_height()//2))
+            screen.blit(t, (yes_rect.centerx - t.get_width() // 2, yes_rect.centery - t.get_height() // 2))
 
         if save_dialog_open or load_dialog_open:
             dlg_w, dlg_h = 700, 420
-            dlg_rect = pygame.Rect((SCREEN_WIDTH - dlg_w)//2, (SCREEN_HEIGHT - dlg_h)//2, dlg_w, dlg_h)
+            dlg_rect = pygame.Rect((SCREEN_WIDTH - dlg_w) // 2, (SCREEN_HEIGHT - dlg_h) // 2, dlg_w, dlg_h)
             pygame.draw.rect(screen, (50, 50, 50), dlg_rect, border_radius=10)
             pygame.draw.rect(screen, (160, 160, 160), dlg_rect, 2, border_radius=10)
 
@@ -2017,7 +2112,7 @@ def main() -> None:
                 elif row.collidepoint((mx, my)):
                     pygame.draw.rect(screen, (55, 55, 55), row, border_radius=6)
                 txt = font.render(files[i], True, (240, 240, 240))
-                screen.blit(txt, (row.x + 10, row.y + (item_h - txt.get_height())//2))
+                screen.blit(txt, (row.x + 10, row.y + (item_h - txt.get_height()) // 2))
 
             # simple scrollbar thumb
             if len(files) > visible:
@@ -2036,13 +2131,13 @@ def main() -> None:
             pygame.draw.rect(screen, (70, 70, 70), cancel_btn, border_radius=8)
             pygame.draw.rect(screen, (170, 170, 170), cancel_btn, 2, border_radius=8)
             tc = font.render("Cancel", True, (240, 240, 240))
-            screen.blit(tc, (cancel_btn.centerx - tc.get_width()//2, cancel_btn.centery - tc.get_height()//2))
+            screen.blit(tc, (cancel_btn.centerx - tc.get_width() // 2, cancel_btn.centery - tc.get_height() // 2))
 
             primary_label = "Save" if save_dialog_open else "Load"
             pygame.draw.rect(screen, (90, 90, 90), primary_btn, border_radius=8)
             pygame.draw.rect(screen, (220, 220, 220), primary_btn, 2, border_radius=8)
             tt = font.render(primary_label, True, (255, 255, 255))
-            screen.blit(tt, (primary_btn.centerx - tt.get_width()//2, primary_btn.centery - tt.get_height()//2))
+            screen.blit(tt, (primary_btn.centerx - tt.get_width() // 2, primary_btn.centery - tt.get_height() // 2))
 
             if save_dialog_open:
                 name_box = pygame.Rect(dlg_rect.x + 18, dlg_rect.bottom - 72, dlg_w - 36 - 260, 28)
@@ -2050,7 +2145,7 @@ def main() -> None:
                 pygame.draw.rect(screen, (255, 255, 255) if save_focus else (130, 130, 130), name_box, 2, border_radius=6)
                 shown = save_name if save_name else ""
                 t = font.render(shown, True, (240, 240, 240))
-                screen.blit(t, (name_box.x + 8, name_box.y + (name_box.h - t.get_height())//2))
+                screen.blit(t, (name_box.x + 8, name_box.y + (name_box.h - t.get_height()) // 2))
 
                 hint = font.render("Type name, Enter to save. Select a file to auto-fill. Allowed: A-Z 0-9 space _ - .", True, (200, 200, 200))
                 screen.blit(hint, (dlg_rect.x + 18, dlg_rect.bottom - 40))
@@ -2063,18 +2158,18 @@ def main() -> None:
             dim = pygame.Surface((SCREEN_WIDTH, SCREEN_HEIGHT), pygame.SRCALPHA)
             dim.fill((0, 0, 0, 170))
             screen.blit(dim, (0, 0))
-        
+
             dlg_w, dlg_h = 520, 320
-            dlg_rect = pygame.Rect((SCREEN_WIDTH - dlg_w)//2, (SCREEN_HEIGHT - dlg_h)//2, dlg_w, dlg_h)
+            dlg_rect = pygame.Rect((SCREEN_WIDTH - dlg_w) // 2, (SCREEN_HEIGHT - dlg_h) // 2, dlg_w, dlg_h)
             pygame.draw.rect(screen, (50, 50, 50), dlg_rect, border_radius=10)
             pygame.draw.rect(screen, (160, 160, 160), dlg_rect, 2, border_radius=10)
-        
+
             title = font_big.render("Create new map", True, (255, 255, 255))
             screen.blit(title, (dlg_rect.x + 18, dlg_rect.y + 16))
-        
+
             subtitle = font.render("Choose size:", True, (220, 220, 220))
             screen.blit(subtitle, (dlg_rect.x + 18, dlg_rect.y + 46))
-        
+
             opt_y0 = dlg_rect.y + 70
             opt_gap = 32
             options = [
@@ -2084,7 +2179,7 @@ def main() -> None:
                 ("huge", "Huge   80 x 80"),
                 ("custom", "Custom"),
             ]
-        
+
             # radio draw
             for i, (key, label) in enumerate(options):
                 ry = opt_y0 + i * opt_gap
@@ -2094,41 +2189,41 @@ def main() -> None:
                     pygame.draw.circle(screen, (220, 220, 220), center, 4, 0)
                 tt = font.render(label, True, (240, 240, 240))
                 screen.blit(tt, (dlg_rect.x + 55, ry))
-        
+
             # custom inputs
-            rows_box = pygame.Rect(dlg_rect.x + 260, opt_y0 + 4*opt_gap - 4, 70, 26)
-            cols_box = pygame.Rect(dlg_rect.x + 350, opt_y0 + 4*opt_gap - 4, 70, 26)
-        
+            rows_box = pygame.Rect(dlg_rect.x + 260, opt_y0 + 4 * opt_gap - 4, 70, 26)
+            cols_box = pygame.Rect(dlg_rect.x + 350, opt_y0 + 4 * opt_gap - 4, 70, 26)
+
             lab = font.render("Rows", True, (220, 220, 220))
             screen.blit(lab, (rows_box.x, rows_box.y - 18))
             lab2 = font.render("Cols", True, (220, 220, 220))
             screen.blit(lab2, (cols_box.x, cols_box.y - 18))
-        
+
             def _draw_box(rect, text, focused):
                 pygame.draw.rect(screen, (35, 35, 35), rect, border_radius=6)
                 pygame.draw.rect(screen, (255, 255, 255) if focused else (130, 130, 130), rect, 2, border_radius=6)
                 t = font.render(text, True, (240, 240, 240))
-                screen.blit(t, (rect.x + 8, rect.y + (rect.h - t.get_height())//2))
-        
+                screen.blit(t, (rect.x + 8, rect.y + (rect.h - t.get_height()) // 2))
+
             _draw_box(rows_box, str(custom_rows), custom_focus == "rows")
             _draw_box(cols_box, str(custom_cols), custom_focus == "cols")
-        
+
             hint = font.render("Custom limits: 30..100. Click a box, type digits, Enter to create.", True, (200, 200, 200))
             screen.blit(hint, (dlg_rect.x + 18, dlg_rect.y + dlg_h - 84))
-        
+
             # buttons
             create_rect = pygame.Rect(dlg_rect.right - 120 - 16, dlg_rect.bottom - 44, 120, 32)
             cancel_rect = pygame.Rect(dlg_rect.right - 240 - 24, dlg_rect.bottom - 44, 120, 32)
-        
+
             pygame.draw.rect(screen, (70, 70, 70), cancel_rect, border_radius=8)
             pygame.draw.rect(screen, (170, 170, 170), cancel_rect, 2, border_radius=8)
             tc = font.render("Cancel", True, (240, 240, 240))
-            screen.blit(tc, (cancel_rect.centerx - tc.get_width()//2, cancel_rect.centery - tc.get_height()//2))
-        
+            screen.blit(tc, (cancel_rect.centerx - tc.get_width() // 2, cancel_rect.centery - tc.get_height() // 2))
+
             pygame.draw.rect(screen, (90, 90, 90), create_rect, border_radius=8)
             pygame.draw.rect(screen, (220, 220, 220), create_rect, 2, border_radius=8)
             tt = font.render("Create", True, (255, 255, 255))
-            screen.blit(tt, (create_rect.centerx - tt.get_width()//2, create_rect.centery - tt.get_height()//2))
+            screen.blit(tt, (create_rect.centerx - tt.get_width() // 2, create_rect.centery - tt.get_height() // 2))
         pygame.display.flip()
 
     pygame.quit()
