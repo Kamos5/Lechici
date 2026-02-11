@@ -108,7 +108,9 @@ CORE FEATURES:
 - dmg only after animation is finished (dmg)
 - buildings destroy roads build over it
 - make axeman don't chop the same tree
-
+- on start zoom on towncenter or units
+- at the ability to save/load
+- save/load from map editor modification to units
 
 NICE TO HAVE:
 - behaviour (passive (don't move even when attack), neutral (until attacked stay))

@@ -452,6 +452,7 @@ class Unit:
         self.aggro_distance = 5
         self.max_hp = 50
         self.mana = 0
+        self.max_mana = 0
         self.special = 0
         self.attack_damage = 0
         self.attack_range = 0
@@ -2761,7 +2762,7 @@ class Priestess(Unit):
         self.attack_range = 20
         self.attack_cooldown = 1.0
         self.armor = 5
-
+        self.max_mana = 50
         self._attacking_until = 0.0
         self._attack_facing = "D"
         self._last_facing = "D"
@@ -2896,7 +2897,7 @@ class Shaman(Unit):
         self.attack_range = 20
         self.attack_cooldown = 1.0
         self.armor = 5
-
+        self.max_mana = 100
         self._attacking_until = 0.0
         self._attack_facing = "D"
         self._last_facing = "D"
