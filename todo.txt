@@ -123,6 +123,7 @@ NICE TO HAVE:
 - map clock for script
 - hero units
 - follow command?
+- death sprites should albo change colour based on player
 
 BUGS:
 

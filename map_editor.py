@@ -1815,12 +1815,33 @@ def main() -> None:
                         elif b.kind == "objective_minus":
                             survive_seconds = max(5, survive_seconds - 10)
 
+
                         elif b.kind == "action":
+
                             if b.value == "save":
+
                                 obj = {"type": mission_objective_type}
+
                                 if mission_objective_type == "survive_time":
                                     obj["seconds"] = int(survive_seconds)
-                                save_map(grid, units_by_cell, objects_by_cell, DEFAULT_SAVE_PATH, objective=obj)
+
+                                target = DEFAULT_SAVE_PATH
+
+                                if os.path.exists(target):
+
+                                    # Show overwrite modal instead of overwriting silently
+
+                                    overwrite_confirm_open = True
+
+                                    overwrite_target_path = target
+
+                                else:
+
+                                    save_map(grid, units_by_cell, objects_by_cell, target, objective=obj)
+
+                                    current_map_path = target
+
+                                    print(f"[EDITOR] Saved: {target}")
 
                             elif b.value == "load":
                                 try:
@@ -2042,35 +2063,6 @@ def main() -> None:
             dim.fill((0, 0, 0, 170))
             screen.blit(dim, (0, 0))
 
-        if overwrite_confirm_open:
-            dlg_w, dlg_h = 460, 180
-            dlg_rect = pygame.Rect((SCREEN_WIDTH - dlg_w) // 2, (SCREEN_HEIGHT - dlg_h) // 2, dlg_w, dlg_h)
-            pygame.draw.rect(screen, (50, 50, 50), dlg_rect, border_radius=10)
-            pygame.draw.rect(screen, (160, 160, 160), dlg_rect, 2, border_radius=10)
-
-            title = font_big.render("Overwrite file?", True, (255, 255, 255))
-            screen.blit(title, (dlg_rect.x + 18, dlg_rect.y + 16))
-
-            name = os.path.basename(overwrite_target_path or "")
-            msg = font.render(f"'{name}' already exists. Replace it?", True, (230, 230, 230))
-            screen.blit(msg, (dlg_rect.x + 18, dlg_rect.y + 58))
-
-            hint = font.render("Enter/Y = Yes   N/Esc = No", True, (200, 200, 200))
-            screen.blit(hint, (dlg_rect.x + 18, dlg_rect.y + 84))
-
-            yes_rect = pygame.Rect(dlg_rect.right - 120 - 16, dlg_rect.bottom - 44, 120, 32)
-            no_rect = pygame.Rect(dlg_rect.right - 240 - 24, dlg_rect.bottom - 44, 120, 32)
-
-            pygame.draw.rect(screen, (70, 70, 70), no_rect, border_radius=8)
-            pygame.draw.rect(screen, (170, 170, 170), no_rect, 2, border_radius=8)
-            t = font.render("No", True, (240, 240, 240))
-            screen.blit(t, (no_rect.centerx - t.get_width() // 2, no_rect.centery - t.get_height() // 2))
-
-            pygame.draw.rect(screen, (90, 90, 90), yes_rect, border_radius=8)
-            pygame.draw.rect(screen, (220, 220, 220), yes_rect, 2, border_radius=8)
-            t = font.render("Yes", True, (255, 255, 255))
-            screen.blit(t, (yes_rect.centerx - t.get_width() // 2, yes_rect.centery - t.get_height() // 2))
-
         if save_dialog_open or load_dialog_open:
             dlg_w, dlg_h = 700, 420
             dlg_rect = pygame.Rect((SCREEN_WIDTH - dlg_w) // 2, (SCREEN_HEIGHT - dlg_h) // 2, dlg_w, dlg_h)
@@ -2153,6 +2145,35 @@ def main() -> None:
                 hint = font.render("Select a file, Enter to load.", True, (200, 200, 200))
                 screen.blit(hint, (dlg_rect.x + 18, dlg_rect.bottom - 40))
         # New-map dialog (modal)
+        if overwrite_confirm_open:
+            dlg_w, dlg_h = 460, 180
+            dlg_rect = pygame.Rect((SCREEN_WIDTH - dlg_w) // 2, (SCREEN_HEIGHT - dlg_h) // 2, dlg_w, dlg_h)
+            pygame.draw.rect(screen, (50, 50, 50), dlg_rect, border_radius=10)
+            pygame.draw.rect(screen, (160, 160, 160), dlg_rect, 2, border_radius=10)
+
+            title = font_big.render("Overwrite file?", True, (255, 255, 255))
+            screen.blit(title, (dlg_rect.x + 18, dlg_rect.y + 16))
+
+            name = os.path.basename(overwrite_target_path or "")
+            msg = font.render(f"'{name}' already exists. Replace it?", True, (230, 230, 230))
+            screen.blit(msg, (dlg_rect.x + 18, dlg_rect.y + 58))
+
+            hint = font.render("Enter/Y = Yes   N/Esc = No", True, (200, 200, 200))
+            screen.blit(hint, (dlg_rect.x + 18, dlg_rect.y + 84))
+
+            yes_rect = pygame.Rect(dlg_rect.right - 120 - 16, dlg_rect.bottom - 44, 120, 32)
+            no_rect = pygame.Rect(dlg_rect.right - 240 - 24, dlg_rect.bottom - 44, 120, 32)
+
+            pygame.draw.rect(screen, (70, 70, 70), no_rect, border_radius=8)
+            pygame.draw.rect(screen, (170, 170, 170), no_rect, 2, border_radius=8)
+            t = font.render("No", True, (240, 240, 240))
+            screen.blit(t, (no_rect.centerx - t.get_width() // 2, no_rect.centery - t.get_height() // 2))
+
+            pygame.draw.rect(screen, (90, 90, 90), yes_rect, border_radius=8)
+            pygame.draw.rect(screen, (220, 220, 220), yes_rect, 2, border_radius=8)
+            t = font.render("Yes", True, (255, 255, 255))
+            screen.blit(t, (yes_rect.centerx - t.get_width() // 2, yes_rect.centery - t.get_height() // 2))
+
         if new_dialog_open:
             # dim background
             dim = pygame.Surface((SCREEN_WIDTH, SCREEN_HEIGHT), pygame.SRCALPHA)
